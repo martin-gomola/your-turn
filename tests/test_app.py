@@ -125,6 +125,31 @@ def test_serves_page_with_policy_and_only_loopback(codex_home: Path) -> None:
     assert evil.get("/").status_code == 400
 
 
+@pytest.mark.parametrize(
+    ("name", "content_type"),
+    [
+        ("icon.svg", "image/svg+xml"),
+        ("icon-dark.svg", "image/svg+xml"),
+        ("icon-alert.svg", "image/svg+xml"),
+        ("icon-dark-alert.svg", "image/svg+xml"),
+        ("favicon.ico", "image/x-icon"),
+        ("favicon-dark.ico", "image/x-icon"),
+        ("favicon-alert.ico", "image/x-icon"),
+        ("favicon-dark-alert.ico", "image/x-icon"),
+        ("app-icon-light-180.png", "image/png"),
+        ("app-icon-dark-180.png", "image/png"),
+        ("app-icon-light-192.png", "image/png"),
+        ("app-icon-dark-192.png", "image/png"),
+        ("app-icon-light-512.png", "image/png"),
+        ("app-icon-dark-512.png", "image/png"),
+    ],
+)
+def test_serves_theme_aware_brand_icons(codex_home: Path, name: str, content_type: str) -> None:
+    response = client(codex_home).get(f"/assets/{name}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == content_type
+
+
 @pytest.mark.parametrize("name", ["header-light.webp", "header-dark.webp", "brand-leaf.webp"])
 def test_serves_binary_artwork_without_text_decoding(codex_home: Path, name: str) -> None:
     app = client(codex_home)

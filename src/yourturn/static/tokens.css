@@ -89,6 +89,7 @@
   --hero-pinned: 80px;
   --content-inset: var(--space-6);
   --header-art: url('/assets/header-light.webp');
+  --header-filter: none;
   --glass-fill: color-mix(in srgb, var(--color-bg) 64%, transparent);
   --glass-edge: color-mix(in srgb, var(--color-separator) 70%, transparent);
   --text-display: 76px;
@@ -120,6 +121,7 @@
   --color-text: #e6e6e6;
   --color-text-muted: #a5a5a5;
   --header-art: url('/assets/header-dark.webp');
+  --header-filter: none;
   --glass-fill: color-mix(in srgb, var(--color-bg) 76%, transparent);
   --tint-tone: 14%;
   --color-accent: #42a65f;

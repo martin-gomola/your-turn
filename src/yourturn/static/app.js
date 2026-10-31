@@ -66,6 +66,7 @@ const threadId = params.get("thread") || "";
 const statusParam = params.get("status");
 const inboxStatus = Object.hasOwn(INBOX_FILTERS, statusParam) ? statusParam : "";
 const inboxReturn = inboxStatus ? `&status=${inboxStatus}` : "";
+$("nav-inbox").dataset.category = inboxStatus || "all";
 document.body.dataset.view = threadId ? "thread" : "inbox";
 if (threadId) $("nav-inbox").removeAttribute("aria-current");
 const wideDetail = matchMedia("(min-width: 1280px)");
@@ -436,6 +437,7 @@ function syncNavigation(chats) {
   const newResultsArrived = previousNewResultsCount !== null && newResultsCount > previousNewResultsCount;
   previousNewResultsCount = newResultsCount;
   const selector = $("compact-status");
+  $("nav-inbox").dataset.category = inboxStatus || "all";
   for (const option of selector.options) {
     const kind = option.value;
     const count = kind ? groups.get(kind).length : chats.length;
@@ -476,10 +478,21 @@ $("compact-status").addEventListener("change", (event) => {
   location.assign(inboxUrl(event.target.value, openId));
 });
 
-function setFavicon(alert) {
-  const href = alert ? "/assets/icon-alert.svg" : "/assets/icon.svg";
-  if ($("favicon").getAttribute("href") !== href) $("favicon").setAttribute("href", href);
+let faviconAlert = false;
+function setFavicon(alert = faviconAlert) {
+  faviconAlert = alert;
+  const dark = document.documentElement.dataset.theme === "dark";
+  const svgHref = dark ? (alert ? "/assets/icon-dark-alert.svg" : "/assets/icon-dark.svg")
+    : alert ? "/assets/icon-alert.svg" : "/assets/icon.svg";
+  const icoHref = dark ? (alert ? "/assets/favicon-dark-alert.ico" : "/assets/favicon-dark.ico")
+    : alert ? "/assets/favicon-alert.ico" : "/assets/favicon.ico";
+  const appIconHref = dark ? "/assets/app-icon-dark-180.png" : "/assets/app-icon-light-180.png";
+  if ($("favicon").getAttribute("href") !== svgHref) $("favicon").setAttribute("href", svgHref);
+  if ($("favicon-ico").getAttribute("href") !== icoHref) $("favicon-ico").setAttribute("href", icoHref);
+  if ($("app-icon").getAttribute("href") !== appIconHref) $("app-icon").setAttribute("href", appIconHref);
 }
+document.addEventListener("themechange", () => setFavicon());
+setFavicon();
 
 // Notifications: opt-in, from the inbox page only, and only for changes after the page loaded.
 
@@ -505,7 +518,8 @@ function notifyChanges(chats) {
     for (const chat of chats) {
       const alert = alertOf(chat);
       if (!alert || alerts.get(chat.id) === alert.key) continue;
-      const notice = new Notification(alert.title, { body: alert.body, tag: chat.id, icon: "/assets/icon-alert.svg" });
+      const iconHref = document.documentElement.dataset.theme === "dark" ? "/assets/icon-dark-alert.svg" : "/assets/icon-alert.svg";
+      const notice = new Notification(alert.title, { body: alert.body, tag: chat.id, icon: iconHref });
       notice.onclick = () => {
         window.focus();
         notice.close();
