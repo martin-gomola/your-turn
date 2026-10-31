@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from importlib.resources import files
 from pathlib import Path
 
@@ -44,6 +45,20 @@ QUESTIONS = """
 When you need the user to choose, ask with the `{tool}` tool and list the options. Your Turn shows
 the question and its options under Needs you until it is answered.
 """
+
+
+def _paint(text: str, code: str) -> str:
+    """Add terminal color without leaking ANSI escapes into redirected output."""
+    if not sys.stdout.isatty() or os.getenv("NO_COLOR") or os.getenv("TERM") == "dumb":
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _install_result(harness: str, detail: str, home: Path | None = None) -> None:
+    print(f"{_paint('✓', '32')} {_paint(APPS[harness], '1;36')}", flush=True)
+    print(f"  {detail}", flush=True)
+    if home is not None:
+        print(f"  {_paint(str(home), '2')}", flush=True)
 
 
 def plugin_text(name: str) -> str:
@@ -91,7 +106,7 @@ def _codex(args: list[str], home: Path | None, check: bool = True) -> subprocess
 def install_plugin(home: Path | None = None) -> bool:
     """Install the handoff skill into Codex. Returns False when Codex is unavailable."""
     if not shutil.which("codex"):
-        print("Codex CLI not found, so the plugin was not installed. The inbox still works, with weaker recaps.", flush=True)
+        print(f"{_paint('!', '33')} {_paint('Codex', '1;36')} CLI not found; the inbox still works, with weaker recaps.", flush=True)
         return False
     env = {**os.environ, "CODEX_HOME": str(home)} if home is not None else None
     listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env)
@@ -101,7 +116,7 @@ def install_plugin(home: Path | None = None) -> bool:
         # Refresh a Git marketplace so an installed plugin picks up the current skill (a local one has nothing to refresh).
         _codex(["plugin", "marketplace", "upgrade", MARKETPLACE], home, check=False)
     _codex(["plugin", "add", PLUGIN], home)
-    print(f"Codex: installed {PLUGIN}. Restart Codex so agents start writing Your Turn handoffs.", flush=True)
+    _install_result("codex", f"Installed {PLUGIN}. Restart Codex to enable handoffs.")
     return True
 
 
@@ -143,7 +158,7 @@ def install_claude(home: Path) -> None:
     else:
         updated = f"{current.rstrip()}\n\n{CLAUDE_BLOCK}" if current.strip() else CLAUDE_BLOCK
     block = _write(memory, updated)
-    print(f"Claude Code: skill {skill}, CLAUDE.md block {block}{_legacy_claude_mcp(home)} ({home}).", flush=True)
+    _install_result("claude", f"Skill {skill} · CLAUDE.md block {block}{_legacy_claude_mcp(home)}", home)
 
 
 def uninstall_claude(home: Path) -> None:
@@ -183,7 +198,7 @@ def _legacy_cursor_mcp(home: Path) -> str:
 
 def install_cursor(home: Path) -> None:
     skill = _write(home / "skills" / NAME / "SKILL.md", skill_text("cursor"))
-    print(f"Cursor: skill {skill}{_legacy_cursor_mcp(home)} ({home}).", flush=True)
+    _install_result("cursor", f"Skill {skill}{_legacy_cursor_mcp(home)}", home)
 
 
 def uninstall_cursor(home: Path) -> None:
@@ -192,6 +207,8 @@ def uninstall_cursor(home: Path) -> None:
 
 
 def install(harnesses: list[str], homes: dict[str, Path]) -> None:
+    print(_paint("Your Turn setup", "1;36"), flush=True)
+    print(_paint("───────────────", "2"), flush=True)
     if not harnesses:
         print("No Codex, Claude Code or Cursor folder found, so nothing was installed.", flush=True)
     for harness in harnesses:

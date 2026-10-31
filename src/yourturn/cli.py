@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> None:
         except subprocess.CalledProcessError as error:
             parser.exit(1, f"Plugin install failed: {' '.join(error.cmd)}\n")
         if args.command == "install":
-            print("Start the inbox with: your-turn serve", flush=True)
+            print("\n→ Start the inbox with: your-turn serve", flush=True)
         return
 
     import uvicorn
