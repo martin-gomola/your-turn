@@ -181,29 +181,12 @@ Event: TypeAlias = (
     | Usage
 )
 
-EVENT_TYPES: tuple[type, ...] = (
-    Meta,
-    TurnStarted,
-    TurnEnded,
-    UserMessage,
-    AgentMessage,
-    CommandRun,
-    FilesEdited,
-    ToolCall,
-    Reasoning,
-    ContextCompacted,
-    ApprovalPending,
-    ToolPending,
-    Usage,
-)
-
 
 class EventCursor:
     """Incremental reader over one session source; each adapter's cursor subclasses it.
 
     `read_new()` returns only events appended since the previous call and must leave a
-    partial trailing line unconsumed (it is picked up once complete). `offset` is the
-    position (e.g. byte offset) just past the last fully consumed record.
+    partial trailing line unconsumed (it is picked up once complete).
     """
 
     # Bumped whenever the source shrank and the cursor replayed it from the start; the hub then rebuilds the chat.
@@ -213,10 +196,6 @@ class EventCursor:
 
     @property
     def ref(self) -> SessionRef:
-        raise NotImplementedError
-
-    @property
-    def offset(self) -> int:
         raise NotImplementedError
 
     def read_new(self) -> list[Event]:

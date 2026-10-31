@@ -288,10 +288,6 @@ class HeaderCursor(EventCursor):
     def ref(self) -> SessionRef:
         return self._ref
 
-    @property
-    def offset(self) -> int:
-        return 0
-
     def reset(self) -> None:
         self._state = None
 
@@ -344,32 +340,17 @@ class CursorAdapter(HarnessAdapter):
     """Finds Cursor agent transcripts and opens cursors on them."""
 
     name: str = Harness.CURSOR.value
-    capabilities: Capabilities = Capabilities(
-        can_resume=False,
-        has_tool_calls=True,
-        has_checks=True,
-        live_tail=True,
-        turn_boundaries=True,
-        approval_prompts=True,
-        structured_questions=True,
-    )
+    capabilities: Capabilities = Capabilities()
 
     def __init__(
         self,
         home: Path | None = None,
         *,
         user_dir: Path | None = None,
-        include_subagents: bool = False,
-        max_age_days: float | None = None,
     ) -> None:
         self.home = home or cursor_home()
         self.user_dir = user_dir or cursor_user_dir()
-        self.include_subagents = include_subagents
-        self.max_age_days = max_age_days
         self._headers: dict[str, dict[str, Any]] = {}
-
-    def available(self) -> bool:
-        return (self.home / "projects").is_dir()
 
     def _read_headers(self) -> dict[str, dict[str, Any]]:
         """composerId -> {title, cwd, archived, subagent} from Cursor's composer index ({} if unreadable)."""
@@ -408,39 +389,31 @@ class CursorAdapter(HarnessAdapter):
         projects = (root if root is not None and (root / "projects").is_dir() else self.home) / "projects"
         if not projects.is_dir():
             return
-        found: list[tuple[float, Path]] = []
+        found: list[Path] = []
         for path in projects.glob(TRANSCRIPT_GLOB):
             try:
-                stat = path.stat()
+                if path.stat().st_size:  # An empty transcript has no chat to show.
+                    found.append(path)
             except OSError:
                 continue
-            if stat.st_size:  # An empty transcript has no chat to show.
-                found.append((stat.st_mtime, path))
-        found.sort(reverse=True)
-        cutoff = time.time() - self.max_age_days * 86400 if self.max_age_days is not None else None
         self._headers = self._read_headers()
-        for mtime, path in found:
-            # Each transcript is its session's own file, so its mtime is that session's last activity.
-            if cutoff is not None and mtime < cutoff:
-                break
+        for path in found:
             header = self._headers.get(path.stem)
             if header is None:
                 if self._headers:
                     continue  # Cursor no longer indexes this chat: deleted or cleaned up.
                 header = {}
-            if header.get("archived") or (header.get("subagent") and not self.include_subagents):
+            if header.get("archived") or header.get("subagent"):
                 continue
             cwd = header.get("cwd") or decode_slug(path.parents[2].name)
             yield SessionRef(harness=self.name, session_id=path.stem, path=path, cwd=cwd)
-        transcripts = {path.stem for _, path in found}
+        transcripts = {path.stem for path in found}
         for composer_id, header in self._headers.items():
-            if composer_id in transcripts or header["archived"] or (header["subagent"] and not self.include_subagents):
+            if composer_id in transcripts or header["archived"] or header["subagent"]:
                 continue
             updated = header["updated"]
             # No activity time, or neither a title nor a pending approval: a draft or a cleaned-up chat.
             if updated is None or not (header["title"] or header["pending"]):
-                continue
-            if cutoff is not None and updated.timestamp() < cutoff:
                 continue
             yield SessionRef(harness=self.name, session_id=composer_id, cwd=header["cwd"])
 

@@ -512,20 +512,12 @@ class SessionHub:
 
     def __init__(
         self,
-        adapters: Sequence[HarnessAdapter] | None = None,
+        adapters: Sequence[HarnessAdapter],
         *,
         tail_bytes: int | None = DEFAULT_TAIL_BYTES,
         rescan_seconds: float = 3.0,
     ) -> None:
-        self.adapters: list[HarnessAdapter] = (
-            list(adapters)
-            if adapters is not None
-            else [
-                CodexAdapter(max_age_days=DEFAULT_HISTORY_DAYS),
-                ClaudeAdapter(max_age_days=DEFAULT_HISTORY_DAYS),
-                CursorAdapter(max_age_days=DEFAULT_HISTORY_DAYS),
-            ]
-        )
+        self.adapters = list(adapters)
         self.tail_bytes = tail_bytes
         self.rescan_seconds = rescan_seconds
         self._tracked: dict[SessionKey, _Tracked] = {}

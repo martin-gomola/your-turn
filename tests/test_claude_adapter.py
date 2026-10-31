@@ -79,10 +79,8 @@ def _fold(path: Path) -> TurnFolder:
 # --- discovery -----------------------------------------------------------------------------------
 
 
-def test_missing_home_is_unavailable_and_discovers_nothing(tmp_path: Path) -> None:
-    adapter = ClaudeAdapter(home=tmp_path / "nope")
-    assert adapter.available() is False
-    assert list(adapter.discover()) == []
+def test_missing_home_discovers_nothing(tmp_path: Path) -> None:
+    assert list(ClaudeAdapter(home=tmp_path / "nope").discover()) == []
 
 
 def test_discover_skips_subagents_and_sidechains(tmp_path: Path) -> None:
@@ -93,12 +91,10 @@ def test_discover_skips_subagents_and_sidechains(tmp_path: Path) -> None:
     (nested / "agent-a1.jsonl").write_text(json.dumps(user(1, "sub")) + "\n", encoding="utf-8")
 
     adapter = ClaudeAdapter(home=tmp_path)
-    assert adapter.available()
     (ref,) = adapter.discover()
     assert (ref.harness, ref.session_id, ref.path, ref.cwd) == ("claude", SID, main, CWD)
     assert adapter.project(ref) == "my-repo"
     assert ClaudeAdapter.project(SessionRef(harness="claude", session_id=SID, path=main)) == "repo"
-    assert len(list(ClaudeAdapter(home=tmp_path, include_subagents=True).discover())) == 2
 
 
 def test_handoff_resumes_the_session(tmp_path: Path) -> None:

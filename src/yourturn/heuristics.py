@@ -7,7 +7,7 @@ import re
 import time
 from typing import Any
 
-from yourturn.model import CheckState, Turn
+from yourturn.model import Turn
 
 MAX_TEXT = 280
 # A working chat whose source stops changing for this long is waiting on an approval, a long command, or stalled.
@@ -140,25 +140,16 @@ def code_paths(paths: list[str]) -> list[str]:
     return [path for path in paths if not is_doc_path(path)]
 
 
-def check_status(turn: Turn | None) -> CheckState:
-    """A failed latest run wins; code edits without a later check are unchecked; documentation-only edits
-    are not applicable rather than unchecked, so a README fix raises no alarm."""
-    if turn is None:
-        return CheckState.NOT_APPLICABLE
-    if any(check.exit_code not in (0, None) for check in turn.checks):
-        return CheckState.FAILED
-    if code_paths(turn.files) and (not turn.checks or turn.edited_after_check):
-        return CheckState.UNCHECKED
-    if not turn.checks:
-        return CheckState.NOT_APPLICABLE
-    # A check without an exit code has not reported back yet.
-    return CheckState.PASSED if all(check.exit_code == 0 for check in turn.checks) else CheckState.UNKNOWN
-
-
 def check_state(turn: Turn | None) -> str:
-    """Legacy inbox value read by app.js: `failed`, `unchecked`, or empty."""
-    state = check_status(turn)
-    return state.value if state in (CheckState.FAILED, CheckState.UNCHECKED) else ""
+    """The check tag app.js shows: `failed` when a check's latest run failed, `unchecked` when code changed
+    with no check after it, else "". Documentation-only edits never count, so a README fix raises no alarm."""
+    if turn is None:
+        return ""
+    if any(check.exit_code not in (0, None) for check in turn.checks):
+        return "failed"
+    if code_paths(turn.files) and (not turn.checks or turn.edited_after_check):
+        return "unchecked"
+    return ""
 
 
 def is_quiet(status: str, modified_ns: int, now: float | None = None) -> bool:

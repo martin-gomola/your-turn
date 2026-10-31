@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -332,18 +331,10 @@ class ClaudeAdapter(HarnessAdapter):
     """Finds Claude Code transcripts and opens cursors on them."""
 
     name: str = Harness.CLAUDE.value
-    capabilities: Capabilities = Capabilities(
-        can_resume=True,
-        has_usage=True,
-        has_tool_calls=True,
-        has_checks=True,
-        live_tail=True,
-    )
+    capabilities: Capabilities = Capabilities()
 
-    def __init__(self, home: Path | None = None, *, include_subagents: bool = False, max_age_days: float | None = None) -> None:
+    def __init__(self, home: Path | None = None) -> None:
         self.home = home or claude_home()
-        self.include_subagents = include_subagents
-        self.max_age_days = max_age_days
         self._heads: dict[Path, tuple[bool, str | None]] = {}
 
     def _projects(self, root: Path | None) -> Path:
@@ -351,9 +342,6 @@ class ClaudeAdapter(HarnessAdapter):
         if root is not None and (root / "projects").is_dir():
             return root / "projects"
         return self.home / "projects"
-
-    def available(self, root: Path | None = None) -> bool:
-        return self._projects(root).is_dir()
 
     def _head(self, path: Path) -> tuple[bool, str | None]:
         """(is_sidechain, cwd) from the first record carrying a cwd; cached since it never changes."""
@@ -378,19 +366,9 @@ class ClaudeAdapter(HarnessAdapter):
         projects = self._projects(root)
         if not projects.is_dir():
             return
-        found: list[tuple[float, Path]] = []
         for path in projects.glob(SESSION_GLOB):
-            try:
-                found.append((path.stat().st_mtime, path))
-            except OSError:
-                continue
-        found.sort(reverse=True)
-        cutoff = time.time() - self.max_age_days * 86400 if self.max_age_days is not None else None
-        for mtime, path in found:
-            if cutoff is not None and mtime < cutoff:
-                break
             sidechain, cwd = self._head(path)
-            if sidechain and not self.include_subagents:
+            if sidechain:
                 continue
             yield SessionRef(harness=self.name, session_id=path.stem, path=path, cwd=cwd)
 

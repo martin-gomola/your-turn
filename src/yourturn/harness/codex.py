@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -300,10 +299,6 @@ class CodexCursor(EventCursor):
         return self._ref
 
     @property
-    def offset(self) -> int:
-        return self._offset
-
-    @property
     def path(self) -> Path:
         return self._path
 
@@ -390,28 +385,13 @@ class CodexAdapter(HarnessAdapter):
     """Finds Codex rollouts and opens cursors on them."""
 
     name: str = Harness.CODEX.value
-    capabilities: Capabilities = Capabilities(
-        can_resume=True,
-        has_diffs=False,  # FileChange items name paths; we do not extract diff hunks.
-        has_usage=True,
-        has_tool_calls=True,
-        has_checks=True,
-        live_tail=True,
-        turn_boundaries=True,
-        exit_codes=True,
-        structured_questions=True,
-    )
+    capabilities: Capabilities = Capabilities(exit_codes=True)
 
     def __init__(
         self,
         home: Path | None = None,
-        *,
-        include_subagents: bool = False,
-        max_age_days: float | None = None,
     ) -> None:
         self.home = home
-        self.include_subagents = include_subagents
-        self.max_age_days = max_age_days
         self._heads: dict[Path, tuple[bool, str | None]] = {}
         self._titles: tuple[float, dict[str, str]] = (-1.0, {})
         self._index: Path | None = None
@@ -443,19 +423,9 @@ class CodexAdapter(HarnessAdapter):
     def discover(self, root: Path | None = None) -> Iterator[SessionRef]:
         sessions = self._sessions_dir(root)
         self._index = sessions.parent / "session_index.jsonl"
-        found: list[tuple[float, Path]] = []
         for path in sessions.glob(ROLLOUT_GLOB):
-            try:
-                found.append((path.stat().st_mtime, path))
-            except OSError:
-                continue
-        found.sort(reverse=True)
-        cutoff = time.time() - self.max_age_days * 86400 if self.max_age_days is not None else None
-        for mtime, path in found:
-            if cutoff is not None and mtime < cutoff:
-                break
             subagent, cwd = self._head(path)
-            if subagent and not self.include_subagents:
+            if subagent:
                 continue
             yield SessionRef(harness=self.name, session_id=thread_id_of(path), path=path, cwd=cwd)
 

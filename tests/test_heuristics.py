@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from conftest import Parser
 
-from yourturn.heuristics import check_state, check_status, is_check_command, parse_answer, parse_decisions, parse_recap
-from yourturn.model import Check, CheckState, Harness, SessionKey, Turn
+from yourturn.heuristics import check_state, is_check_command, parse_answer, parse_decisions, parse_recap
+from yourturn.model import Check, Harness, SessionKey, Turn
 
 UUID = "019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
 
@@ -15,22 +15,21 @@ def turn(files: list[str], checks: tuple[int | None, ...] = (), edited_after_che
 
 
 @pytest.mark.parametrize(
-    ("value", "expected", "legacy"),
+    ("value", "expected"),
     [
-        (None, CheckState.NOT_APPLICABLE, ""),
-        (turn([]), CheckState.NOT_APPLICABLE, ""),
-        (turn(["/w/repo/README.md", "/w/repo/NOTES.txt", "docs/guide.py"]), CheckState.NOT_APPLICABLE, ""),
-        (turn(["/w/repo/CHANGELOG.MD"]), CheckState.NOT_APPLICABLE, ""),
-        (turn(["/w/repo/app.py"]), CheckState.UNCHECKED, "unchecked"),
-        (turn(["/w/repo/app.py"], [0], edited_after_check=True), CheckState.UNCHECKED, "unchecked"),
-        (turn(["/w/repo/app.py"], [0]), CheckState.PASSED, ""),
-        (turn(["/w/repo/README.md"], [1]), CheckState.FAILED, "failed"),
-        (turn(["/w/repo/app.py"], [None]), CheckState.UNKNOWN, ""),
+        (None, ""),
+        (turn([]), ""),
+        (turn(["/w/repo/README.md", "/w/repo/NOTES.txt", "docs/guide.py"]), ""),
+        (turn(["/w/repo/CHANGELOG.MD"]), ""),
+        (turn(["/w/repo/app.py"]), "unchecked"),
+        (turn(["/w/repo/app.py"], [0], edited_after_check=True), "unchecked"),
+        (turn(["/w/repo/app.py"], [0]), ""),
+        (turn(["/w/repo/README.md"], [1]), "failed"),
+        (turn(["/w/repo/app.py"], [None]), ""),
     ],
 )
-def test_check_status(value: Turn | None, expected: CheckState, legacy: str) -> None:
-    assert check_status(value) is expected
-    assert check_state(value) == legacy
+def test_check_state(value: Turn | None, expected: str) -> None:
+    assert check_state(value) == expected
 
 
 def test_readme_edit_after_passing_check_keeps_it_passed() -> None:
@@ -42,10 +41,10 @@ def test_readme_edit_after_passing_check_keeps_it_passed() -> None:
     item({"type": "FileChange", "changes": {"/w/repo/app.py": {}}})
     item({"type": "CommandExecution", "command": ["bash", "-lc", "uv run pytest -q"], "exit_code": 0})
     item({"type": "FileChange", "changes": {"/w/repo/README.md": {}}})
-    assert check_status(parser.state.turns[-1]) is CheckState.PASSED
+    assert check_state(parser.state.turns[-1]) == ""
 
     item({"type": "FileChange", "changes": {"/w/repo/app.py": {}}})
-    assert check_status(parser.state.turns[-1]) is CheckState.UNCHECKED
+    assert check_state(parser.state.turns[-1]) == "unchecked"
 
 
 @pytest.mark.parametrize(

@@ -16,16 +16,6 @@ class Harness(StrEnum):
     CURSOR = "cursor"
 
 
-class CheckState(StrEnum):
-    """Can I trust it? `NOT_APPLICABLE` covers turns with no edits or only documentation edits."""
-
-    PASSED = "passed"
-    FAILED = "failed"
-    UNCHECKED = "unchecked"
-    NOT_APPLICABLE = "n/a"
-    UNKNOWN = "unknown"
-
-
 @dataclass(frozen=True, slots=True)
 class SessionKey:
     """A session id namespaced by harness, written `harness:native_id`."""
@@ -134,13 +124,4 @@ class Handoff:
 class Capabilities:
     """What a harness's session source can tell us."""
 
-    can_resume: bool = False
-    has_diffs: bool = False
-    has_usage: bool = False
-    has_tool_calls: bool = False
-    has_checks: bool = False
-    live_tail: bool = False
-    turn_boundaries: bool = False  # The source marks turn start/end (else they are inferred).
     exit_codes: bool = False  # Commands report real exit codes (else only success/failure).
-    approval_prompts: bool = False  # The source records tool-approval prompts.
-    structured_questions: bool = False  # Questions to the user come with explicit options.

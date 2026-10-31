@@ -130,7 +130,7 @@ def test_decode_slug_resolves_existing_dashed_folders(tmp_path: Path) -> None:
 
 def test_missing_home_discovers_nothing(tmp_path: Path) -> None:
     adapter = CursorAdapter(home=tmp_path / "none", user_dir=tmp_path / "none")
-    assert adapter.available() is False and list(adapter.discover()) == []
+    assert list(adapter.discover()) == []
 
 
 def test_discover_uses_headers_and_skips_archived_and_subagents(tmp_path: Path) -> None:
@@ -275,7 +275,6 @@ def test_pending_approval_needs_you_until_cursor_clears_it(tmp_path: Path) -> No
     codex_home = tmp_path / "codex"
     (codex_home / "sessions").mkdir(parents=True)
     hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
-    assert CursorAdapter.capabilities.approval_prompts is True
 
     (row,) = hub.inbox_dicts()
     assert (row["status"], row["next_kind"], row["next_text"], row["needs_you"]) == (
@@ -368,7 +367,7 @@ def test_approval_untouched_for_a_day_expires(tmp_path: Path) -> None:
     home, user_dir = tmp_path / "cursor", tmp_path / "User"
     _write(home, [user("Fix the bug"), assistant(text("All done.")), ENDED])
     _database(user_dir, [(CID, 0, 0, _header("Fix parser", pending=True, updated=_now_ms(25 * 3600)))])
-    adapter = CursorAdapter(home=home, user_dir=user_dir, max_age_days=14)
+    adapter = CursorAdapter(home=home, user_dir=user_dir)
     (ref,) = adapter.discover()
     folder = TurnFolder(ref)
     folder.fold_many(adapter.open(ref).read_new())

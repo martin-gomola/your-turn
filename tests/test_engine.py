@@ -163,11 +163,10 @@ def test_adapter_discovers_rollouts(tmp_path: Path) -> None:
     assert [ref.session_id for ref in CodexAdapter().discover(tmp_path / "sessions")] == [SID]
 
 
-def test_adapter_skips_subagents_unless_asked(tmp_path: Path) -> None:
+def test_adapter_skips_subagents(tmp_path: Path) -> None:
     _write(tmp_path, SID, [_meta(SID)])
     _write(tmp_path, SID_B, [_meta(SID_B, subagent=True)])
     assert {ref.session_id for ref in CodexAdapter(home=tmp_path).discover()} == {SID}
-    assert {ref.session_id for ref in CodexAdapter(home=tmp_path, include_subagents=True).discover()} == {SID, SID_B}
 
 
 def test_adapter_parses_events(tmp_path: Path) -> None:
