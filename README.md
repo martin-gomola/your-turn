@@ -54,23 +54,23 @@ VS Code, and you never switch windows to see who needs you.
 You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
 or Cursor.
 
-**1. Run the inbox**, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
-
-```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
-```
-
-Your existing chats appear right away.
-
-**2. Set up agent discipline (recommended)**, once:
+**1. Install the handoff skill**, once:
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 ```
 
 It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds,
-only in your home folder (`~/.codex`, `~/.claude`, `~/.cursor`). It never creates a file in your
-git repositories. Restart the agents afterwards.
+only in your home folder (`~/.codex`, `~/.claude`, `~/.cursor`), and never creates a file in your
+git repositories. Restart the agents so their answers carry exact recaps, checks, and decisions.
+
+**2. Run the inbox** whenever you want it, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
+
+```sh
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
+```
+
+Your existing chats appear right away. Skipping step 1 works too, with guessed recaps.
 
 ## Privacy and Design
 
