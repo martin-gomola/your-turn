@@ -110,6 +110,9 @@ calls in older transcripts still read as decisions.
 
 - At 1280px and above, an ordinary row click opens a bookmarkable `/?open=<id>` detail pane;
   the inbox becomes a compact list beside it. The sidebar remains available.
+- Compact rows are three-line list items of one height: a one-line title with the age at its
+  right ("2d", 12px, tabular), the request or preview, then one quiet "Codex · project" line. The
+  status glyph aligns with the title, and the open row needs no chevron.
 - Selecting another filter keeps the detail open. Modified clicks use the real full-chat link.
 - Escape or the Inbox button returns focus to the originating row, or the current filter if the seen result moved.
   Browser Back/Forward restores pane state. Narrowing the viewport redirects an open pane to the

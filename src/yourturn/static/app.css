@@ -559,16 +559,21 @@ body[data-panel="open"] .compact-filter { display: grid; grid-template-columns: 
 body[data-panel="open"] #sections { padding-top: var(--content-inset); }
 body[data-panel="open"] #sections .group-title { padding-inline: 0 var(--space-2); font-size: 16px; }
 body[data-panel="open"] #sections .tone { width: 30px; height: 30px; }
-body[data-panel="open"] .row { grid-template-columns: 30px minmax(0, 1fr) 20px; gap: var(--space-2); padding: var(--space-3) var(--space-2); }
-body[data-panel="open"] .row > .glyph { width: 30px; height: 30px; }
-body[data-panel="open"] .row-body { grid-column: 2; }
-body[data-panel="open"] .row-title { font-size: 16px; white-space: normal; }
+/* Beside an open chat: a three-line list item of fixed height. Title and time share the first line,
+   the request or preview follows, then one quiet app and project line; the open row needs no chevron. */
+body[data-panel="open"] .row { grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-3) var(--space-2); }
+body[data-panel="open"] .row > .glyph { width: 30px; height: 30px; grid-row: 1 / span 2; }
+body[data-panel="open"] .row-body { grid-column: 2; grid-row: 1; }
+body[data-panel="open"] .row-title { font-size: 16px; }
 body[data-panel="open"] .row-description { flex-wrap: wrap; }
 body[data-panel="open"] .row-tags { max-width: none; }
-body[data-panel="open"] .row-text, body[data-panel="open"] .row-project, body[data-panel="open"] .row-time { font-size: 13px; }
-body[data-panel="open"] .row-project { grid-column: 2; }
-body[data-panel="open"] .row-time { grid-column: 2; text-align: left; }
-body[data-panel="open"] .row-chevron { grid-column: 3; grid-row: 1; }
+body[data-panel="open"] .row-text { font-size: 13px; }
+body[data-panel="open"] .row-project { grid-column: 2 / -1; grid-row: 2; font-size: 12px; }
+body[data-panel="open"] .row-project .project-icon { display: none; }
+body[data-panel="open"] .row-project > .harness-pill { margin: 0; padding: 0; box-shadow: none; font-size: inherit; line-height: inherit; }
+body[data-panel="open"] .row-project > .harness-pill::after { content: " ·"; }
+body[data-panel="open"] .row-time { grid-column: 3; grid-row: 1; font-size: 12px; line-height: calc(16px * 1.3); }
+body[data-panel="open"] .row-chevron { display: none; }
 body[data-panel="open"] #thread-view { grid-column: 2; grid-row: 1; min-height: 0; align-content: start; grid-auto-rows: max-content; overflow-y: auto; padding: 0 var(--content-inset) var(--content-inset); border-left: 1px solid var(--color-separator); }
 body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padding-block: var(--content-inset) var(--space-3); border-bottom: 1px solid var(--color-separator); background: var(--color-bg); }
 

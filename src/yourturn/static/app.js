@@ -134,13 +134,14 @@ function clock(iso) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function ago(iso) {
+// Rows use the short form ("2d"); the chat header keeps "2d ago".
+function ago(iso, suffix = " ago") {
   const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
   if (!Number.isFinite(seconds)) return "";
   if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
-  if (seconds < 172800) return `${Math.round(seconds / 3600)}h ago`;
-  return `${Math.round(seconds / 86400)}d ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m${suffix}`;
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h${suffix}`;
+  return `${Math.round(seconds / 86400)}d${suffix}`;
 }
 
 function chatName(chat) {
@@ -257,8 +258,10 @@ function renderRow(chat) {
   if (state === "working") syncSpin(glyph.querySelector("use"));
   const body = el("span", "row-body");
   const head = el("span", "row-head");
-  const time = el("span", "row-time", ago(chat.updated_at));
+  const time = el("span", "row-time", ago(chat.updated_at, ""));
   time.dataset.ago = chat.updated_at;
+  time.dataset.short = "";
+  time.title = new Date(chat.updated_at).toLocaleString();
   head.append(el("span", "row-title", chatName(chat)));
   body.append(head);
   const summary = chatSummary(chat);
@@ -1379,7 +1382,7 @@ setInterval(() => {
   const chats = inboxData || attentionData;
   if (chats) notifyChanges(chats);
   if (document.hidden) return;
-  for (const node of document.querySelectorAll("[data-ago]")) node.textContent = ago(node.dataset.ago);
+  for (const node of document.querySelectorAll("[data-ago]")) node.textContent = ago(node.dataset.ago, "short" in node.dataset ? "" : " ago");
   for (const node of document.querySelectorAll("[data-quiet-at]")) node.textContent = `Quiet ${ago(node.dataset.quietAt).replace(/ ago$/, "")}`;
   if (threadData) renderStatus(threadData, threadData.turns[threadData.turns.length - 1]);
 }, 30_000);
