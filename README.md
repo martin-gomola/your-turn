@@ -4,12 +4,12 @@
 
 ### Your agents are fast. You're the queue.
 
-**An inbox that shows which Codex chat needs you, what it did, whether you can trust it, and what
-to do next.**
+**An inbox that shows which Codex, Claude Code, or Cursor chat needs you, what it did, whether you
+can trust it, and what to do next.**
 
 ![Local only](https://img.shields.io/badge/Runs-Local%20only-2f7a6b)
 ![Read-only](https://img.shields.io/badge/Access-Read--only-256356)
-![Works with Codex](https://img.shields.io/badge/Works%20with-Codex-56645f)
+![Works with Codex · Claude Code · Cursor](https://img.shields.io/badge/Works%20with-Codex%20%C2%B7%20Claude%20Code%20%C2%B7%20Cursor-56645f)
 
 [Start](#start-in-one-command) · [How it works](#how-it-works) · [Design](#design) ·
 [Development](#development)
@@ -21,19 +21,20 @@ to do next.**
 </div>
 
 Coding agents are capable enough now that the slow part is the person running them. I run many
-Codex chats in parallel; their answers are long, and with several open it is easy to miss the one
-blocked on me. Your Turn answers four questions per chat, at a glance:
+chats in parallel across Codex, Claude Code, and Cursor; their answers are long, and with several
+open it is easy to miss the one blocked on me. Your Turn puts them in one inbox and answers four
+questions per chat, at a glance:
 
 | Question | Where the answer is |
 | --- | --- |
 | Does it need me? | The status (Needs you, Working, or Done) and the Needs you count |
 | What happened? | The recap and the files the chat changed |
 | Can I trust it? | The checks it ran, with **Check failed** or **Edits unchecked** when they don't cover the latest edit |
-| What do I do next? | The next step, with **Open in Codex** to act on it |
+| What do I do next? | The next step, with a button to act on it in the chat's own app |
 
 - **Local only.** The server listens on `127.0.0.1`. Nothing leaves your machine.
-- **Read-only.** It reads the session files Codex already writes and never touches `~/.codex`.
-- **No new workflow.** It never starts, answers, or approves anything; you act in Codex.
+- **Read-only.** It reads the session files each agent already writes and never changes them.
+- **No new workflow.** It never starts, answers, or approves anything; you act in the agent's app.
 
 When an agent asks a question, its chat moves into Needs you within a second:
 
@@ -41,7 +42,8 @@ When an agent asks a question, its chat moves into Needs you within a second:
 
 ## Start in one command
 
-You need Codex (desktop app or CLI), Python 3.11+, and [`uv`](https://docs.astral.sh/uv/).
+You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
+or Cursor.
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
@@ -51,8 +53,9 @@ uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 2. Restart Codex. From then on, agents end each answer with an Outcome, a Next step, and a Recap,
    say which checks they ran, and log their decisions. That is what makes the recaps exact.
 
-Your existing chats appear right away. Next time, run the same command with `serve` in place of
-`install` to start only the inbox.
+Your existing chats from all three apps appear right away. Next time, run the same command with
+`serve` in place of `install` to start only the inbox. The plugin is Codex-only; Claude Code and
+Cursor chats need nothing installed.
 
 <details>
 <summary>Only the inbox, or install from a clone</summary>
@@ -71,17 +74,32 @@ It also works in the Codex in-app browser, beside the chat:
 
 ## How it works
 
-Codex writes each chat to a session file under `~/.codex/sessions`. Your Turn follows those files
-as they change and turns each chat into a short recap.
+Each app already writes its chats to disk. Your Turn follows those files as they change and turns
+each chat into a short recap.
+
+| App | What Your Turn reads | Change the location with |
+| --- | --- | --- |
+| Codex | Session files under `~/.codex/sessions` | `--codex-home` or `CODEX_HOME` |
+| Claude Code | Transcripts under `~/.claude/projects` | `--claude-home` or `CLAUDE_CONFIG_DIR` |
+| Cursor | Agent transcripts under `~/.cursor/projects`, plus chat titles, folders, and pending approvals from Cursor's `state.vscdb`, opened read-only | `--cursor-home` |
+
+Each chat has one button for acting on it:
+
+| App | Button | What it does |
+| --- | --- | --- |
+| Codex | **Open in Codex** | Opens the chat in Codex |
+| Claude Code | **Copy resume command** | Copies `claude --resume <id>` to paste in a terminal |
+| Cursor | **Open in Cursor** | Opens the chat's project folder in Cursor |
 
 | Part | What it does |
 | --- | --- |
 | Inbox | Groups chats into Needs you, Working, New results, and Earlier. Each count is also a filter. |
-| Chat page | The outcome, next step, changed files, checks, decisions, and full timeline. **Open in Codex** jumps to the chat. |
+| Chat page | The outcome, next step, changed files, checks, decisions, and full timeline, with the chat's action button. |
 | Alerts | The tab title and favicon show the Needs you count. Desktop notifications are optional. |
+| App badge | Each row says whether the chat is from Codex, Claude, or Cursor. |
 | Quiet tag | A working chat silent for two minutes. It may be waiting on an approval or a long command. |
 | Check tags | **Check failed** when the latest check failed. **Edits unchecked** when code changed with no test or lint after it. |
-| Reminders | **Dismiss reminder** clears a chat from Needs you in this browser. It never answers anything in Codex. |
+| Reminders | **Dismiss reminder** clears a chat from Needs you in this browser. It never answers anything in the agent's app. |
 
 Recaps come from the agent's final answer:
 
@@ -107,8 +125,17 @@ older chats.
 
 - Recaps are only as good as the agent's final answer. Older chats and agents that skip the handoff
   lines usually show an unknown next step.
-- Codex does not log approval requests, so a chat blocked on one shows as Working, then Quiet. Quiet
-  never counts toward Needs you, because a long-running command looks the same.
+- Codex and Claude Code do not log approval requests, so a chat blocked on one shows as Working,
+  then Quiet. Quiet never counts toward Needs you, because a long-running command looks the same.
+  Cursor does report them: a Cursor chat waiting for approval moves into Needs you with
+  **Approve pending action in Cursor**, and leaves it once you approve.
+- Cursor transcripts record commands but not their results, so Cursor checks show no pass or fail,
+  and its timeline times are per turn, not per step. Only the latest turn end is exact.
+- Claude Code and Cursor have no chat deep link: Claude Code gets a resume command, and Cursor opens
+  the project folder rather than the chat itself.
+- Codex is the only app that gets the handoff plugin. Recaps for Claude Code and Cursor follow the
+  handoff format only if you ask the agent for it, for example with
+  [docs/agents-snippet.md](./docs/agents-snippet.md) in the project's agent instructions.
 
 ## Design
 
@@ -133,11 +160,12 @@ dashboards, and Google PAIR's guidance on showing when to trust an AI. The full 
 | Route | Returns |
 | --- | --- |
 | `GET /api/inbox` | Recent chats with status, outcome, next step, and check state |
-| `GET /api/threads/<id>` | Snapshot of one chat |
-| `GET /api/stream?thread=<id>` | Server-sent events when that chat changes; without `thread`, inbox events |
+| `GET /api/threads/<key>` | Snapshot of one chat. `<key>` is `codex:<id>`, `claude:<id>`, or `cursor:<id>`; a bare id means Codex |
+| `GET /api/stream?thread=<key>` | Server-sent events when that chat changes; without `thread`, inbox events |
 
 ```text
-src/yourturn/                 FastAPI server, rollout parser, and MCP server
+src/yourturn/                 FastAPI server, session engine, and MCP server
+src/yourturn/harness/         One adapter per app: Codex, Claude Code, Cursor
 src/yourturn/static/          Dashboard HTML, CSS tokens, and JavaScript
 plugin/                       Codex plugin: manifest, MCP config, your-turn-handoff skill
 tests/                        Parser and API tests

@@ -77,6 +77,13 @@
   --sidebar-width: 80px;
   --page-inset: 40px;
   --page-inset-end: 32px;
+  /* Inset system. Page gutters (above) place content; inside a control, text starts at
+     --inset-control and a trailing indicator (chevron, divider) sits --inset-indicator from the end.
+     An icon-only control at a content edge bleeds by --icon-bleed so its glyph, not its invisible
+     44px hit area, lines up with that edge. */
+  --inset-control: var(--space-4);
+  --inset-indicator: var(--space-3);
+  --icon-bleed: calc((var(--size-control) - var(--size-icon)) / 2);
   --hero-height: 284px;
   --hero-pinned: 72px;
   --content-inset: var(--space-6);

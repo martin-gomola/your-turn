@@ -116,9 +116,9 @@ SOFTWARE.
       <a class="segment" data-kind="new" href="/?status=new"><span class="segment-count">–</span><span class="segment-label">New results</span></a>
       <a class="segment" data-kind="earlier" href="/?status=earlier"><span class="segment-count">–</span><span class="segment-label">Earlier</span></a>
     </nav>
-    <div class="compact-filter"><label for="compact-status">Chats</label><select id="compact-status" aria-label="Filter chats by status"><option value="">All chats</option><option value="waiting">Needs you</option><option value="working">Working</option><option value="new">New results</option><option value="earlier">Earlier</option></select></div>
+    <div class="compact-filter"><label for="compact-status">Chats</label><span class="select-field"><select id="compact-status" aria-label="Filter chats by status"><option value="">All chats</option><option value="waiting">Needs you</option><option value="working">Working</option><option value="new">New results</option><option value="earlier">Earlier</option></select><svg class="select-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></span></div>
     </header>
-    <p class="empty card" id="inbox-empty" hidden>No Codex chats found in <code>~/.codex/sessions</code>. Start a chat in Codex and it appears here.</p>
+    <p class="empty card" id="inbox-empty" hidden>No agent chats found. Start a chat in Codex, Claude Code or Cursor and it appears here.</p>
     <p class="empty card" id="filter-empty" role="status" hidden></p>
     <div class="sections" id="sections"></div>
   </div>
@@ -203,7 +203,7 @@ SOFTWARE.
             <button type="button" class="chip" data-filter="key" aria-pressed="true">Key steps</button>
             <button type="button" class="chip" data-filter="all" aria-pressed="false">Everything</button>
           </div>
-          <p class="empty" id="timeline-empty">Activity appears as Codex works.</p>
+          <p class="empty" id="timeline-empty">Activity appears as the agent works.</p>
           <ol class="timeline" id="timeline"></ol>
         </details>
         <details class="list-row disclosure-row" id="tools-wrap">
@@ -237,13 +237,13 @@ SOFTWARE.
 </dialog>
 <dialog class="preferences-dialog" id="help" aria-labelledby="help-title">
   <header class="dialog-heading"><h2 id="help-title">Help</h2><button type="button" class="button" data-close-dialog>Close</button></header>
-  <p class="help-intro">Read chat recaps here. Choose <strong>Open in Codex</strong> to reply or take action.</p>
+  <p class="help-intro">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Copy resume command</strong>) to reply or take action.</p>
   <table class="help-statuses">
     <caption>Chat statuses</caption>
     <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
     <tbody>
       <tr><th scope="row">Needs you</th><td>A question or action is waiting for you.</td></tr>
-      <tr><th scope="row">Working</th><td>Codex is working.</td></tr>
+      <tr><th scope="row">Working</th><td>The agent is working.</td></tr>
       <tr><th scope="row">New results</th><td>Unseen results from the last 24 hours. Opening a recap marks it seen.</td></tr>
       <tr><th scope="row">Earlier</th><td>Other chats in this inbox, including dismissed reminders. Not a full history or archive.</td></tr>
     </tbody>
@@ -251,14 +251,14 @@ SOFTWARE.
   <div class="help-details">
     <details><summary>Reminders and quiet chats</summary>
       <p>Dismissing a reminder changes only this browser’s inbox. It does not answer a question or approve an action.</p>
-      <p>“Quiet” means no recent activity was recorded. A command may still be running, or Codex may be waiting for approval. It is a hint, not a separate status.</p>
+      <p>“Quiet” means no recent activity was recorded. A command may still be running, or the agent may be waiting for approval in its app. It is a hint, not a separate status. Cursor reports pending approvals, so a Cursor chat waiting for one is in Needs you instead.</p>
     </details>
     <details><summary>Included chats</summary>
       <p>Chats updated in the last {{HISTORY_DAYS}} days. Each section shows 10 chats at first; choose Load more to see the next 10. Sub-agent chats are omitted.</p>
     </details>
     <details><summary>Connection and privacy</summary>
       <p><strong>Live:</strong> receiving local updates. <strong>Reconnecting:</strong> check the local server with <code>make status</code>.</p>
-      <p>Your Turn reads <code>~/.codex/sessions</code> on this machine. It does not change those files or control agents.</p>
+      <p>Your Turn reads <code>~/.codex/sessions</code>, <code>~/.claude/projects</code>, <code>~/.cursor/projects</code> and Cursor’s <code>state.vscdb</code> (read-only) on this machine. It does not change those files or control agents.</p>
     </details>
   </div>
 </dialog>

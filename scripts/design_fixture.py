@@ -1,18 +1,18 @@
 """Serve the real app against disposable, synthetic design-review chats.
 
 Run: uv run python scripts/design_fixture.py --port 8788 [--full]
-Uses the same rollout fixtures as README captures; never reads real Codex chats.
+Uses the same fixtures as README captures, including the Claude Code and Cursor demo chats;
+never reads real chats.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import uvicorn
-from readme_screenshots import Chat
+from readme_screenshots import Chat, write_demo_homes
 
 from yourturn.app import create_app
 import yourturn.app as app_module
@@ -74,17 +74,14 @@ def main() -> None:
     if not args.full:
         app_module.Sessions = VisualSessions
     with TemporaryDirectory(prefix="your-turn-design-") as folder:
-        home = Path(folder)
         entries = chats(args.full, args.stress)
         if args.pagination:
             entries.extend(Chat(number, f"Completed task {number}", "demo-project", 4000 + number)
                            .ask("Review the task.").answer("**Outcome:** Review complete.\n\n**Next step:** none.")
                            for number in range(201, 225))
-        for chat in entries:
-            chat.write(home)
-        (home / "session_index.jsonl").write_text(
-            "".join(json.dumps({"id": chat.id, "thread_name": chat.title}) + "\n" for chat in entries), encoding="utf-8")
-        uvicorn.run(create_app(home), host="127.0.0.1", port=args.port, log_level="warning")
+        homes, _ = write_demo_homes(Path(folder), entries)
+        app = create_app(homes["codex"], claude_home=homes["claude"], cursor_home=homes["cursor"], cursor_user_dir=homes["cursor-user"])
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

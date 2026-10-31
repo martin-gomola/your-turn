@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 docs/design
 docs/verification.md
+# Added by code-review-graph
+.code-review-graph/

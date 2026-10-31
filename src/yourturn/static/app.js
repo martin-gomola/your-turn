@@ -25,7 +25,16 @@ const STATUS = {
   dismissed: { label: "Reminder dismissed", icon: "i-question" },
 };
 const SECTION_ICONS = { waiting: "i-message-question", working: "i-working", new: "i-answer", earlier: "i-turn" };
-const QUIET_HINT = "No activity recorded. It may be waiting for your approval in Codex, or running a long command.";
+const APP_NAME = { codex: "Codex", claude: "Claude Code", cursor: "Cursor" };
+
+// Where the user acts on a chat; older payloads without `harness` are Codex chats.
+function appName(chat) {
+  return APP_NAME[chat?.harness] || APP_NAME.codex;
+}
+
+function quietHint(chat) {
+  return `No activity recorded. It may be waiting for your approval in ${appName(chat)}, or running a long command.`;
+}
 const QUIET_NOTIFY_MS = 5 * 60 * 1000;
 const CHECK_TAGS = {
   failed: { label: "Check failed", className: "tag--interrupted" },
@@ -131,6 +140,17 @@ function chatName(chat) {
   return chat.title || `Untitled chat · ${chat.cwd.split("/").pop() || chat.id.slice(0, 8)}`;
 }
 
+// The full `<harness>:<id>` key routes any harness; older payloads only had the Codex id.
+function chatKey(chat) {
+  return chat.key || chat.id;
+}
+
+function isChat(chat, id) {
+  return id === chatKey(chat) || id === chat.id;
+}
+
+const HARNESS_LABEL = { codex: "Codex", claude: "Claude", cursor: "Cursor" };
+
 function projectName(chat) {
   return chat.project || chat.cwd.split("/").pop() || "Unassigned";
 }
@@ -195,11 +215,11 @@ function renderRow(chat) {
   const unread = isNewResult(chat);
   const item = el("li");
   const link = el("a", "row");
-  link.href = `/?thread=${encodeURIComponent(chat.id)}${inboxReturn}`;
+  link.href = `/?thread=${encodeURIComponent(chatKey(chat))}${inboxReturn}`;
   link.dataset.status = state;
-  link.dataset.id = chat.id;
+  link.dataset.id = chatKey(chat);
   link.dataset.unread = String(unread);
-  if (chat.id === openId) link.setAttribute("aria-current", "true");
+  if (isChat(chat, openId)) link.setAttribute("aria-current", "true");
   const glyph = el("span", "glyph");
   glyph.append(icon(status.icon));
   if (state === "working") syncSpin(glyph.querySelector("use"));
@@ -218,7 +238,7 @@ function renderRow(chat) {
   if (state === "working" && chat.quiet) {
     const quiet = el("span", "tag tag--waiting", `Quiet ${quietFor(chat)}`);
     quiet.dataset.quietAt = chat.updated_at;
-    quiet.title = QUIET_HINT;
+    quiet.title = quietHint(chat);
     meta.append(quiet);
   } else if (tag) meta.append(el("span", `tag tag--${state}`, tag));
   if (unread && sectionOf(chat) !== "new") meta.append(el("span", "tag tag--new", "New"));
@@ -230,6 +250,7 @@ function renderRow(chat) {
   body.append(description);
   if (state === "waiting" && chat.question && chat.options?.length) body.append(el("span", "row-options", chat.options.join(" · ")));
   const project = el("span", "row-project");
+  if (HARNESS_LABEL[chat.harness]) project.append(el("span", "harness-pill", HARNESS_LABEL[chat.harness]));
   project.append(el("span", "", projectName(chat)));
   project.title = projectName(chat);
   const chevron = icon("i-chevron");
@@ -358,7 +379,7 @@ function renderInbox(chats) {
   // once it has been shown open it stays open, so a new chat never folds the list under the reader.
   const foldable = !inboxStatus && shown.length > 1;
   if (!foldable && groups.get("earlier").length > 0 && !sectionOpen.has("earlier")) sectionOpen.set("earlier", true);
-  const openKey = shown.find(({ key }) => groups.get(key).some((chat) => chat.id === openId))?.key;
+  const openKey = shown.find(({ key }) => groups.get(key).some((chat) => isChat(chat, openId)))?.key;
   if (openKey && revealed !== `${openId}:${openKey}`) {
     revealed = `${openId}:${openKey}`;
     sectionOpen.set(openKey, true);
@@ -428,7 +449,7 @@ function alertOf(chat) {
   if (needsAttention(chat)) return { key: `need:${chat.attention_key || chat.turn_ended_at}`, title: `Needs you: ${chatName(chat)}`, body: chatSummary(chat) || "" };
   // Long builds also go quiet, so quiet chats notify later than they are tagged.
   if (chat.status === "working" && chat.quiet && Date.now() - new Date(chat.updated_at).getTime() > QUIET_NOTIFY_MS) {
-    return { key: `quiet:${chat.updated_at}`, title: `Quiet ${quietFor(chat)}: ${chatName(chat)}`, body: QUIET_HINT };
+    return { key: `quiet:${chat.updated_at}`, title: `Quiet ${quietFor(chat)}: ${chatName(chat)}`, body: quietHint(chat) };
   }
   return null;
 }
@@ -444,9 +465,9 @@ function notifyChanges(chats) {
         window.focus();
         notice.close();
         if (wideDetail.matches && !threadId) {
-          history.pushState(null, "", inboxUrl(inboxStatus, chat.id));
-          showPanel(chat.id);
-        } else location.assign(`/?thread=${encodeURIComponent(chat.id)}${inboxReturn}`);
+          history.pushState(null, "", inboxUrl(inboxStatus, chatKey(chat)));
+          showPanel(chatKey(chat));
+        } else location.assign(`/?thread=${encodeURIComponent(chatKey(chat))}${inboxReturn}`);
       };
     }
   }
@@ -469,6 +490,25 @@ async function copyThreadId() {
   }
 }
 $("copy-thread-id").addEventListener("click", copyThreadId);
+
+$("open-codex").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const command = button.dataset.copy;
+  if (!command) return;
+  event.preventDefault();
+  const text = button.firstChild;
+  try {
+    await navigator.clipboard.writeText(command);
+    button.dataset.copied = "true";
+    text.textContent = "Resume command copied";
+  } catch {
+    text.textContent = command;  // Shown so it can be selected and copied by hand.
+  }
+  setTimeout(() => {
+    delete button.dataset.copied;
+    if (button.dataset.copy === command) text.textContent = "Copy resume command";
+  }, 2000);
+});
 
 function renderSessionInfo(thread, turn) {
   if ($("session-thread-id").textContent !== thread.id) {
@@ -545,10 +585,21 @@ function renderStatus(thread, turn) {
   $("status-card").dataset.quiet = String(quiet);
   $("status-icon").setAttribute("href", `#${status.icon}`);
   if (state === "working") syncSpin($("status-icon"));
-  $("status-title").textContent = quiet ? "Working · quiet" : status.label;
+  // A waiting request says how long it has waited, so a fresh ask and a stale one read differently.
+  const waited = state === "waiting" ? ago(turn?.ended_at || thread.updated_at) : "";
+  $("status-title").textContent = quiet ? "Working · quiet" : waited && waited !== "just now" ? `${status.label} · ${waited}` : status.label;
   const failed = thread.status !== "working" && Boolean(turn?.checks.some((check) => check.exit_code !== null && check.exit_code !== 0));
-  $("open-codex").href = `codex://threads/${encodeURIComponent(thread.id)}`;
-  $("open-codex").hidden = false;
+  // Codex and Cursor open by deep link (Cursor: the project folder); Claude Code offers its resume command.
+  const resume = thread.harness === "claude" ? thread.handoff?.resume_command || "" : "";
+  const link = thread.harness === "cursor" ? thread.handoff?.open_uri || "" : `codex://threads/${encodeURIComponent(thread.id)}`;
+  const action = resume ? "Copy resume command" : `Open in ${appName(thread)}`;
+  // Keep "Resume command copied" visible until its timeout restores the label.
+  if (!$("open-codex").dataset.copied) $("open-codex").firstChild.textContent = action;
+  $("open-codex").dataset.copy = resume;
+  $("open-codex").href = resume ? "#" : link;
+  $("open-codex").setAttribute("aria-label", resume ? `${action}: ${resume}` : thread.harness === "cursor" ? "Open the project in Cursor" : "Open in Codex (full chat)");
+  $("open-codex").title = resume;
+  $("open-codex").hidden = !resume && !link;
   $("open-codex").dataset.emphasis = state === "waiting" || failed ? "" : "quiet";
   $("status-body").hidden = false;
 
@@ -578,9 +629,12 @@ function renderStatus(thread, turn) {
   }
   $("status-body").dataset.kind = kind;
   $("status-body").dataset.check = failed && (kind === "none" || kind === "unknown") ? "failed" : "";
-  const quietNote = quiet ? `No activity since ${clock(thread.updated_at)} (${ago(thread.updated_at)}). ${QUIET_HINT.replace(/^No activity recorded\. /, "")}` : "";
+  const quietNote = quiet ? `No activity since ${clock(thread.updated_at)} (${ago(thread.updated_at)}). ${quietHint(thread).replace(/^No activity recorded\. /, "")}` : "";
   $("quiet-note").hidden = !quiet;
   if ($("quiet-note").textContent !== quietNote) $("quiet-note").textContent = quietNote;
+  // One headline per request: drop the kind label when the request already starts with it
+  // ("Approve" above "Approve pending action in Cursor").
+  if (label && $("status-text").textContent.trim().toLowerCase().startsWith(label.toLowerCase())) label = "";
   $("next-kind").hidden = !label;
   $("next-kind").textContent = label;
   const options = pending && thread.status !== "working" ? pending.options : [];
@@ -592,7 +646,7 @@ function renderStatus(thread, turn) {
   $("reminder-toggle").setAttribute("aria-label", dismissed ? "Restore reminder" : "Dismiss reminder");
   $("reminder-toggle").title = dismissed ? "Restore reminder" : "Dismiss reminder (this browser only; does not answer the request)";
   $("reminder-icon").setAttribute("href", dismissed ? "#i-bell" : "#i-bell-off");
-  $("reminder-note").textContent = dismissed ? "Only in this browser. The request is still open in Codex." : "";
+  $("reminder-note").textContent = dismissed ? `Only in this browser. The request is still open in ${appName(thread)}.` : "";
 
   const outcome = thread.status === "working" ? "" : turn?.outcome || "";
   const recap = thread.turns.findLast((each) => each.recap)?.recap || "";
@@ -769,10 +823,12 @@ function relativePath(path, cwd) {
 function renderChanges(thread, turn) {
   const files = turn ? turn.files : [];
   const checks = turn ? turn.checks : [];
+  // Codex records exit codes; Claude Code only success or failure; Cursor records no results at all.
+  const exitCodes = thread.capabilities?.exit_codes !== false;
   let warning = "";
   if (turn && turn.edited_after_check) warning = "Files changed after the last check ran.";
   else if (files.length && !checks.length) warning = "No tests or linters ran after these edits.";
-  else if (checks.some((check) => check.exit_code === null)) warning = "Some checks have no recorded exit result.";
+  else if (checks.some((check) => check.exit_code === null)) warning = exitCodes ? "Some checks have no recorded exit result." : `${appName(thread)} doesn't record command results, so these checks show no outcome.`;
   $("checks-wrap").hidden = !warning && checks.length === 0;
   $("check-warning").hidden = !warning;
   $("check-warning-text").textContent = warning;
@@ -780,7 +836,9 @@ function renderChanges(thread, turn) {
     const state = check.exit_code === null ? "unknown" : check.exit_code === 0 ? "passed" : "failed";
     const item = el("li", "list-row check");
     item.dataset.state = state;
-    const result = state === "unknown" ? "Exit not reported" : state === "passed" ? "Passed" : `Failed (exit ${check.exit_code})`;
+    // Claude Code's 0/1 comes from is_error, not a real exit code, so it is not shown as one.
+    const failure = exitCodes ? `Failed (exit ${check.exit_code})` : "Failed";
+    const result = state === "unknown" ? (exitCodes ? "Exit not reported" : "Not recorded") : state === "passed" ? "Passed" : failure;
     item.append(icon(state === "unknown" ? "i-question" : state === "passed" ? "i-answer" : "i-alert"), commandCode(check.command), el("span", "check-result", result));
     return item;
   }));
@@ -824,20 +882,22 @@ function renderDecisions(thread) {
     item.dataset.record = record;
     const at = new Date(decision.at);
     const when = [decision.turn ? `Turn ${decision.turn}` : "", Number.isNaN(at.getTime()) ? "" : at.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })].filter(Boolean).join(" · ");
-    const answer = (decision.chosen || "").replace(/^#+\s*/, "") || "No answer text recorded.";
-    const question = el("p", "decision-question", decision.question);
-    question.title = decision.question;
+    const answer = (decision.chosen || "").replace(/^#+\s*/, "");
+    // Without answer text the question is the only information, so it leads instead of a placeholder.
+    const lead = el("p", "decision-answer-text", answer || decision.question);
+    const context = el("p", "decision-question", answer ? decision.question : `Answered in ${appName(thread)}; the answer was not recorded.`);
+    if (answer) context.title = decision.question;
     const meta = el("p", "decision-meta");
     meta.append(el("span", "decision-role", decision.source === "agent" ? "Agent" : "You"), ...(when ? [` · ${when}`] : []));
-    item.replaceChildren(el("p", "decision-answer-text", answer), question, ...(decision.reason ? [el("p", "reason", decision.reason)] : []), meta);
-    const alternatives = decision.options.filter((option) => option !== decision.chosen);
+    item.replaceChildren(lead, context, ...(decision.reason ? [el("p", "reason", decision.reason)] : []), meta);
+    const alternatives = answer ? decision.options.filter((option) => option !== decision.chosen) : decision.options;
     if (alternatives.length) {
       const disclosure = el("details", "decision-alternatives");
       disclosure.open = expanded;
       const summary = el("summary");
       const chevron = icon("i-chevron");
       chevron.classList.add("disclosure-chevron");
-      summary.append(el("span", "", `Other options (${alternatives.length})`), chevron);
+      summary.append(el("span", "", `${answer ? "Other options" : "Options"} (${alternatives.length})`), chevron);
       const options = el("ul", "decision-other-options");
       options.replaceChildren(...alternatives.map((option) => el("li", "", option)));
       disclosure.append(summary, options);
@@ -924,6 +984,26 @@ function renderTimeline(thread) {
   }));
 }
 
+// The chat header's meta row: fixed slots in a fixed order (agent, project, branch, last event),
+// each shown only when known, so every chat page reads the same way.
+function metaItems(thread) {
+  const items = [];
+  if (APP_NAME[thread.harness]) {
+    const pill = el("span", "harness-pill", appName(thread));
+    pill.title = `Chat from ${appName(thread)}`;
+    items.push(pill);
+  }
+  const item = (text, title) => {
+    const node = el("span", "meta-item", text);
+    if (title) node.title = title;
+    return node;
+  };
+  items.push(item(projectName(thread), thread.cwd));
+  if (thread.git_branch) items.push(item(thread.git_branch, "Recorded Git branch"));
+  items.push(item(ago(thread.updated_at), "Last recorded event"));
+  return items;
+}
+
 function renderThread(thread) {
   const title = threadId ? $("title") : $("panel-title");
   const openingPanel = !threadId && title.textContent === "Loading…";
@@ -949,8 +1029,7 @@ function renderThread(thread) {
   title.textContent = chatName(thread);
   if (threadId) document.title = `${chatName(thread)} · Your Turn`;
   subtitle.hidden = false;
-  subtitle.textContent = `${projectName(thread)} · ${ago(thread.updated_at)}`;
-  subtitle.title = `${thread.cwd} · last recorded event`;
+  subtitle.replaceChildren(...metaItems(thread));
   $("more").hidden = false;
   renderStatus(thread, turn);
   renderChanges(thread, turn);

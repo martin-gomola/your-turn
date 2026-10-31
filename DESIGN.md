@@ -5,10 +5,10 @@
 Active design contract, revised 2026-10-30. The approved architectural light/dark
 references replace the earlier iOS grouped-list and automatic kanban presentation.
 
-Your Turn helps an engineer who runs several Codex chats see which chats need them, what each
-one produced, and what to do next, then open that chat in Codex. It is a read-only local web page,
-usually open in a narrow browser window beside the Codex app. It is not a native app and has no
-Codex controls.
+Your Turn helps an engineer who runs several coding-agent chats (Codex, Claude Code, Cursor) see
+which chats need them, what each one produced, and what to do next, then act on that chat in its
+own app. It is a read-only local web page, usually open in a narrow browser window beside the
+agent's app. It is not a native app and has no agent controls.
 
 Agents are no longer the slow part of the loop; the person running them is. The inbox and chat page
 answer four questions in this order:
@@ -18,7 +18,7 @@ answer four questions in this order:
 | Notice | Does it need me? | Status, Needs you count, alerts |
 | Understand | What happened? | Recap, outcome, changed files |
 | Judge | Can I trust it? | Checks, Check failed, Edits unchecked |
-| Act | What do I do next? | Next step, Open in Codex |
+| Act | What do I do next? | Next step, the chat's action (Open in Codex, Copy resume command, Open in Cursor) |
 
 A feature belongs only if it shortens one of these steps. Controlling agents, and dashboards read
 for their own sake, are out of scope.
@@ -94,7 +94,7 @@ for their own sake, are out of scope.
   full chat page with its filter return scope preserved.
 - Detail content scrolls independently and stays top-aligned. Native dialogs take precedence over
   pane Escape handling. Gachapon animation and parallax remain deferred; scene composition stays steady.
-- The status card sizes to its complete content; the primary Open in Codex action must never be
+- The status card sizes to its complete content; the primary chat action must never be
   clipped by a grid track. Compact-list filters stay pinned, and row scroll margins account for them.
 - Working rows use their status or quiet label without generic per-item coaching text. Actual
   activity belongs in the opened chat; do not add invented progress just to fill a preview line.
@@ -112,19 +112,30 @@ for their own sake, are out of scope.
 ## Chat page
 
 - A sticky row with the back link on the left and the same live-state and theme group on the
-  right. Below it, a large title (the chat name)
-  and a subtitle with the project and the time of the last recorded event.
-- The status card comes first. Its header shows the status glyph and label and the "Open in Codex"
-  action. It is the only filled accent button on the page, and it is filled only when the chat
+  right. Below it, a large title (the chat name) and a meta row with fixed slots in a fixed order,
+  each shown only when known: the agent pill (Codex, Claude Code, Cursor; the same pill as inbox
+  rows, full app name here), project (full path on hover), recorded Git branch, and the time of the
+  last recorded event. Items align on the text baseline (not box center), so the smaller pill
+  text sits on the same line. Text slots are dot-separated with the dot trailing its item, so a wrapped
+  line never starts with a separator. New metadata joins this row as another slot. The wide-screen
+  pane header uses the same row.
+- The status card comes first. Its header shows the status glyph and label and the chat's action:
+  "Open in Codex" (deep link), "Copy resume command" for Claude Code (copies `claude --resume <id>`
+  and briefly confirms), or "Open in Cursor" (opens the project folder). It is the only filled accent button on the page, and it is filled only when the chat
   needs the user or a check failed; otherwise it is an outlined secondary link. Its body depends on state:
-  - Needs you: the action label and the request, with recorded options as a plain read-only list,
-    then the reminder control and its note ("Only affects this browser's inbox").
+  - Needs you: the title adds how long the request has waited ("Needs you · 12d ago"), so fresh and
+    stale requests read differently. Then the action label and the request, with recorded options as
+    a plain read-only list, then the reminder control and its note ("Only affects this browser's
+    inbox"). The action label is omitted when the request already starts with it, so one fact is
+    never stated twice ("Approve pending action in Cursor" needs no Approve label above it).
   - Working: this turn's latest recorded step, as its kind (Ran a command, Edited files, ...) and
     its source title, with commands in mono. The glyph rotates. A recorded command does not mean
     it is still running, and a new turn never shows the previous turn's step. When the chat is
     quiet, the title reads "Working · quiet", the label reads Quiet (in the needs-you color), and a
     note under the step gives the clock time and age of the last activity and says the chat may be
-    waiting for approval in Codex or running a long command.
+    waiting for approval in the chat's app (Codex, Claude Code, or Cursor) or running a long command.
+  - Approval (Cursor only, which reports it): the chat is in Needs you with the action label
+    Approve and "Approve pending action in Cursor"; it leaves Needs you when Cursor clears the flag.
   - Done: "No further action was requested", or "No next action was recorded" when the answer
     skipped the handoff format. When a check in the latest turn failed, either line adds ", but a
     check failed" in the danger color.
@@ -134,12 +145,17 @@ for their own sake, are out of scope.
 - Checks, as grouped rows: a warning row when files changed after the last check, when edits had no
   check, or when a check has no exit code; and one row per check with its command and Passed,
   Failed (exit N), or Exit not reported. A missing exit code is never shown as passed, failed, or
-  running.
+  running. Labels follow what the chat's app records (`capabilities` in the thread JSON): Claude
+  Code reports only success or failure, so its failures read Failed with no invented exit code;
+  Cursor records no results, so its checks read Not recorded under one note saying Cursor doesn't
+  record command results.
 - Commands and paths use mono and wrap. Command highlighting (executable, path, flag, string,
   operator) is a presentation hint, not shell parsing; every character stays selectable inert text.
 - Decisions, as grouped rows: the question, the recorded answer labelled Agent decision or Your
   answer, the optional reason, the recorded turn and local time when available, and a collapsed
-  Other options disclosure that must not resemble choice buttons. Three recent decisions show
+  Other options disclosure that must not resemble choice buttons. When the app recorded that a
+  question was answered but not the answer (Cursor), the question leads, the context line reads
+  "Answered in Cursor; the answer was not recorded.", and the disclosure lists all Options (n). Three recent decisions show
   directly; older ones sit behind a counted disclosure row. A pending question appears in the status
   card, not here.
 - What happened shows the latest `Recap:` (Chat so far) above the latest turn's outcome (Latest
@@ -171,6 +187,14 @@ layout, responsive adaptation and small optical adjustments. No UI framework or 
   Selected green ink is darker in light mode to meet contrast over its tinted surface.
 - Native system typography. Desktop display title 76px, row title20px/regular,
   preview/project/age18px, section heading24px. Narrow panes use smaller display sizes and 16px prose.
+- Insets come from named tokens, not one-off values. `--page-inset` / `--page-inset-end` place
+  content (40/32px desktop, 24px medium, 20px phone). Inside a control, text starts at
+  `--inset-control` (16px) and a trailing indicator (chevron, divider) sits `--inset-indicator`
+  (12px) from the end. An icon-only control at a content edge bleeds by `--icon-bleed` so its glyph,
+  not its invisible 44px hit area, lines up with that edge (theme toggle on desktop, menu button on
+  phones). Styled selects use `appearance: none` with a `.select-chevron` at `--inset-indicator`;
+  Load more is centered under its list; the sticky chat pane header has a hairline bottom edge so
+  content scrolls under a boundary.
 - Fine 1.5–1.8px outline icons on very pale role chips, thin separators, open inbox sections.
   Existing chat-detail cards/disclosures retain their readable grouping. No colored side stripes.
 - A theme-specific local WebP header scene maintains its original green/ivory/brass/glass
