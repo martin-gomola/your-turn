@@ -7,7 +7,7 @@ metadata:
 
 # Your Turn handoff
 
-The user triages several Codex chats at once in the Your Turn inbox, which reads these lines from
+The user triages many agent chats at once, across apps, in the Your Turn inbox, which reads these lines from
 your final answer. End every final answer with them, each on its own line, outside code blocks:
 
 - `**Outcome:** <one sentence: what is now true, or what you found>`

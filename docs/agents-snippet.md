@@ -10,7 +10,7 @@ The handoff is plain text, so the block below gives Your Turn everything the plu
 ```markdown
 ## Your Turn handoff
 
-I run several Codex chats at once and triage them in the Your Turn inbox. End every final answer
+I run many agent chats at once, across apps, and triage them in the Your Turn inbox. End every final answer
 with these lines, each on its own line, outside code blocks:
 
 **Outcome:** <one sentence: what is now true, or what you found>
