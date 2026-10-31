@@ -35,7 +35,7 @@ at a glance:
 </div>
 
 <details>
-<summary>Watch the triage flow (GIF)</summary>
+<summary>Watch the 12s triage flow (GIF)</summary>
 
 <img src="docs/images/demo.gif" width="800" alt="A working chat moves into Needs you when its question arrives, then opens beside the inbox with the question and an Open in Codex button">
 
@@ -46,35 +46,39 @@ at a glance:
 <img src="docs/images/in-codex.png" width="800" alt="Codex window with a chat on the left and Your Turn in the in-app browser on the right, showing the chat waiting for an answer and its passing check">
 
 Your Turn runs in any browser, but it works best right beside the agent you are driving. Open
-`http://127.0.0.1:8787` in the Codex in-app browser, or as a Simple Browser tab in Cursor.
+`http://127.0.0.1:8787` in the Codex in-app browser, or in a Simple Browser panel in Cursor or
+VS Code, and you never switch windows to see who needs you.
 
 ## Quickstart
 
 You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
 or Cursor.
 
-Start the inbox on [http://127.0.0.1:8787](http://127.0.0.1:8787):
+**1. Run the inbox**, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
 ```
 
-Optional, once: install the handoff skill.
+Your existing chats appear right away.
+
+**2. Set up agent discipline (recommended)**, once:
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 ```
 
-It sets up the `Outcome:` / `Next step:` / `Decision:` handoff for each installed agent, globally
-under `~`, and creates no file in your git repositories. Restart the agents afterwards. Your
-existing chats appear right away either way.
+It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds,
+only in your home folder (`~/.codex`, `~/.claude`, `~/.cursor`). It never creates a file in your
+git repositories. Restart the agents afterwards.
 
 ## Privacy and Design
 
 - **Local only.** The server binds `127.0.0.1`; nothing leaves your machine.
 - **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
   starts, answers, or approves anything.
-- **Only your chats.** Sub-agents, headless runs, and abandoned chats stay out of the inbox.
+- **Zero config.** No account and no setup file; it finds the chats you already have and leaves
+  out sub-agents, headless runs, and abandoned chats.
 
 Every feature has to shorten one of the three questions above; anything else stays out.
 
