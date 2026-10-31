@@ -33,6 +33,8 @@ from typing import Any
 from urllib.parse import quote
 
 from yourturn.harness.base import (
+    EventCursor,
+    HarnessAdapter,
     AgentMessage,
     ApprovalPending,
     CommandRun,
@@ -129,7 +131,7 @@ def _edited_paths(name: str, arguments: object) -> tuple[str, ...]:
 
 
 class CursorCursor(CodexCursor):
-    """Incremental reader over one Cursor agent transcript (implements `EventCursor`)."""
+    """Incremental reader over one Cursor agent transcript."""
 
     def __init__(
         self,
@@ -269,8 +271,8 @@ class CursorCursor(CodexCursor):
         return [ToolCall(ts=self._ts, name=name, arguments=text)]
 
 
-class HeaderCursor:
-    """A chat known only from its `composerHeaders` row (implements `EventCursor`).
+class HeaderCursor(EventCursor):
+    """A chat known only from its `composerHeaders` row.
 
     The header is a state, not a log, so every change replays the whole chat and bumps
     `truncations`, which makes the hub rebuild the chat from scratch.
@@ -338,8 +340,8 @@ def _branch(data: dict[str, Any]) -> str | None:
     return clip(latest["branchName"], 160) if latest else None
 
 
-class CursorAdapter:
-    """Finds Cursor agent transcripts and opens cursors on them (implements `HarnessAdapter`)."""
+class CursorAdapter(HarnessAdapter):
+    """Finds Cursor agent transcripts and opens cursors on them."""
 
     name: str = Harness.CURSOR.value
     capabilities: Capabilities = Capabilities(

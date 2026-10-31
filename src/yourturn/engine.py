@@ -800,7 +800,7 @@ class _Tracked:
         self.ref = ref
         self.cursor = cursor
         self.folder = folder
-        self.truncations = int(getattr(cursor, "truncations", 0))
+        self.truncations = cursor.truncations
 
 
 def _keyed(row: dict[str, Any], adapter: HarnessAdapter | None, ref: SessionRef) -> dict[str, Any]:
@@ -910,28 +910,22 @@ class SessionHub:
 
     def _track(self, adapter: HarnessAdapter, ref: SessionRef) -> _Tracked:
         cursor = adapter.open(ref)
-        skip = getattr(cursor, "skip_to_tail", None)
-        if self.tail_bytes is not None and callable(skip):
-            skip(self.tail_bytes)
+        if self.tail_bytes is not None:
+            cursor.skip_to_tail(self.tail_bytes)
         return _Tracked(adapter, ref, cursor, TurnFolder(ref))
 
     def _pump(self, tracked: _Tracked) -> None:
         events = tracked.cursor.read_new()
-        truncations = int(getattr(tracked.cursor, "truncations", 0))
-        if truncations != tracked.truncations:
+        if tracked.cursor.truncations != tracked.truncations:
             # The file shrank and the cursor replayed from the start: rebuild state.
-            tracked.truncations = truncations
+            tracked.truncations = tracked.cursor.truncations
             tracked.folder = TurnFolder(tracked.ref)
         if events:
             tracked.folder.fold_many(events)
-        project_of = getattr(tracked.adapter, "project", None)
-        if callable(project_of) and not tracked.folder.project:
-            tracked.folder.project = project_of(tracked.ref)
-        title_of = getattr(tracked.adapter, "title", None)
-        if callable(title_of):
-            title = title_of(tracked.ref)
-            if title:
-                tracked.folder.title = title
+        if not tracked.folder.project:
+            tracked.folder.project = tracked.adapter.project(tracked.ref)
+        if title := tracked.adapter.title(tracked.ref):
+            tracked.folder.title = title
 
     @staticmethod
     def _path_mtime(path: Path | None) -> int | None:
@@ -942,11 +936,9 @@ class SessionHub:
         except OSError:
             return None
 
-    @classmethod
-    def _mtime_ns(cls, tracked: _Tracked) -> int | None:
-        # Adapters whose sessions have no file of their own (header-only Cursor chats) report activity time.
-        mtime_of = getattr(tracked.adapter, "mtime_ns", None)
-        return mtime_of(tracked.ref) if callable(mtime_of) else cls._path_mtime(tracked.ref.path)
+    @staticmethod
+    def _mtime_ns(tracked: _Tracked) -> int | None:
+        return tracked.adapter.mtime_ns(tracked.ref)
 
     def refresh(self) -> list[SessionSnapshot]:
         with self._lock:
@@ -1078,8 +1070,7 @@ class SessionHub:
                 except OSError:
                     continue
                 # Adapters whose state lives outside the session file (Cursor approvals) add a token for it.
-                token_of = getattr(tracked.adapter, "state_token", None)
-                token = token_of(tracked.ref) if callable(token_of) else ""
+                token = tracked.adapter.state_token(tracked.ref)
                 parts.append(f"{tracked.ref.key}:{sig}:{token}:{is_quiet(tracked.folder._status(), sig[1])}")
         return "|".join(parts)
 

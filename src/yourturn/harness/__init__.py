@@ -1,4 +1,4 @@
-"""Harness adapters: normalized events and the protocols every session source implements."""
+"""Harness adapters: normalized events and the base classes every session source subclasses."""
 
 from yourturn.harness.base import (
     EVENT_TYPES,

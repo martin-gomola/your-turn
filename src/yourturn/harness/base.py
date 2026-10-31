@@ -1,4 +1,4 @@
-"""Normalized, harness-agnostic session events and the adapter protocols. No I/O here."""
+"""Normalized, harness-agnostic session events and the adapter base classes."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol, TypeAlias, runtime_checkable
+from typing import Any, TypeAlias
 
 from yourturn.model import Capabilities, Handoff, SessionRef
 
@@ -198,43 +198,74 @@ EVENT_TYPES: tuple[type, ...] = (
 )
 
 
-@runtime_checkable
-class EventCursor(Protocol):
-    """Incremental reader over one session source.
+class EventCursor:
+    """Incremental reader over one session source; each adapter's cursor subclasses it.
 
     `read_new()` returns only events appended since the previous call and must leave a
     partial trailing line unconsumed (it is picked up once complete). `offset` is the
     position (e.g. byte offset) just past the last fully consumed record.
     """
 
-    @property
-    def ref(self) -> SessionRef: ...
+    # Bumped whenever the source shrank and the cursor replayed it from the start; the hub then rebuilds the chat.
+    truncations: int = 0
 
     @property
-    def offset(self) -> int: ...
+    def ref(self) -> SessionRef:
+        raise NotImplementedError
 
-    def read_new(self) -> list[Event]: ...
+    @property
+    def offset(self) -> int:
+        raise NotImplementedError
+
+    def read_new(self) -> list[Event]:
+        raise NotImplementedError
 
     def reset(self) -> None:
         """Rewind to the start so the next `read_new()` replays everything."""
-        ...
+        raise NotImplementedError
+
+    def skip_to_tail(self, max_bytes: int) -> None:
+        """Before the first read, start `max_bytes` from the end. Sources with no file to skip ignore it."""
 
 
-@runtime_checkable
-class HarnessAdapter(Protocol):
-    """One harness (codex, claude, cursor): finds sessions, opens cursors, builds handoffs."""
+class HarnessAdapter:
+    """One harness (codex, claude, cursor): finds sessions, opens cursors, builds handoffs.
+
+    Every hook the hub calls is declared here; the defaults suit a session that is one file of its own.
+    """
 
     name: str
     capabilities: Capabilities
 
     def discover(self, root: Path | None = None) -> Iterable[SessionRef]:
         """Yield sessions under `root` (or the harness's default location)."""
-        ...
+        raise NotImplementedError
 
     def open(self, ref: SessionRef) -> EventCursor:
         """Return a fresh cursor positioned at the start of the session."""
-        ...
+        raise NotImplementedError
 
     def handoff(self, ref: SessionRef, cwd: str | None) -> Handoff:
         """Describe how to resume / open the session; pure, no process spawning."""
-        ...
+        raise NotImplementedError
+
+    def title(self, ref: SessionRef) -> str:
+        """The app's own chat title; "" keeps the title the session itself carries."""
+        return ""
+
+    def project(self, ref: SessionRef) -> str:
+        """The project name shown on the row: the working folder's name unless the app knows better."""
+        return Path(ref.cwd).name if ref.cwd else ""
+
+    def mtime_ns(self, ref: SessionRef) -> int | None:
+        """When the session last changed (None once it is gone): its file's modification time."""
+        if ref.path is None:
+            return None
+        try:
+            return ref.path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+    def state_token(self, ref: SessionRef) -> str:
+        """Changes when session state kept outside its file changes (Cursor approvals); "" when there is none."""
+        return ""

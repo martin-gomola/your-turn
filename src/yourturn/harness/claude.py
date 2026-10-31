@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from yourturn.harness.base import (
+    HarnessAdapter,
     AgentMessage,
     CommandRun,
     Event,
@@ -109,7 +110,7 @@ def _pending_label(name: str, arguments: dict[str, Any]) -> str:
 
 
 class ClaudeCursor(CodexCursor):
-    """Incremental reader over one Claude Code transcript (implements `EventCursor`)."""
+    """Incremental reader over one Claude Code transcript."""
 
     def __init__(self, ref: SessionRef) -> None:
         super().__init__(ref)
@@ -327,8 +328,8 @@ class ClaudeCursor(CodexCursor):
         ]
 
 
-class ClaudeAdapter:
-    """Finds Claude Code transcripts and opens cursors on them (implements `HarnessAdapter`)."""
+class ClaudeAdapter(HarnessAdapter):
+    """Finds Claude Code transcripts and opens cursors on them."""
 
     name: str = Harness.CLAUDE.value
     capabilities: Capabilities = Capabilities(

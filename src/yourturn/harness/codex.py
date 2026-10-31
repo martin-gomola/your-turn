@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from yourturn.harness.base import (
+    EventCursor,
+    HarnessAdapter,
     AgentMessage,
     CommandRun,
     ContextCompacted,
@@ -276,8 +278,8 @@ def parse_line(raw: bytes) -> dict[str, Any] | None:
 # --- Cursor --------------------------------------------------------------------------------------
 
 
-class CodexCursor:
-    """Byte-offset incremental reader over one rollout file (implements `EventCursor`).
+class CodexCursor(EventCursor):
+    """Byte-offset incremental reader over one rollout file.
 
     Other JSONL harnesses subclass it and override `_parse`, `_events` and `_head_events`.
     """
@@ -384,8 +386,8 @@ class CodexCursor:
 # --- Adapter -------------------------------------------------------------------------------------
 
 
-class CodexAdapter:
-    """Finds Codex rollouts and opens cursors on them (implements `HarnessAdapter`)."""
+class CodexAdapter(HarnessAdapter):
+    """Finds Codex rollouts and opens cursors on them."""
 
     name: str = Harness.CODEX.value
     capabilities: Capabilities = Capabilities(
