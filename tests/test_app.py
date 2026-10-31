@@ -194,7 +194,7 @@ def test_inbox_and_thread_serve_claude_next_to_codex(codex_home: Path, tmp_path:
     assert [entry["updated_at"] for entry in inbox] == sorted((entry["updated_at"] for entry in inbox), reverse=True)
     claude = rows[f"claude:{CLAUDE}"]
     assert (claude["harness"], claude["title"], claude["project"], claude["status"]) == ("claude", "Fix parser", "my-repo", "done")
-    assert claude["handoff"]["resume_command"] == f"claude --resume {CLAUDE}"
+    assert claude["handoff"]["resume_command"] == f"cd /work/my-repo && claude --resume {CLAUDE}"
     assert rows[f"codex:{THREAD}"]["handoff"]["resume_command"] == f"codex resume {THREAD}"
 
     response = app.get(f"/api/threads/claude:{CLAUDE}")

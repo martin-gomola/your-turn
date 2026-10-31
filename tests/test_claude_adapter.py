@@ -99,8 +99,12 @@ def test_discover_skips_subagents_and_sidechains(tmp_path: Path) -> None:
 
 def test_handoff_resumes_the_session(tmp_path: Path) -> None:
     ref = SessionRef(harness="claude", session_id=SID, cwd=CWD)
-    handoff = ClaudeAdapter(home=tmp_path).handoff(ref, None)
-    assert (handoff.resume_command, handoff.terminal_cwd) == (f"claude --resume {SID}", CWD)
+    adapter = ClaudeAdapter(home=tmp_path)
+    handoff = adapter.handoff(ref, None)
+    # Claude Code finds sessions per project, so the command resumes from the chat's own folder.
+    assert (handoff.resume_command, handoff.terminal_cwd) == (f"cd {CWD} && claude --resume {SID}", CWD)
+    assert adapter.handoff(ref, "/work/my repo").resume_command == f"cd '/work/my repo' && claude --resume {SID}"
+    assert adapter.handoff(SessionRef(harness="claude", session_id=SID), None).resume_command == f"claude --resume {SID}"
 
 
 # --- events --------------------------------------------------------------------------------------
@@ -250,7 +254,7 @@ def test_hub_registers_claude_next_to_codex(tmp_path: Path) -> None:
     (row,) = hub.inbox_dicts()
     assert (row["harness"], row["title"], row["status"]) == ("claude", "Fix parser", "done")
     detail = hub.detail_dict(SessionKey.parse(f"claude:{SID}"))
-    assert detail is not None and detail["handoff"]["resume_command"] == f"claude --resume {SID}"
+    assert detail is not None and detail["handoff"]["resume_command"] == f"cd {CWD} && claude --resume {SID}"
 
 
 def test_tool_call_without_a_result_is_reported_until_it_returns(tmp_path: Path) -> None:

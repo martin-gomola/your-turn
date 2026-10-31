@@ -143,4 +143,5 @@ def test_cli_install_exits_after_setup(tmp_path: Path, no_clis: Path, capsys: py
     claude = tmp_path / "claude"
     main(["install", "--harness", "claude", "--claude-home", str(claude)])  # Returns instead of serving.
     assert (claude / "skills" / "your-turn" / "SKILL.md").is_file()
-    assert capsys.readouterr().out.endswith("Start the inbox with: your-turn serve\n")
+    # Run through uvx, `your-turn` is not on PATH, so the hint is the full command.
+    assert capsys.readouterr().out.endswith("Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")

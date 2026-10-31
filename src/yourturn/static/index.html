@@ -163,7 +163,7 @@ SOFTWARE.
     </section>
 
     <section class="group" id="outcome-wrap" aria-labelledby="outcome-title" hidden>
-      <h2 class="group-title" id="outcome-title"><span class="tone" data-tone="accent"><svg aria-hidden="true"><use href="#i-message"/></svg></span>What happened<span class="recap-label" id="outcome-source" title="The agent gave no Outcome line, so this is the first paragraph of its last message." hidden>From last message</span></h2>
+      <h2 class="group-title" id="outcome-title"><span class="tone" data-tone="accent"><svg aria-hidden="true"><use href="#i-message"/></svg></span>What happened<span class="recap-label" id="outcome-source" title="The agent gave no Outcome line, so this is the first paragraph of its last message. Run your-turn install for exact recaps." hidden>From last message</span></h2>
       <div class="card outcome-card" id="outcome-card">
         <div class="recap" id="recap-wrap" hidden>
           <p class="recap-label">Chat so far</p>
@@ -267,6 +267,9 @@ SOFTWARE.
     <details><summary>Reminders and quiet chats</summary>
       <p>Dismissing a reminder hides it in every Your Turn tab, in any browser. It does not answer a question or approve an action.</p>
       <p>“Quiet” means no recent activity was recorded. A command may still be running, or the agent may be waiting for approval in its app. It is a hint, not a separate status. Cursor reports pending approvals, so a Cursor chat waiting for one is in Needs you instead.</p>
+    </details>
+    <details><summary>Exact recaps</summary>
+      <p>Run <code>your-turn install</code> once so Codex, Claude Code and Cursor end each answer with an Outcome, a Next step and their Decisions. Until then, a recap is the first paragraph of the agent’s last message, marked “From last message”.</p>
     </details>
     <details><summary>Included chats</summary>
       <p>Chats updated in the last {{HISTORY_DAYS}} days. Each section shows 10 chats at first; choose Load more to see the next 10. Sub-agent chats are omitted.</p>

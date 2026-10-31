@@ -1,18 +1,25 @@
-"""`yourturn serve` runs the dashboard; `yourturn install` sets up the handoff for every agent app
-found (globally, never in a project) and exits; `yourturn uninstall` removes it."""
+"""`your-turn` (or `your-turn serve`) runs the dashboard; `your-turn install` sets up the handoff for every
+agent app found (globally, never in a project) and exits; `your-turn uninstall` removes it."""
 
 from __future__ import annotations
 
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from yourturn.install import APPS, detect, install, uninstall
 
+SERVE = "uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve"
+
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="yourturn")
+    argv = sys.argv[1:] if argv is None else argv
+    # No subcommand, or only serve options: serve.
+    if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help")):
+        argv = ["serve", *argv]
+    parser = argparse.ArgumentParser(prog="your-turn")
     commands = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (("serve", "Run the dashboard on localhost"),
                             ("install", "Set up the handoff for Codex, Claude Code and Cursor"),
@@ -41,7 +48,7 @@ def main(argv: list[str] | None = None) -> None:
         except subprocess.CalledProcessError as error:
             parser.exit(1, f"Plugin install failed: {' '.join(error.cmd)}\n")
         if args.command == "install":
-            print("\n→ Start the inbox with: your-turn serve", flush=True)
+            print(f"\n→ Start the inbox with: {SERVE}", flush=True)
         return
 
     import uvicorn

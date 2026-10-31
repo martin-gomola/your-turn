@@ -125,3 +125,7 @@ def test_handoff_lines_inside_code_blocks_are_ignored() -> None:
     text = "**Outcome:** Docs updated.\n**Next step:** none\n\n```\n**Next step:** review: the example\n**Recap:** example\n```"
     assert parse_answer(text) == ("Docs updated.", "none", "", True)
     assert parse_recap(text) == ""
+
+
+def test_markdown_links_keep_only_their_text() -> None:
+    assert parse_answer("Updated [routes/web.md](routes/web.md) and ![shot](docs/a.png).")[0] == "Updated routes/web.md and shot."

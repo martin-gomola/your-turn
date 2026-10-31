@@ -16,6 +16,7 @@ QUIET_SECONDS = 120
 DOC_SUFFIXES = (".md", ".mdx", ".rst", ".txt")
 ACTION_KINDS = {"answer", "review", "approve", "run", "decide", "do"}
 MARKDOWN_EMPHASIS = re.compile(r"\*\*|__|`")
+MARKDOWN_LINK = re.compile(r"!?\[([^\]]*)\]\([^)\s]*\)")
 ANSWER_LABEL = re.compile(
     # The leading class must not match newlines: with MULTILINE, `\s` there is quadratic on blank lines.
     r"^[ \t#>*_-]*(outcome|result|next step|your next step|next|recap)[*_\s]*:[*_\s]*(.*)$", re.IGNORECASE | re.MULTILINE
@@ -48,7 +49,7 @@ ALTERNATIVES = re.compile(r"\s*(?:,|\bor\b)\s*")
 
 
 def normalize_text(text: str) -> str:
-    return " ".join(MARKDOWN_EMPHASIS.sub("", text).split())
+    return " ".join(MARKDOWN_EMPHASIS.sub("", MARKDOWN_LINK.sub(r"\1", text)).split())
 
 
 def clip(text: str, limit: int = MAX_TEXT) -> str:

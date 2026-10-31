@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from yourturn.cli import main
 from yourturn.install import install_plugin
 
 
@@ -36,3 +37,20 @@ def test_install_reuses_existing_marketplace(tmp_path: Path, monkeypatch: pytest
 def test_install_without_codex_still_lets_the_inbox_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path))
     assert not install_plugin()
+
+
+@pytest.mark.parametrize("argv", [[], ["--port", "9000"], ["serve", "--port", "9000"]])
+def test_no_subcommand_serves(argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import uvicorn
+
+    ports: list[int] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: ports.append(port))
+    main(argv)
+    assert ports == [9000 if argv else 8787]
+    assert "Your Turn on http://127.0.0.1:" in capsys.readouterr().out
+
+
+def test_usage_names_the_your_turn_command(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        main(["nope"])
+    assert capsys.readouterr().err.startswith("usage: your-turn ")
