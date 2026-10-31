@@ -99,7 +99,8 @@ calls in older transcripts still read as decisions.
 - A Needs you row shows the request in full-strength text, and a pending question adds its recorded
   options as one muted read-only line, so the choice is visible without opening the chat.
   Normal rows are 72px minimum. Desktop previews use one line; narrow attention previews use two,
-  and the full request remains available in the chat. Small screens move project/age below the title.
+  and the full request remains available in the chat. Small screens move project and age below the
+  title together in one row; long project names truncate in the available space.
 - Preserve Answer/Run/Review, quiet, new, failure and unchecked tags; no data is inferred from titles
   just to imitate a gear/flask/bug glyph in a generated mockup. Semantic status/action icons are honest.
 - Opening a finished result updates seen state and all filter counts immediately, including cross-tab

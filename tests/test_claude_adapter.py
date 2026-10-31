@@ -103,8 +103,11 @@ def test_handoff_resumes_the_session(tmp_path: Path) -> None:
     handoff = adapter.handoff(ref, None)
     # Claude Code finds sessions per project, so the command resumes from the chat's own folder.
     assert (handoff.resume_command, handoff.terminal_cwd) == (f"cd {CWD} && claude --resume {SID}", CWD)
+    assert handoff.open_uri == "claude://code/new?folder=%2Fwork%2Fmy-repo"
     assert adapter.handoff(ref, "/work/my repo").resume_command == f"cd '/work/my repo' && claude --resume {SID}"
+    assert adapter.handoff(ref, "/work/my repo").open_uri == "claude://code/new?folder=%2Fwork%2Fmy%20repo"
     assert adapter.handoff(SessionRef(harness="claude", session_id=SID), None).resume_command == f"claude --resume {SID}"
+    assert adapter.handoff(SessionRef(harness="claude", session_id=SID), None).open_uri == "claude://code/new"
 
 
 # --- events --------------------------------------------------------------------------------------

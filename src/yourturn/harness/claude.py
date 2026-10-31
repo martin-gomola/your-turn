@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shlex
+from urllib.parse import quote
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -380,7 +381,8 @@ class ClaudeAdapter(HarnessAdapter):
         where = cwd or ref.cwd
         # Claude Code finds sessions per project, so resume from the chat's own folder.
         resume = f"claude --resume {ref.session_id}"
-        return Handoff(resume_command=f"cd {shlex.quote(where)} && {resume}" if where else resume, open_path=where, terminal_cwd=where)
+        open_uri = f"claude://code/new?folder={quote(where, safe='')}" if where else "claude://code/new"
+        return Handoff(resume_command=f"cd {shlex.quote(where)} && {resume}" if where else resume, open_path=where, open_uri=open_uri, terminal_cwd=where)
 
     @staticmethod
     def project(ref: SessionRef) -> str:

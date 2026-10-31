@@ -203,14 +203,14 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 [data-status="waiting"] #status-title { color: var(--color-waiting); }
 [data-status="working"] #status-title { color: var(--color-working); }
 [data-status="interrupted"] #status-title { color: var(--color-danger); }
-.open-codex {
+.open-codex, .open-claude-desktop {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-height: var(--size-control); padding-inline: var(--inset-control);
   border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-accent); box-shadow: var(--edge);
   font-weight: var(--weight-semibold); text-decoration: none;
 }
-.open-codex:active { opacity: 0.8; }
-.open-codex:hover { background: var(--color-fill); color: var(--color-nav-selected); }
+.open-codex:active, .open-claude-desktop:active { opacity: 0.8; }
+.open-codex:hover, .open-claude-desktop:hover { background: var(--color-fill); color: var(--color-nav-selected); }
 .status-body { display: grid; gap: var(--space-2); min-width: 0; }
 .status-kind, .recap-label { color: var(--color-text-muted); font-size: var(--text-label); font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: 0.02em; }
 [data-status="waiting"] .status-kind, [data-quiet="true"] .status-kind, .quiet-note { color: var(--color-waiting); }
@@ -224,7 +224,7 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 .status-steps { display: grid; gap: var(--space-2); margin: 0; padding-inline-start: var(--space-6); list-style: decimal; }
 .status-steps li { padding-inline-start: var(--space-1); }
 /* At this card width, keeping the action inline can wrap the status title. */
-@container (max-width: 64rem) { .status-head > .open-codex { flex: 1 1 100%; } }
+@container (max-width: 64rem) { .status-head > .open-codex, .status-head > .open-claude-desktop { flex: 1 1 100%; } }
 .status-text .command { display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--color-fill); }
 .options { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); list-style: disc; overflow-wrap: anywhere; }
 .button {
@@ -686,7 +686,7 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   .hero-title { top: 16px; right: var(--page-inset); }
   .hero-title h1 { max-width: calc(100% - 164px); font-size: clamp(24px, 7vw, 40px); white-space: normal; }
   .sections { gap: var(--space-5); padding-top: var(--space-4); }
-  .row { grid-template-columns: 36px minmax(0, 1fr) 18px; gap: var(--space-2) var(--space-3); padding: var(--space-3) 0; }
+  .row { grid-template-columns: 36px minmax(0, 1fr) auto 18px; gap: var(--space-2) var(--space-3); padding: var(--space-3) 0; }
   .row > .glyph { width: 36px; height: 36px; grid-column: 1; grid-row: 1; }
   .row > .glyph svg { width: 22px; height: 22px; }
   .row-body { grid-column: 2; grid-row: 1; }
@@ -694,9 +694,9 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   .row-description { flex-wrap: wrap; }
   .row-tags { max-width: none; }
   .row-text { -webkit-line-clamp: 2; }
-  .row-project { grid-column: 2 / -1; grid-row: 2; padding-right: 76px; font-size: 13px; }
-  .row-time { grid-column: 2 / -1; grid-row: 2; justify-self: end; font-size: 13px; text-align: right; }
-  .row-chevron { grid-column: 3; grid-row: 1; }
+  .row-project { grid-column: 2; grid-row: 2; font-size: 13px; }
+  .row-time { grid-column: 3 / 5; grid-row: 2; justify-self: end; font-size: 13px; text-align: right; }
+  .row-chevron { grid-column: 4; grid-row: 1; }
   .show-all { font-size: 13px; padding-inline: var(--space-2); }
   .connection { padding-inline: var(--space-1); }
 }

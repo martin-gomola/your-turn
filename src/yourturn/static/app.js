@@ -675,9 +675,10 @@ function renderStatus(thread, turn) {
   const waited = state === "waiting" ? ago(turn?.ended_at || thread.updated_at) : "";
   $("status-title").textContent = quiet ? "Working · quiet" : waited && waited !== "just now" ? `${status.label} · ${waited}` : status.label;
   const failed = thread.status !== "working" && Boolean(turn?.checks.some((check) => check.exit_code !== null && check.exit_code !== 0));
-  // Codex and Cursor open by deep link (Cursor: the project folder); Claude Code offers its resume command.
+  // Claude keeps its terminal resume command and can also start a new Code session in Desktop.
   const resume = thread.harness === "claude" ? thread.handoff?.resume_command || "" : "";
   const link = thread.harness === "cursor" ? thread.handoff?.open_uri || "" : `codex://threads/${encodeURIComponent(thread.id)}`;
+  const desktopLink = thread.harness === "claude" ? thread.handoff?.open_uri || "" : "";
   const action = resume ? "Copy resume command" : `Open in ${appName(thread)}`;
   // Keep "Resume command copied" visible until its timeout restores the label.
   if (!$("open-codex").dataset.copied) $("open-codex").firstChild.textContent = action;
@@ -687,6 +688,8 @@ function renderStatus(thread, turn) {
   $("open-codex").title = resume;
   $("open-codex").hidden = !resume && !link;
   $("open-action-icon").setAttribute("href", resume ? "#i-copy" : "#i-external");
+  $("open-claude-desktop").href = desktopLink || "claude://code/new";
+  $("open-claude-desktop").hidden = !desktopLink;
   $("status-body").hidden = false;
 
   const pending = [...thread.decisions].reverse().find((d) => d.source === "asked" && d.chosen === null);
