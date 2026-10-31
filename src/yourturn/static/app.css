@@ -592,6 +592,7 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
    Appearance previews on the live inbox; narrower desktops overlay the page edge; phones cover it. */
 .aside-panel { position: fixed; z-index: 4; inset: 0 var(--sidebar-width) 0 auto; width: 380px; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-2) var(--content-inset) var(--content-inset); color: var(--color-text); background: var(--color-sidebar); border-left: 1px solid var(--color-separator); }
 @media (min-width: 1280px) { body[data-aside] { --aside-width: 380px; } }
+@media (min-width: 1280px) { body[data-aside="help"] { --aside-width: 560px; } }
 @media (min-width: 960px) and (max-width: 1279px) { .aside-panel { box-shadow: var(--dialog-shadow); } }
 @media (max-width: 959px) {
   .aside-panel { inset: 0; width: auto; z-index: 6; }
@@ -612,6 +613,7 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
 .setting-title svg { width: 22px; height: 22px; stroke-width: 1.8; }
 .notification-setting .button { justify-self: start; border: 1px solid var(--color-separator); }
 .button:disabled { color: var(--color-text-muted); cursor: not-allowed; }
+@media (min-width: 960px) { #help { width: 560px; } }
 #help { font-size: var(--text-md); line-height: 1.5; }
 .help-intro { margin-bottom: var(--space-5); color: var(--color-text-muted); }
 .help-intro strong { color: var(--color-text); }
