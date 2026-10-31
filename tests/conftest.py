@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from yourturn.engine import TurnFolder
+from yourturn.harness.codex import record_to_events
+from yourturn.model import SessionRef
+
 THREAD = "0d3e1000-0000-7000-8000-000000000001"
 OTHER = "0d3e1000-0000-7000-8000-000000000002"
 SUBAGENT = "0d3e1000-0000-7000-8000-000000000003"
@@ -47,6 +51,16 @@ RECORDS = [
     event("2026-10-27T10:03:12Z", {"type": "token_count", "info": {"last_token_usage": {"total_tokens": 250}, "model_context_window": 1000}}),
     event("2026-10-27T10:03:12Z", {"type": "task_complete", "turn_id": "t1", "duration_ms": 7000}),
 ]
+
+
+class Parser:
+    """Folds raw Codex records into a `TurnFolder`, the way the Codex adapter's cursor does."""
+
+    def __init__(self, thread_id: str = THREAD) -> None:
+        self.state = TurnFolder(SessionRef(harness="codex", session_id=thread_id))
+
+    def feed(self, record: dict) -> None:
+        self.state.fold_many(record_to_events(record))
 
 
 def write_rollout(codex_home: Path, thread_id: str, records: list[dict], day: str = "2026/10/27") -> Path:

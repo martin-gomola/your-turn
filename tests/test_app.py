@@ -10,9 +10,9 @@ import pytest
 from conftest import OTHER, SUBAGENT, THREAD, command, edit, event, item, meta, write_rollout
 from fastapi.testclient import TestClient
 
-from yourturn import rollout
 from yourturn.app import create_app
-from yourturn.rollout import QUIET_SECONDS, Sessions
+from yourturn.engine import SessionHub
+from yourturn.heuristics import QUIET_SECONDS
 
 
 def client(codex_home: Path) -> TestClient:
@@ -47,16 +47,16 @@ def test_needs_you_is_computed_server_side(codex_home: Path) -> None:
 
 def test_working_chat_turns_quiet_when_its_file_stops_changing(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_rollout(codex_home, OTHER, [meta(OTHER), event("2026-10-27T10:00:00Z", {"type": "task_started"})])
-    sessions = Sessions(codex_home)
-    assert {entry["id"]: entry["quiet"] for entry in sessions.inbox()} == {THREAD: False, OTHER: False}
+    sessions = SessionHub.for_codex_home(codex_home)
+    assert {entry["id"]: entry["quiet"] for entry in sessions.inbox_dicts()} == {THREAD: False, OTHER: False}
     before = sessions.inbox_fingerprint()
 
     later = time.time() + QUIET_SECONDS + 1
-    monkeypatch.setattr(rollout.time, "time", lambda: later)
+    monkeypatch.setattr(time, "time", lambda: later)
     assert sessions.inbox_fingerprint() != before, "turning quiet must reach the live inbox without a file write"
-    assert {entry["id"]: entry["quiet"] for entry in sessions.inbox()} == {THREAD: False, OTHER: True}, "a finished chat is never quiet"
-    assert sessions.snapshot(OTHER)["quiet"] is True
-    assert sessions.snapshot(THREAD)["quiet"] is False
+    assert {entry["id"]: entry["quiet"] for entry in sessions.inbox_dicts()} == {THREAD: False, OTHER: True}, "a finished chat is never quiet"
+    assert sessions.detail_dict(OTHER)["quiet"] is True
+    assert sessions.detail_dict(THREAD)["quiet"] is False
 
 
 def test_inbox_reports_failed_and_unchecked_turns(codex_home: Path) -> None:

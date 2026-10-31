@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from conftest import Parser
 
 from yourturn.heuristics import check_state, check_status, is_check_command, parse_answer, parse_decisions, parse_recap
 from yourturn.model import Check, CheckState, Harness, SessionKey, Turn
-from yourturn.rollout import RolloutParser
 
 UUID = "019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
 
@@ -34,7 +34,7 @@ def test_check_status(value: Turn | None, expected: CheckState, legacy: str) -> 
 
 
 def test_readme_edit_after_passing_check_keeps_it_passed() -> None:
-    parser = RolloutParser(UUID)
+    parser = Parser(UUID)
 
     def item(payload: dict) -> None:
         parser.feed({"timestamp": "t", "type": "event_msg", "payload": {"type": "item_completed", "item": payload}})

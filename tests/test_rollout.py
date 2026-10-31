@@ -11,6 +11,7 @@ import pytest
 from conftest import (
     OTHER,
     RECORDS,
+    Parser,
     SUBAGENT,
     THREAD,
     append,
@@ -22,11 +23,12 @@ from conftest import (
     write_rollout,
 )
 
-from yourturn.rollout import RolloutParser, RolloutTail, Sessions, parse_answer, parse_recap
+from yourturn.engine import RolloutTail, SessionHub
+from yourturn.heuristics import parse_answer, parse_recap
 
 
 def test_folds_a_turn_into_a_summary_steps_and_decisions(codex_home: Path) -> None:
-    state = Sessions(codex_home).state(THREAD)
+    state = SessionHub.for_codex_home(codex_home).state(THREAD)
 
     assert state is not None
     assert (state.title, state.cwd, state.status, state.subagent) == ("Fix login", "/w/repo", "waiting", False)
@@ -46,7 +48,7 @@ def test_folds_a_turn_into_a_summary_steps_and_decisions(codex_home: Path) -> No
 
 
 def test_later_check_clears_the_stale_flag_and_formatted_answer_sets_next_step(codex_home: Path) -> None:
-    sessions = Sessions(codex_home)
+    sessions = SessionHub.for_codex_home(codex_home)
     path = sessions.find(THREAD)
     assert path is not None and sessions.state(THREAD) is not None
     reply = '<send_user_message_question_reply>\n[{"question":"Ship now?","answer":"Yes"}]\n</send_user_message_question_reply>'
@@ -133,20 +135,20 @@ def test_parse_recap() -> None:
 def test_inbox_skips_subagents_and_reads_only_the_tail(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_rollout(codex_home, SUBAGENT, [meta(SUBAGENT, {"subagent": {"other": "guardian"}})], day="2026/10/28")
     write_rollout(codex_home, OTHER, [meta(OTHER), event("2026-10-28T09:00:00Z", {"type": "task_started"})], day="2026/10/28")
-    sessions = Sessions(codex_home, scan_ttl=0)
+    sessions = SessionHub.for_codex_home(codex_home, scan_ttl=0)
 
-    inbox = {entry["id"]: entry for entry in sessions.inbox()}
+    inbox = {entry["id"]: entry for entry in sessions.inbox_dicts()}
     assert set(inbox) == {THREAD, OTHER}
     assert (inbox[THREAD]["status"], inbox[THREAD]["question"], inbox[THREAD]["title"]) == ("waiting", "Ship now?", "Fix login")
     assert inbox[THREAD]["options"] == ["Yes", "No"]
     assert inbox[OTHER]["status"] == "working"
 
-    monkeypatch.setattr("yourturn.rollout.INBOX_TAIL_BYTES", 200)
+    monkeypatch.setattr(sessions, "tail_bytes", 200)
     path = sessions.find(THREAD)
     assert path is not None
     append(path, event("2026-10-27T10:05:00Z", {"type": "task_started"}))
-    assert {entry["id"]: entry for entry in sessions.inbox()}[THREAD]["status"] == "working"
-    assert {entry["id"]: entry for entry in sessions.inbox()}[THREAD]["cwd"] == "/w/repo"
+    assert {entry["id"]: entry for entry in sessions.inbox_dicts()}[THREAD]["status"] == "working"
+    assert {entry["id"]: entry for entry in sessions.inbox_dicts()}[THREAD]["cwd"] == "/w/repo"
 
 
 def test_inbox_uses_one_history_window_for_all_statuses(codex_home: Path) -> None:
@@ -159,14 +161,14 @@ def test_inbox_uses_one_history_window_for_all_statuses(codex_home: Path) -> Non
                       (4 * 86400, paths[ids[2]]), (5 * 86400, paths[ids[3]]), (20 * 86400, stale_waiting)]:
         os.utime(path, (now - age, now - age))
 
-    inbox = [entry["id"] for entry in Sessions(codex_home, scan_ttl=0).inbox(history_days=4)]
+    inbox = [entry["id"] for entry in SessionHub.for_codex_home(codex_home, scan_ttl=0).inbox_dicts(history_days=4)]
     assert inbox == [ids[0], ids[1], THREAD]
-    assert len(Sessions(codex_home).inbox(history_days=14)) == 5
-    assert len(Sessions(codex_home).inbox(history_days=30)) == 6
+    assert len(SessionHub.for_codex_home(codex_home).inbox_dicts(history_days=14)) == 5
+    assert len(SessionHub.for_codex_home(codex_home).inbox_dicts(history_days=30)) == 6
 
 
 def test_attention_identity_survives_usage_updates_and_tail_reads(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    sessions = Sessions(codex_home, scan_ttl=0)
+    sessions = SessionHub.for_codex_home(codex_home, scan_ttl=0)
     state = sessions.state(THREAD)
     assert state is not None
     key = state.attention_key
@@ -174,28 +176,28 @@ def test_attention_identity_survives_usage_updates_and_tail_reads(codex_home: Pa
     path = sessions.find(THREAD)
     assert path is not None
     append(path, event("2026-10-27T10:05:00Z", {"type": "token_count", "info": {"total_token_usage": {"total_tokens": 999}}}))
-    monkeypatch.setattr("yourturn.rollout.INBOX_TAIL_BYTES", 2000)
-    assert sessions.inbox()[0]["attention_key"] == key
+    monkeypatch.setattr(sessions, "tail_bytes", 2000)
+    assert sessions.inbox_dicts()[0]["attention_key"] == key
     assert sessions.state(THREAD).attention_key == key
 
 
 def test_new_request_gets_new_identity_even_with_identical_text(codex_home: Path) -> None:
-    sessions = Sessions(codex_home, scan_ttl=0)
-    old = sessions.inbox()[0]["attention_key"]
+    sessions = SessionHub.for_codex_home(codex_home, scan_ttl=0)
+    old = sessions.inbox_dicts()[0]["attention_key"]
     path = sessions.find(THREAD)
     assert path is not None
     append(path, event("2026-10-27T10:06:00Z", {"type": "task_started"}))
-    assert sessions.inbox()[0]["attention_key"] == ""
+    assert sessions.inbox_dicts()[0]["attention_key"] == ""
     append(path,
            item("2026-10-27T10:06:01Z", {"type": "AgentMessage", "questions": [{"title": "Ship now?", "options": ["Yes", "No"]}]}),
            event("2026-10-27T10:06:02Z", {"type": "task_complete"}))
-    new = sessions.inbox()[0]["attention_key"]
+    new = sessions.inbox_dicts()[0]["attention_key"]
     assert new and new != old
     assert sessions.state(THREAD).attention_key == new
 
 
 def test_final_action_identity_tracks_full_request_not_clipped_preview() -> None:
-    parser = RolloutParser(THREAD)
+    parser = Parser(THREAD)
     prefix = "Outcome: Done\nNext step: review: " + "a" * 400
     parser.feed(item("2026-10-27T10:06:01Z", {"type": "AgentMessage", "phase": "final_answer", "content": [{"text": prefix + "one"}]}))
     old = parser.state.attention_key
@@ -206,7 +208,7 @@ def test_final_action_identity_tracks_full_request_not_clipped_preview() -> None
 
 
 def test_reports_latest_usage_snapshot_without_double_counting(codex_home: Path) -> None:
-    sessions = Sessions(codex_home)
+    sessions = SessionHub.for_codex_home(codex_home)
     path = sessions.find(THREAD)
     assert path is not None
     append(
@@ -230,7 +232,7 @@ def test_reports_latest_usage_snapshot_without_double_counting(codex_home: Path)
 
 
 def test_usage_and_session_metadata_ignore_malformed_values() -> None:
-    parser = RolloutParser(THREAD)
+    parser = Parser(THREAD)
     parser.feed({"type": "session_meta", "payload": {"cwd": "/w/repo", "model_provider": "fixture-provider", "cli_version": "1.2.3", "git": {"branch": "feature/telemetry"}}})
     for info in (None, [], {"total_token_usage": [1], "last_token_usage": "invalid", "model_context_window": "unknown"}):
         parser.feed(event("2026-10-27T10:08:00Z", {"type": "token_count", "info": info}))
@@ -248,7 +250,7 @@ def test_usage_and_session_metadata_ignore_malformed_values() -> None:
 
 
 def test_malformed_records_are_skipped_without_losing_later_lines(codex_home: Path) -> None:
-    sessions = Sessions(codex_home)
+    sessions = SessionHub.for_codex_home(codex_home)
     path = sessions.find(THREAD)
     assert path is not None and sessions.state(THREAD) is not None
     reply = '<send_user_message_question_reply>["yes"]</send_user_message_question_reply>'
@@ -267,7 +269,7 @@ def test_malformed_records_are_skipped_without_losing_later_lines(codex_home: Pa
 
 def test_concurrent_reads_feed_each_record_once(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = write_rollout(codex_home, OTHER, [meta(OTHER)])
-    sessions = Sessions(codex_home)
+    sessions = SessionHub.for_codex_home(codex_home)
     assert sessions.state(OTHER) is not None
     append(path, *[command("2026-10-27T10:04:00Z", "ls", 0) for _ in range(20000)])
     original_read, active, overlaps = RolloutTail.read, [], []
@@ -293,7 +295,7 @@ def test_concurrent_reads_feed_each_record_once(codex_home: Path, monkeypatch: p
 
 
 def test_superseded_turn_is_closed_as_interrupted() -> None:
-    parser = RolloutParser(THREAD)
+    parser = Parser(THREAD)
     parser.feed(event("2026-10-27T10:11:00Z", {"type": "task_started"}))
     parser.feed(event("2026-10-27T10:12:00Z", {"type": "task_started"}))
     first, second = parser.state.turns
@@ -302,7 +304,7 @@ def test_superseded_turn_is_closed_as_interrupted() -> None:
 
 
 def test_rewritten_shorter_file_is_reparsed_from_the_start(codex_home: Path) -> None:
-    sessions = Sessions(codex_home)
+    sessions = SessionHub.for_codex_home(codex_home)
     path = sessions.find(THREAD)
     assert path is not None and sessions.state(THREAD) is not None
     path.write_text(json.dumps(meta(THREAD)) + "\n" + json.dumps(event("2026-10-27T11:00:00Z", {"type": "task_started"})) + "\n")
@@ -324,7 +326,7 @@ def test_tail_skips_the_partial_first_line_and_waits_for_a_complete_last_line(tm
 
 
 def test_aborted_turn_is_interrupted() -> None:
-    parser = RolloutParser(THREAD)
+    parser = Parser(THREAD)
     parser.feed(event("2026-10-27T10:00:00Z", {"type": "task_started"}))
     parser.feed(event("2026-10-27T10:00:05Z", {"type": "turn_aborted", "reason": "user"}))
     (turn,) = parser.state.turns
@@ -333,19 +335,19 @@ def test_aborted_turn_is_interrupted() -> None:
 
 
 def test_rejects_non_thread_ids(codex_home: Path) -> None:
-    sessions = Sessions(codex_home)
+    sessions = SessionHub.for_codex_home(codex_home)
     assert sessions.find("../../etc/passwd") is None
     assert sessions.find("*") is None
 
 
 def test_history_expiry_updates_inbox_and_stream_marker(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    sessions = Sessions(codex_home, scan_ttl=0)
+    sessions = SessionHub.for_codex_home(codex_home, scan_ttl=0)
     now = time.time()
-    monkeypatch.setattr("yourturn.rollout.time.time", lambda: now)
+    monkeypatch.setattr(time, "time", lambda: now)
     before = sessions.inbox_fingerprint(1)
-    assert sessions.inbox(1)
-    monkeypatch.setattr("yourturn.rollout.time.time", lambda: now + 2 * 86400)
-    assert sessions.inbox(1) == []
+    assert sessions.inbox_dicts(1)
+    monkeypatch.setattr(time, "time", lambda: now + 2 * 86400)
+    assert sessions.inbox_dicts(1) == []
     assert sessions.inbox_fingerprint(1) != before
 
 
@@ -353,4 +355,4 @@ def test_inbox_has_no_hidden_thirty_chat_cap(codex_home: Path) -> None:
     for number in range(31):
         thread = f"0d3e9999-0000-7000-8000-{number:012x}"
         write_rollout(codex_home, thread, [meta(thread), event("2026-10-27T10:00:00Z", {"type": "task_started"})])
-    assert len(Sessions(codex_home).inbox()) == 32
+    assert len(SessionHub.for_codex_home(codex_home).inbox_dicts()) == 32

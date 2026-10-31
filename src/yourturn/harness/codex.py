@@ -2,7 +2,7 @@
 
 Read-only: files under the Codex home are only ever opened in binary read mode. No subprocesses,
 no network. The record shapes and helpers here are the single source of truth for Codex rollout
-parsing; `yourturn.rollout` imports them back.
+parsing.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from yourturn.harness.base import (
 from yourturn.heuristics import clip as _clip
 from yourturn.model import Capabilities, Handoff, Harness, SessionRef
 
-# --- Shared Codex rollout knowledge (re-exported by yourturn.rollout) ---------------------------
+# --- Shared Codex rollout knowledge -------------------------------------------------------------
 
 ROLLOUT_GLOB = "*/*/*/rollout-*.jsonl"
 DECISION_TOOL = "log_decision"

@@ -16,7 +16,6 @@ from yourturn.engine import SessionHub, TurnFolder
 from yourturn.harness.codex import DECISION_TOOL, CodexAdapter, record_to_events
 from yourturn.heuristics import QUIET_SECONDS
 from yourturn.model import SessionKey, SessionRef
-from yourturn.rollout import Sessions
 
 SID = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b"
 SID_B = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5c"
@@ -451,17 +450,6 @@ def test_detail_dict_keeps_full_long_decision_answer(tmp_path: Path) -> None:
 
     assert data is not None
     assert data["decisions"][0]["chosen"] == " ".join(chosen.split())
-
-
-def test_sessions_facade_returns_hub_dicts(tmp_path: Path) -> None:
-    _rich_home(tmp_path)
-    hub = SessionHub.for_codex_home(tmp_path, scan_ttl=0)
-    sessions = Sessions(tmp_path, scan_ttl=0)
-    assert sessions.inbox() == hub.inbox_dicts()
-    assert sessions.snapshot(SID) == hub.detail_dict(SID)
-    assert sessions.state(SID) is not None and sessions.state(SID).version == len(_rich_records())
-    # Both have read the inbox above, so both know which chats are quiet.
-    assert sessions.inbox_fingerprint() == hub.inbox_fingerprint()
 
 
 def test_api_json_equals_hub_dicts(tmp_path: Path) -> None:
