@@ -46,8 +46,8 @@ A working chat silent for two minutes gets the **Quiet** tag. It may be waiting 
 long command, so Quiet never counts as Needs you. For Claude Code, its tooltip names the call still
 waiting, such as `Bash: make deploy`.
 
-**Dismiss reminder** clears a chat from Needs you in this browser. It never answers anything in the
-agent's app.
+**Dismiss reminder** clears a chat from Needs you in every Your Turn tab, in any browser. It never
+answers anything in the agent's app.
 
 ## Check tags
 

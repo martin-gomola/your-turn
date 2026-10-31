@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import urlsplit
 from collections.abc import AsyncIterator, Callable
 from importlib.resources import files
 from pathlib import Path
@@ -17,6 +18,7 @@ from yourturn import __version__
 from yourturn.config import DEFAULT_HISTORY_DAYS
 from yourturn.engine import SessionHub
 from yourturn.model import UUID, Harness, SessionKey
+from yourturn.state import InboxState
 
 LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
 POLL_SECONDS = 1.0
@@ -35,11 +37,12 @@ def _static(name: str) -> str:
 def create_app(
     codex_home: Path, poll_seconds: float = POLL_SECONDS, should_stop: Callable[[], bool] = lambda: False,
     history_days: int = DEFAULT_HISTORY_DAYS, claude_home: Path | None = None,
-    cursor_home: Path | None = None, cursor_user_dir: Path | None = None,
+    cursor_home: Path | None = None, cursor_user_dir: Path | None = None, state_path: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Your Turn", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=LOOPBACK_HOSTS)
     hub = SessionHub.for_codex_home(codex_home, claude_home=claude_home, cursor_home=cursor_home, cursor_user_dir=cursor_user_dir)
+    state = InboxState(state_path) if state_path else InboxState()
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -90,6 +93,29 @@ def create_app(
             raise HTTPException(status_code=404, detail="no session file for this thread")
         return data
 
+    @app.post("/api/state", status_code=204)
+    async def write_state(request: Request) -> None:
+        """Mark results seen or reminders dismissed for every browser; streams push the change to the others."""
+        # JSON from this page only: a cross-site form cannot send JSON, and a cross-site fetch carries its Origin.
+        origin = request.headers.get("origin")
+        if not request.headers.get("content-type", "").startswith("application/json") or (
+                origin and urlsplit(origin).hostname not in {"127.0.0.1", "localhost", "::1"}):
+            raise HTTPException(status_code=403)
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(status_code=400) from None
+
+        def entries(name: str, nullable: bool) -> dict[str, Any]:
+            values = body.get(name) or {} if isinstance(body, dict) else None
+            if not isinstance(values, dict) or not all(isinstance(v, str) or (nullable and v is None) for v in values.values()):
+                raise HTTPException(status_code=400, detail=f"{name} must map chat keys to strings")
+            return {str(checked(key)): value for key, value in values.items()}
+
+        seen, dismissed = entries("seen", False), entries("dismissed", True)
+        keep = {row["key"] for row in await asyncio.to_thread(hub.inbox_dicts, history_days)}
+        await asyncio.to_thread(state.update, seen, dismissed, keep)
+
     @app.get("/api/stream")
     async def stream(request: Request, thread: str | None = None) -> StreamingResponse:
         key: SessionKey | None = checked(thread) if thread else None
@@ -106,8 +132,11 @@ def create_app(
             return marker, hub.inbox_dicts(history_days) if marker != last else None
 
         async def events() -> AsyncIterator[str]:
-            last, idle = None, 0.0
+            last, idle, shared = None, 0.0, -1
             while not should_stop() and not await request.is_disconnected():
+                if state.version != shared:
+                    shared = state.version
+                    yield f"event: state\ndata: {json.dumps(state.snapshot())}\n\n"
                 marker, data = await asyncio.to_thread(current, last)
                 if marker != last:
                     last, idle = marker, 0.0

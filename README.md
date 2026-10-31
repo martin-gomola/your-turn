@@ -77,7 +77,8 @@ Your existing chats appear right away. Skipping step 1 works too, with guessed r
 
 - **Local only.** The server binds `127.0.0.1`; nothing leaves your machine.
 - **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
-  starts, answers, or approves anything.
+  starts, answers, or approves anything. Its only file is `~/.your-turn/state.json`, which keeps
+  seen results and dismissed reminders in sync across browsers.
 - **Zero config.** No account and no setup file; it finds the chats you already have and leaves
   out sub-agents, headless runs, and abandoned chats.
 

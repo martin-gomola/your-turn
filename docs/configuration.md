@@ -37,6 +37,12 @@ history_days = 14
 The inbox shows chats whose session file changed in that many days. Direct chat links still open
 older chats.
 
+### State file
+
+`~/.your-turn/state.json` keeps which results you have seen and which reminders you dismissed, so
+every browser and tab shows the same inbox. It is the only file Your Turn writes. Entries for chats
+that leave the inbox are dropped; deleting the file marks recent results unread again.
+
 ## What `install` sets up
 
 Everything goes into your own app folders, never into a project, so no repository gains a file or

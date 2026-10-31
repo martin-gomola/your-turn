@@ -92,8 +92,9 @@ def test_stream_sends_the_current_inbox_first(codex_home: Path) -> None:
 
     with app.stream("GET", "/api/stream") as response:
         body = response.read().decode()
-    head, data = body.split("\n", 2)[:2]
-    assert head == "event: inbox"
+    # The shared state comes first, so the first inbox already shows dismissed reminders.
+    head, data = body.split("\n\n", 1)[1].split("\n", 2)[:2]
+    assert body.startswith("event: state\n") and head == "event: inbox"
     assert [entry["id"] for entry in json.loads(data.removeprefix("data: "))] == [THREAD]
 
 
@@ -184,4 +185,4 @@ def test_inbox_and_thread_serve_claude_next_to_codex(codex_home: Path, tmp_path:
 
     with app.stream("GET", f"/api/stream?thread=claude:{CLAUDE}") as stream:
         body = "".join(stream.iter_text())
-    assert body.startswith("event: thread\n") and f'"key": "claude:{CLAUDE}"' in body
+    assert body.split("\n\n", 1)[1].startswith("event: thread\n") and f'"key": "claude:{CLAUDE}"' in body

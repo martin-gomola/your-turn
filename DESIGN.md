@@ -156,8 +156,8 @@ calls in older transcripts still read as decisions.
   Its body depends on state:
   - Needs you: the title adds how long the request has waited ("Needs you · 12d ago"), so fresh and
     stale requests read differently. Then the action label and the request, with recorded options as
-    a plain read-only list, then the reminder control and its note ("Only affects this browser's
-    inbox"). Numbered "Next steps for you" text appears as an ordered list; other request text stays
+    a plain read-only list, then the reminder control and its note ("Hidden in every Your Turn
+    tab"). Numbered "Next steps for you" text appears as an ordered list; other request text stays
     as written. The action label is omitted when the request already starts with it, so one fact is
     never stated twice ("Approve pending action in Cursor" needs no Approve label above it).
   - Working: this turn's latest recorded step, as its kind (Ran a command, Edited files, ...) and

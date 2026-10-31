@@ -161,12 +161,33 @@ function projectName(chat) {
   return chat.project || chat.cwd.split("/").pop() || "Unassigned";
 }
 
+// Seen results and dismissed reminders live on the server, so every browser shows the same inbox.
+const shared = { seen: {}, dismissed: {} };
+function saveShared(change) {
+  for (const [name, values] of Object.entries(change)) Object.assign(shared[name], values);
+  fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) })
+    .catch(() => {});
+}
 const seen = {
-  get: (id) => readPreference(`seen:${id}`) || "",
-  set: (id, endedAt) => {
-    try { if (endedAt) localStorage.setItem(`seen:${id}`, endedAt); } catch { /* Keep results unread if storage is unavailable. */ }
-  },
+  get: (key) => shared.seen[key] || "",
+  set: (key, endedAt) => { if (endedAt) saveShared({ seen: { [key]: endedAt } }); },
 };
+
+// One-time move of the per-browser marks older versions kept in localStorage.
+function migrateLocalMarks(chats) {
+  let keys;
+  try { keys = Object.keys(localStorage).filter((key) => key.startsWith("seen:") || key.startsWith("reminder:v1:")); } catch { return; }
+  if (!keys.length) return;
+  const change = { seen: {}, dismissed: {} };
+  for (const chat of chats) {
+    const seenAt = readPreference(`seen:${chat.id}`);
+    const dismissed = readPreference(`reminder:v1:${chat.id}`);
+    if (seenAt) change.seen[chatKey(chat)] = seenAt;
+    if (dismissed) change.dismissed[chatKey(chat)] = dismissed;
+  }
+  for (const key of keys) try { localStorage.removeItem(key); } catch { /* Retried on the next inbox. */ }
+  saveShared(change);
+}
 
 function setConnection(state, text) {
   $("connection").dataset.state = state;
@@ -178,6 +199,10 @@ function connect(url, event, render) {
   source.onopen = () => setConnection("live", "Live");
   source.onerror = () => setConnection("offline", "Reconnecting");
   source.addEventListener(event, (message) => render(JSON.parse(message.data)));
+  source.addEventListener("state", (message) => {
+    Object.assign(shared, JSON.parse(message.data));
+    renderShared();
+  });
   return source;
 }
 
@@ -193,7 +218,7 @@ function hasAttention(chat) {
 
 function reminderDismissed(chat) {
   if (!chat.attention_key) return false;
-  return readPreference(`reminder:v1:${chat.id}`) === chat.attention_key;
+  return shared.dismissed[chatKey(chat)] === chat.attention_key;
 }
 
 function attentionState(chat) {
@@ -202,7 +227,7 @@ function attentionState(chat) {
 
 function isNewResult(chat) {
   const ended = new Date(chat.turn_ended_at).getTime();
-  return !hasAttention(chat) && chat.status !== "working" && chat.status !== "interrupted" && Date.now() - ended < NEW_WINDOW_MS && chat.turn_ended_at > seen.get(chat.id);
+  return !hasAttention(chat) && chat.status !== "working" && chat.status !== "interrupted" && Date.now() - ended < NEW_WINDOW_MS && chat.turn_ended_at > seen.get(chatKey(chat));
 }
 
 function sectionOf(chat) {
@@ -371,6 +396,7 @@ function transition(update, { rows = true } = {}) {
 }
 
 function liveInbox(chats) {
+  migrateLocalMarks(chats);
   notifyChanges(chats);
   if (inboxLayout && layoutOf(groupChats(chats)) !== inboxLayout) transition(() => renderInbox(chats));
   else renderInbox(chats);
@@ -697,9 +723,9 @@ function renderStatus(thread, turn) {
   $("reminder-toggle").hidden = !hasAttention(chat) || !thread.attention_key;
   const dismissed = reminderDismissed(chat);
   $("reminder-toggle").setAttribute("aria-label", dismissed ? "Restore reminder" : "Dismiss reminder");
-  $("reminder-toggle").title = dismissed ? "Restore reminder" : "Dismiss reminder (this browser only; does not answer the request)";
+  $("reminder-toggle").title = dismissed ? "Restore reminder" : "Dismiss reminder (does not answer the request)";
   $("reminder-icon").setAttribute("href", dismissed ? "#i-bell" : "#i-bell-off");
-  $("reminder-note").textContent = dismissed ? `Only in this browser. The request is still open in ${appName(thread)}.` : "";
+  $("reminder-note").textContent = dismissed ? `Hidden in every Your Turn tab. The request is still open in ${appName(thread)}.` : "";
 
   const outcome = thread.status === "working" ? "" : turn?.outcome || "";
   const recap = thread.turns.findLast((each) => each.recap)?.recap || "";
@@ -715,16 +741,8 @@ function renderStatus(thread, turn) {
 
 $("reminder-toggle").addEventListener("click", () => {
   if (!threadData || !threadData.attention_key) return;
-  try {
-    const key = `reminder:v1:${threadData.id}`;
-    if (reminderDismissed(threadData)) localStorage.removeItem(key);
-    else localStorage.setItem(key, threadData.attention_key);
-    renderThread(threadData);
-    if (inboxData) renderInbox(inboxData);
-    if (attentionData) { syncNavigation(attentionData); setFavicon(attentionData.some(needsAttention)); }
-  } catch {
-    $("reminder-note").textContent = "Could not save this preference. The reminder remains active.";
-  }
+  saveShared({ dismissed: { [chatKey(threadData)]: reminderDismissed(threadData) ? null : threadData.attention_key } });
+  renderShared();
 });
 
 function syncThemeToggle() {
@@ -857,13 +875,11 @@ if (!threadId) for (const theme of ["light", "dark"]) {
   art.decode().catch(() => {});
 }
 
-window.addEventListener("storage", (event) => {
-  if (event.key === null || event.key.startsWith("reminder:v1:") || event.key.startsWith("seen:")) {
-    if (threadData) renderThread(threadData);
-    if (inboxData) renderInbox(inboxData);
-    if (attentionData) { syncNavigation(attentionData); setFavicon(attentionData.some(needsAttention)); }
-  }
-});
+function renderShared() {
+  if (threadData) renderThread(threadData);
+  if (inboxData) renderInbox(inboxData);
+  if (attentionData) { syncNavigation(attentionData); setFavicon(attentionData.some(needsAttention)); }
+}
 
 function commandCode(command) {
   const code = el("code", "command");
@@ -1259,8 +1275,8 @@ function renderThread(thread) {
   renderTimeline(thread);
   renderToolUsage(thread);
   renderSessionInfo(thread, turn);
-  if (turn?.ended_at && seen.get(thread.id) !== turn.ended_at) {
-    seen.set(thread.id, turn.ended_at);
+  if (turn?.ended_at && seen.get(chatKey(thread)) < turn.ended_at) {
+    seen.set(chatKey(thread), turn.ended_at);
     if (inboxData) renderInbox(inboxData);
     else if (attentionData) syncNavigation(attentionData);
   }
