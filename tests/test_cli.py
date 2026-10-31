@@ -47,7 +47,22 @@ def test_no_subcommand_serves(argv: list[str], monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: ports.append(port))
     main(argv)
     assert ports == [9000 if argv else 8787]
-    assert "Your Turn on http://127.0.0.1:" in capsys.readouterr().out
+    assert "Starting Your Turn at http://127.0.0.1:" in capsys.readouterr().out
+
+
+def test_serve_explains_startup_failure(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import uvicorn
+
+    def fail_to_start(*args: object, **kwargs: object) -> None:
+        raise SystemExit(3)
+
+    monkeypatch.setattr(uvicorn, "run", fail_to_start)
+    with pytest.raises(SystemExit):
+        main(["serve"])
+
+    error = capsys.readouterr().err
+    assert "If it is already running, open http://127.0.0.1:8787" in error
+    assert "your-turn serve --port 8788" in error
 
 
 def test_usage_names_the_your_turn_command(capsys: pytest.CaptureFixture[str]) -> None:

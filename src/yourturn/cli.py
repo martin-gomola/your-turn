@@ -62,6 +62,16 @@ def main(argv: list[str] | None = None) -> None:
     except (OSError, ValueError) as error:
         parser.error(f"Cannot read Your Turn config: {error}")
 
-    print(f"Your Turn on http://127.0.0.1:{args.port}. It runs in this terminal until you press Ctrl+C.", flush=True)
-    uvicorn.run(create_app(args.codex_home, history_days=history_days, claude_home=args.claude_home,
-                           cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir), host="127.0.0.1", port=args.port, log_level="warning")
+    print(f"Starting Your Turn at http://127.0.0.1:{args.port}. Press Ctrl+C to stop it.", flush=True)
+    try:
+        uvicorn.run(create_app(args.codex_home, history_days=history_days, claude_home=args.claude_home,
+                               cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir),
+                    host="127.0.0.1", port=args.port, log_level="warning")
+    except SystemExit as error:
+        if error.code not in (None, 0):
+            print(
+                f"Could not start Your Turn. If it is already running, open http://127.0.0.1:{args.port} "
+                f"in your browser. Otherwise, try another port: your-turn serve --port 8788.",
+                file=sys.stderr,
+            )
+        raise

@@ -1,11 +1,12 @@
-# Handoff format without the plugin
+# Handoff format without automatic setup
 
-The `your-turn` plugin ships a skill that asks Codex to end every final answer with `Outcome`
-and `Next step` lines, plus a `Recap` line from the second turn on. If you do not want to install
-the plugin, paste the block below into an `AGENTS.md` file instead. Use `~/.codex/AGENTS.md` for
-all chats, or a repo's `AGENTS.md` for chats in that repo.
+Your Turn supports Codex, Claude Code, and Cursor. `your-turn install` adds the handoff instructions
+to each app in its native way. If you want to set them up yourself, paste the block below into an
+instruction file that your agent reads, such as `~/.codex/AGENTS.md` for Codex or a repository's
+applicable instruction file.
 
-The handoff is plain text, so the block below gives Your Turn everything the plugin does.
+The handoff is plain text; Your Turn reads it from the agent's final answer to build recaps and find
+next steps.
 
 ```markdown
 ## Your Turn handoff
