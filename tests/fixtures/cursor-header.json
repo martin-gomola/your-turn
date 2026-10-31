@@ -1,0 +1,44 @@
+{
+  "type": "head",
+  "composerId": "9f1c2b3a-0000-4000-8000-00000000c5a0",
+  "name": "Add fetch retry",
+  "lastUpdatedAt": 1793440800000,
+  "conversationCheckpointLastUpdatedAt": 1793440800000,
+  "createdAt": 1793440700000,
+  "unifiedMode": "agent",
+  "forceMode": "edit",
+  "hasUnreadMessages": false,
+  "totalLinesAdded": 4,
+  "totalLinesRemoved": 1,
+  "filesChangedCount": 1,
+  "subtitle": "Edited fetch.py",
+  "hasBlockingPendingActions": false,
+  "hasPendingPlan": false,
+  "isDraft": false,
+  "isWorktree": false,
+  "isSpec": false,
+  "isProject": false,
+  "isBestOfNSubcomposer": false,
+  "numSubComposers": 0,
+  "referencedPlans": [],
+  "trackedGitRepos": [
+    {
+      "branches": [
+        {
+          "branchName": "feat/retry",
+          "lastInteractionAt": 1793440800000
+        }
+      ]
+    }
+  ],
+  "workspaceIdentifier": {
+    "id": "w1",
+    "uri": {
+      "$mid": 1,
+      "fsPath": "/work/demo",
+      "external": "file:///work/demo",
+      "path": "/work/demo",
+      "scheme": "file"
+    }
+  }
+}

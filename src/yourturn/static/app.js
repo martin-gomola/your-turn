@@ -708,6 +708,7 @@ function renderStatus(thread, turn) {
   $("recap-wrap").hidden = !recap;
   $("outcome-label").hidden = !recap || !outcome;
   $("outcome-latest").hidden = !outcome;
+  $("outcome-source").hidden = !outcome || turn.formatted;
   if ($("recap").textContent !== recap) $("recap").textContent = recap;
   if ($("outcome").textContent !== outcome) $("outcome").textContent = outcome;
 }
