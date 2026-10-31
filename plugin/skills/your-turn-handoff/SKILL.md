@@ -1,59 +1,65 @@
 ---
 name: your-turn-handoff
-description: End every turn with the Your Turn handoff (Outcome and Next step lines), run checks after your last code edit, and record real choices as Decision lines. Use for every task in Codex, so the user can see at a glance what happened and what they need to do.
+description: End every final answer with the Your Turn handoff (Outcome and Next step lines, plus Decision lines for real trade-offs), and run checks after your last code edit. Use for every task in Codex, so the user sees at a glance what happened and what they need to do.
 metadata:
   version: "0.2.0"
 ---
 
 # Your Turn handoff
 
-The user runs several Codex chats at once and reads the Your Turn inbox to answer four questions
-about each one: does it need me, what happened, can I trust it, and what do I do next. The inbox
-shows two lines from your final answer, so start every final answer with them:
+The user triages several Codex chats at once in the Your Turn inbox, which reads these lines from
+your final answer. End every final answer with them, each on its own line, outside code blocks:
 
-```
-**Outcome:** <one sentence: what is now true, or what you found>
-**Next step:** <one of the forms below>
-```
+- `**Outcome:** <one sentence: what is now true, or what you found>`
+- `**Next step:** <one form below>`
+- `**Recap:** <the whole chat: goal, what is settled, what is open>`, from the second turn on
+- `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>`, only for real trade-offs
 
-`Next step` forms:
+`Next step` forms. Anything else after `Next step:` counts as a task for the user:
 
-- `none` when the task is finished and nothing is needed.
-- `answer: <the question>` when you need information or a choice.
-- `review: <what to look at>` when the user should check a diff, report, or result.
-- `approve: <the plan or action>` before you do something risky or irreversible.
-- `run: <command>` when the user has to run something you cannot.
+- `none`: the task is done and nothing waits on the user.
+- `answer: <question>`: you need information or a choice.
+- `review: <what to look at>`: the user should check a diff, report, or result.
+- `approve: <plan or action>`: before something risky or irreversible.
+- `run: <command>`: the user must run something you cannot.
 
-From the second turn of a chat on, add a third line that recaps the whole chat, not just this turn,
-so the user can pick it up after time away:
+Keep the details above the handoff short. Do not repeat the outcome or list changed files and test
+results; Your Turn reads those from the chat.
 
-```
-**Recap:** <one or two sentences: the chat's goal, what is settled, what is still open>
-```
+## No polite trailing questions
 
-Do not repeat the next step in the recap.
-
-Then write the details as usual, but keep them short. Do not repeat the outcome. Do not list
-changed files or test results; Your Turn reads them from the chat itself.
-
-## Checks
-
-Your Turn tags a chat **Edits unchecked** when code changed and no test, lint, type check, or build
-ran after the last edit, and **Check failed** when a check's latest run failed. Before you hand off:
-
-- After your last code edit, run the checks that cover it.
-- If a check still fails, say so in the outcome.
-- If you cannot run a check, make the next step `run: <command>`.
+Every step other than `none` puts the chat under **Needs you**. When the task is done, write
+`**Next step:** none` and stop: no "Let me know if you want me to…" or "Should I also…?". Ask only
+when you really need a decision, and then as `**Next step:** answer: <question>`.
 
 ## Decisions
 
-When you picked between real alternatives this turn (approach, dependency, scope, root cause, fix),
-add one line per choice after the handoff lines:
+Add a `Decision:` line only for a non-trivial trade-off the user needs when reviewing: architecture,
+edge-case behavior, or the choice of library or approach. Skip routine edits with no real
+alternative. Separate alternatives with commas, and leave out `(over …)` when none is worth naming.
+
+## Checks
+
+Your Turn flags **Edits unchecked** when code changed with no test, lint, type check, or build
+after the last edit, and **Check failed** when a check's latest run failed. After your last code
+edit, run the checks that cover it. If one still fails, say so in the outcome; if you cannot run
+it, make the next step `run: <command>`.
+
+## Examples
+
+Done:
 
 ```
-**Decision:** <the choice, as a question> -> <what you chose> (over <the alternatives>). <one-sentence reason>
+Fixed the off-by-one in the pager.
+
+**Outcome:** The last page now shows its final row.
+**Next step:** none
 ```
 
-For example: `**Decision:** Patch or rewrite the parser? -> patch (over rewrite). Smaller diff, same tests.`
-Separate several alternatives with commas, and leave out `(over …)` when there were none worth naming.
-Skip routine steps.
+Needs the user:
+
+```
+**Outcome:** The importer skips malformed rows instead of aborting the file.
+**Next step:** review: the skipped-row log format in importer.py
+**Decision:** Skip or abort on a malformed row? -> skip and log (over abort, silent skip). One bad row should not lose a whole import.
+```

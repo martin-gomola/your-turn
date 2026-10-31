@@ -32,11 +32,13 @@ BLOCK = re.compile(rf"\n*{re.escape(START)}.*?{re.escape(END)}\n*", re.DOTALL)
 CLAUDE_BLOCK = f"""{START}
 ## Your Turn handoff
 
-Start every final answer with `**Outcome:**` (one sentence: what is now true) and `**Next step:**`
-(`none`, `answer: …`, `review: …`, `approve: …` or `run: …`); from the second turn on, add
-`**Recap:**`. For each real choice you made, add `**Decision:** <question> -> <chosen> (over
-<alternatives>). <reason>`. Ask the user to choose with `AskUserQuestion`. The `your-turn` skill has
-the details.
+End every final answer with these lines, each on its own line, outside code blocks:
+`**Outcome:**` (one sentence: what is now true), `**Next step:**` (`none`, `answer: …`, `review: …`,
+`approve: …` or `run: …`), and from the second turn on `**Recap:**`. When the task is done, write
+`**Next step:** none` and stop; never close with a polite offer such as "Let me know if…" or
+"Should I also…?". Add `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only
+for a non-trivial trade-off (architecture, edge-case behavior, library or approach). Ask the user
+to choose with `AskUserQuestion`. The `your-turn` skill has the details.
 {END}
 """
 QUESTIONS = """

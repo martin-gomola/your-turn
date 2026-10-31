@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from yourturn.heuristics import check_state, check_status, is_check_command, parse_answer, parse_decisions
+from yourturn.heuristics import check_state, check_status, is_check_command, parse_answer, parse_decisions, parse_recap
 from yourturn.model import Check, CheckState, Harness, SessionKey, Turn
 from yourturn.rollout import RolloutParser
 
@@ -108,3 +108,21 @@ def test_several_decisions_and_lines_that_are_not_decisions() -> None:
     assert [d["chosen"] for d in parse_decisions(text)] == ["httpx", "yes"]
     # Decision lines never become the outcome or the next step.
     assert parse_answer(text)[:3] == ("Shipped.", "none", "")
+
+
+def test_skill_examples_parse_as_documented() -> None:
+    import re
+
+    from yourturn.install import plugin_text
+
+    done, needs = re.findall(r"## Examples.*?```\n(.*?)```.*?```\n(.*?)```", plugin_text("skills/your-turn-handoff/SKILL.md"), re.DOTALL)[0]
+    assert parse_answer(done) == ("The last page now shows its final row.", "none", "", True)
+    assert parse_answer(needs)[1:] == ("review", "the skipped-row log format in importer.py", True)
+    assert parse_decisions(needs) == [{"question": "Skip or abort on a malformed row?", "options": ["skip and log", "abort", "silent skip"],
+                                       "chosen": "skip and log", "reason": "One bad row should not lose a whole import."}]
+
+
+def test_handoff_lines_inside_code_blocks_are_ignored() -> None:
+    text = "**Outcome:** Docs updated.\n**Next step:** none\n\n```\n**Next step:** review: the example\n**Recap:** example\n```"
+    assert parse_answer(text) == ("Docs updated.", "none", "", True)
+    assert parse_recap(text) == ""

@@ -63,7 +63,8 @@ def parse_answer(text: str) -> tuple[str, str, str, bool]:
     falls back to the first prose paragraph. The next step is then inferred from the final paragraph (a
     `run`, `review`, or `answer` ask, or a closing question), or an `answer` when the reply opens with a request.
     """
-    labels = {match.group(1).lower(): match.group(2) for match in ANSWER_LABEL.finditer(text)}
+    # A `Next step:` inside a code example must not override the real handoff.
+    labels = {match.group(1).lower(): match.group(2) for match in ANSWER_LABEL.finditer(FENCE.sub("", text))}
     outcome = labels.get("outcome") or labels.get("result")
     step = labels.get("your next step") or labels.get("next step") or labels.get("next")
     if outcome is None:
@@ -109,7 +110,7 @@ def parse_decisions(text: str) -> list[dict[str, Any]]:
 
 def parse_recap(text: str) -> str:
     """The whole-chat summary from a `Recap:` line, which the handoff asks for after the first turn."""
-    recap = next((m.group(2) for m in ANSWER_LABEL.finditer(text) if m.group(1).lower() == "recap"), "")
+    recap = next((m.group(2) for m in ANSWER_LABEL.finditer(FENCE.sub("", text)) if m.group(1).lower() == "recap"), "")
     return clip(recap, 400)
 
 

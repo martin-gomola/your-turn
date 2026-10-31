@@ -1,6 +1,6 @@
 # Handoff format without the plugin
 
-The `your-turn` plugin ships a skill that asks Codex to start every final answer with `Outcome`
+The `your-turn` plugin ships a skill that asks Codex to end every final answer with `Outcome`
 and `Next step` lines, plus a `Recap` line from the second turn on. If you do not want to install
 the plugin, paste the block below into an `AGENTS.md` file instead. Use `~/.codex/AGENTS.md` for
 all chats, or a repo's `AGENTS.md` for chats in that repo.
@@ -10,33 +10,20 @@ The handoff is plain text, so the block below gives Your Turn everything the plu
 ```markdown
 ## Your Turn handoff
 
-I run several Codex chats at once and read the Your Turn inbox to see, for each one, whether it
-needs me, what happened, whether I can trust it, and what to do next. Start every final answer with
-these two lines:
+I run several Codex chats at once and triage them in the Your Turn inbox. End every final answer
+with these lines, each on its own line, outside code blocks:
 
 **Outcome:** <one sentence: what is now true, or what you found>
-**Next step:** <one of the forms below>
+**Next step:** <none | answer: <question> | review: <what to look at> | approve: <plan> | run: <command>>
+**Recap:** <from the second turn on: the chat's goal, what is settled, what is open>
+**Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
-Next step forms:
+Any step other than `none` puts the chat under Needs you. When the task is done, write
+`Next step: none` and stop; never close with a polite offer such as "Let me know if…" or
+"Should I also…?". Write a Decision line only for a non-trivial trade-off (architecture, edge-case
+behavior, library or approach), not for routine edits.
 
-- `none` when the task is finished and nothing is needed.
-- `answer: <the question>` when you need information or a choice.
-- `review: <what to look at>` when I should check a diff, report, or result.
-- `approve: <the plan or action>` before you do something risky or irreversible.
-- `run: <command>` when I have to run something you cannot.
-
-From the second turn of a chat on, add a third line that recaps the whole chat, not just this
-turn:
-
-**Recap:** <one or two sentences: the chat's goal, what is settled, what is still open>
-
-Do not repeat the next step in the recap. For each real choice you made between alternatives, add:
-
-**Decision:** <the choice, as a question> -> <what you chose> (over <the alternatives>). <one-sentence reason>
-
-Then write the details as usual, but keep them short.
-Do not repeat the outcome, and do not list changed files or test results.
-
-Before you hand off, run the checks that cover your last code edit. If a check still fails, say so
-in the outcome. If you cannot run a check, make the next step `run: <command>`.
+Keep the details above the handoff short. Do not repeat the outcome or list changed files and test
+results. Run the checks that cover your last code edit; if one fails, say so in the outcome, and if
+you cannot run it, make the next step `run: <command>`.
 ```
