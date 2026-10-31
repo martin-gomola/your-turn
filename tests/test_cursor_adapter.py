@@ -284,8 +284,6 @@ def test_pending_approval_needs_you_until_cursor_clears_it(tmp_path: Path) -> No
     detail = hub.detail_dict(f"cursor:{CID}")
     assert detail is not None and (detail["status"], detail["needs_you"], detail["turns"][-1]["next_kind"]) == ("waiting", True, "approve")
     assert detail["steps"][-1]["title"] == "Approve pending action in Cursor"
-    (snapshot,) = hub.snapshots()
-    assert (snapshot.attention.value, snapshot.next_step.kind.value) == ("needs_you", "approve")
     waiting = hub.inbox_fingerprint()
 
     # The user approves in Cursor: only its database changes, the transcript does not.

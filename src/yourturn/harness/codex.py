@@ -327,7 +327,7 @@ class CodexCursor(EventCursor):
         """
         if self._offset != 0 or start <= 0:
             return
-        self._offset, self._skip_partial = start, True
+        self._offset, self._skip_partial, self.skipped_bytes = start, True, start
         try:
             self._head = self._head_events()
         except (OSError, ValueError, TypeError, AttributeError):

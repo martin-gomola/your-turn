@@ -249,12 +249,12 @@ def test_hub_registers_claude_next_to_codex(tmp_path: Path) -> None:
     (codex_home / "sessions").mkdir(parents=True)
     _write(claude, _turn())
 
-    assert SessionHub.for_codex_home(codex_home, scan_ttl=0).refresh() == []
+    assert SessionHub.for_codex_home(codex_home, scan_ttl=0).inbox_dicts() == []
     hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, claude_home=claude)
-    (snapshot,) = hub.refresh()
-    assert (snapshot.ref.harness, snapshot.title, snapshot.phase.value) == ("claude", "Fix parser", "done")
-    detail = hub.detail(SessionKey.parse(f"claude:{SID}"))
-    assert detail is not None and detail.handoff.resume_command == f"claude --resume {SID}"
+    (row,) = hub.inbox_dicts()
+    assert (row["harness"], row["title"], row["status"]) == ("claude", "Fix parser", "done")
+    detail = hub.detail_dict(SessionKey.parse(f"claude:{SID}"))
+    assert detail is not None and detail["handoff"]["resume_command"] == f"claude --resume {SID}"
 
 
 def test_tool_call_without_a_result_is_reported_until_it_returns(tmp_path: Path) -> None:

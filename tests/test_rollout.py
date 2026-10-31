@@ -23,12 +23,14 @@ from conftest import (
     write_rollout,
 )
 
-from yourturn.engine import RolloutTail, SessionHub
+from yourturn.engine import SessionHub, TurnFolder
+from yourturn.harness.codex import CodexAdapter, CodexCursor
 from yourturn.heuristics import parse_answer, parse_recap
+from yourturn.model import SessionRef
 
 
 def test_folds_a_turn_into_a_summary_steps_and_decisions(codex_home: Path) -> None:
-    state = SessionHub.for_codex_home(codex_home).state(THREAD)
+    state = SessionHub.for_codex_home(codex_home).folder(THREAD)
 
     assert state is not None
     assert (state.title, state.cwd, state.status, state.subagent) == ("Fix login", "/w/repo", "waiting", False)
@@ -49,8 +51,7 @@ def test_folds_a_turn_into_a_summary_steps_and_decisions(codex_home: Path) -> No
 
 def test_later_check_clears_the_stale_flag_and_formatted_answer_sets_next_step(codex_home: Path) -> None:
     sessions = SessionHub.for_codex_home(codex_home)
-    path = sessions.find(THREAD)
-    assert path is not None and sessions.state(THREAD) is not None
+    path = sessions.folder(THREAD).ref.path
     reply = '<send_user_message_question_reply>\n[{"question":"Ship now?","answer":"Yes"}]\n</send_user_message_question_reply>'
     append(
         path,
@@ -63,7 +64,7 @@ def test_later_check_clears_the_stale_flag_and_formatted_answer_sets_next_step(c
         event("2026-10-27T10:04:05Z", {"type": "task_complete"}),
     )
 
-    state = sessions.state(THREAD)
+    state = sessions.folder(THREAD)
     assert state is not None
     assert state.decisions[-1].chosen == "Yes"
     turn = state.turns[-1]
@@ -143,12 +144,13 @@ def test_inbox_skips_subagents_and_reads_only_the_tail(codex_home: Path, monkeyp
     assert inbox[THREAD]["options"] == ["Yes", "No"]
     assert inbox[OTHER]["status"] == "working"
 
-    monkeypatch.setattr(sessions, "tail_bytes", 200)
-    path = sessions.find(THREAD)
-    assert path is not None
+    path = sessions.folder(THREAD).ref.path
     append(path, event("2026-10-27T10:05:00Z", {"type": "task_started"}))
-    assert {entry["id"]: entry for entry in sessions.inbox_dicts()}[THREAD]["status"] == "working"
-    assert {entry["id"]: entry for entry in sessions.inbox_dicts()}[THREAD]["cwd"] == "/w/repo"
+    tail = SessionHub.for_codex_home(codex_home, scan_ttl=0, tail_bytes=200)
+    row = {entry["id"]: entry for entry in tail.inbox_dicts()}[THREAD]
+    assert (row["status"], row["cwd"]) == ("working", "/w/repo"), "the header is replayed for a tail read"
+    assert tail.detail_dict(THREAD)["history_truncated"] is True
+    assert sessions.detail_dict(THREAD)["history_truncated"] is False
 
 
 def test_inbox_uses_one_history_window_for_all_statuses(codex_home: Path) -> None:
@@ -169,23 +171,19 @@ def test_inbox_uses_one_history_window_for_all_statuses(codex_home: Path) -> Non
 
 def test_attention_identity_survives_usage_updates_and_tail_reads(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sessions = SessionHub.for_codex_home(codex_home, scan_ttl=0)
-    state = sessions.state(THREAD)
+    state = sessions.folder(THREAD)
     assert state is not None
     key = state.attention_key
     assert len(key) == 64
-    path = sessions.find(THREAD)
-    assert path is not None
-    append(path, event("2026-10-27T10:05:00Z", {"type": "token_count", "info": {"total_token_usage": {"total_tokens": 999}}}))
-    monkeypatch.setattr(sessions, "tail_bytes", 2000)
-    assert sessions.inbox_dicts()[0]["attention_key"] == key
-    assert sessions.state(THREAD).attention_key == key
+    append(state.ref.path, event("2026-10-27T10:05:00Z", {"type": "token_count", "info": {"total_token_usage": {"total_tokens": 999}}}))
+    assert SessionHub.for_codex_home(codex_home, scan_ttl=0, tail_bytes=2000).inbox_dicts()[0]["attention_key"] == key
+    assert sessions.folder(THREAD).attention_key == key
 
 
 def test_new_request_gets_new_identity_even_with_identical_text(codex_home: Path) -> None:
     sessions = SessionHub.for_codex_home(codex_home, scan_ttl=0)
     old = sessions.inbox_dicts()[0]["attention_key"]
-    path = sessions.find(THREAD)
-    assert path is not None
+    path = sessions.folder(THREAD).ref.path
     append(path, event("2026-10-27T10:06:00Z", {"type": "task_started"}))
     assert sessions.inbox_dicts()[0]["attention_key"] == ""
     append(path,
@@ -193,7 +191,7 @@ def test_new_request_gets_new_identity_even_with_identical_text(codex_home: Path
            event("2026-10-27T10:06:02Z", {"type": "task_complete"}))
     new = sessions.inbox_dicts()[0]["attention_key"]
     assert new and new != old
-    assert sessions.state(THREAD).attention_key == new
+    assert sessions.folder(THREAD).attention_key == new
 
 
 def test_final_action_identity_tracks_full_request_not_clipped_preview() -> None:
@@ -209,8 +207,7 @@ def test_final_action_identity_tracks_full_request_not_clipped_preview() -> None
 
 def test_reports_latest_usage_snapshot_without_double_counting(codex_home: Path) -> None:
     sessions = SessionHub.for_codex_home(codex_home)
-    path = sessions.find(THREAD)
-    assert path is not None
+    path = sessions.folder(THREAD).ref.path
     append(
         path,
         {"type": "turn_context", "payload": {"model": "fixture-model", "effort": "high"}},
@@ -223,7 +220,7 @@ def test_reports_latest_usage_snapshot_without_double_counting(codex_home: Path)
             "last_token_usage": {"total_tokens": 0}, "model_context_window": 1000,
         }}),
     )
-    state = sessions.state(THREAD)
+    state = sessions.folder(THREAD)
     assert state is not None
     assert (state.model, state.reasoning_effort) == ("fixture-model", "high")
     assert state.token_usage == {"input_tokens": 200, "cached_input_tokens": 150, "cache_write_input_tokens": 0, "output_tokens": 60, "reasoning_output_tokens": 20, "total_tokens": 260}
@@ -251,8 +248,7 @@ def test_usage_and_session_metadata_ignore_malformed_values() -> None:
 
 def test_malformed_records_are_skipped_without_losing_later_lines(codex_home: Path) -> None:
     sessions = SessionHub.for_codex_home(codex_home)
-    path = sessions.find(THREAD)
-    assert path is not None and sessions.state(THREAD) is not None
+    path = sessions.folder(THREAD).ref.path
     reply = '<send_user_message_question_reply>["yes"]</send_user_message_question_reply>'
     append(
         path,
@@ -262,7 +258,7 @@ def test_malformed_records_are_skipped_without_losing_later_lines(codex_home: Pa
         item("2026-10-27T10:10:03Z", {"type": "UserMessage", "content": [{"text": reply}]}),
         event("2026-10-27T10:10:04Z", {"type": "task_complete", "duration_ms": "12"}),
     )
-    state = sessions.state(THREAD)
+    state = sessions.folder(THREAD)
     assert state is not None
     assert (state.status, state.turns[-1].index, state.turns[-1].files) == ("done", 2, [])
 
@@ -270,11 +266,11 @@ def test_malformed_records_are_skipped_without_losing_later_lines(codex_home: Pa
 def test_concurrent_reads_feed_each_record_once(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = write_rollout(codex_home, OTHER, [meta(OTHER)])
     sessions = SessionHub.for_codex_home(codex_home)
-    assert sessions.state(OTHER) is not None
+    assert sessions.folder(OTHER) is not None
     append(path, *[command("2026-10-27T10:04:00Z", "ls", 0) for _ in range(20000)])
-    original_read, active, overlaps = RolloutTail.read, [], []
+    original_read, active, overlaps = CodexCursor.read_new, [], []
 
-    def tracked_read(self: RolloutTail) -> object:
+    def tracked_read(self: CodexCursor) -> object:
         active.append(self)
         overlaps.append(len(active))
         time.sleep(0.05)
@@ -283,13 +279,13 @@ def test_concurrent_reads_feed_each_record_once(codex_home: Path, monkeypatch: p
         finally:
             active.remove(self)
 
-    monkeypatch.setattr(RolloutTail, "read", tracked_read)
-    threads = [threading.Thread(target=sessions.state, args=(OTHER,)) for _ in range(2)]
+    monkeypatch.setattr(CodexCursor, "read_new", tracked_read)
+    threads = [threading.Thread(target=sessions.folder, args=(OTHER,)) for _ in range(2)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    state = sessions.state(OTHER)
+    state = sessions.folder(OTHER)
     assert state is not None and state.version == 20001
     assert max(overlaps) == 1
 
@@ -305,10 +301,9 @@ def test_superseded_turn_is_closed_as_interrupted() -> None:
 
 def test_rewritten_shorter_file_is_reparsed_from_the_start(codex_home: Path) -> None:
     sessions = SessionHub.for_codex_home(codex_home)
-    path = sessions.find(THREAD)
-    assert path is not None and sessions.state(THREAD) is not None
+    path = sessions.folder(THREAD).ref.path
     path.write_text(json.dumps(meta(THREAD)) + "\n" + json.dumps(event("2026-10-27T11:00:00Z", {"type": "task_started"})) + "\n")
-    state = sessions.state(THREAD)
+    state = sessions.folder(THREAD)
     assert state is not None
     assert (state.status, len(state.turns), state.decisions) == ("working", 1, [])
 
@@ -318,11 +313,14 @@ def test_tail_skips_the_partial_first_line_and_waits_for_a_complete_last_line(tm
     started = json.dumps(event("2026-10-27T10:00:00Z", {"type": "task_started"})) + "\n"
     complete = json.dumps(event("2026-10-27T10:00:01Z", {"type": "task_complete"})) + "\n"
     path.write_text(json.dumps(meta(THREAD)) + "\n" + started + complete[:20])
-    tail = RolloutTail(path, THREAD, start=len(json.dumps(meta(THREAD))) + 5)
-    state = tail.read()
+    cursor = CodexAdapter().open(SessionRef(harness="codex", session_id=THREAD, path=path))
+    cursor.seek(len(json.dumps(meta(THREAD))) + 5)
+    state = TurnFolder(cursor.ref)
+    state.fold_many(cursor.read_new())
     assert (state.cwd, state.turns, state.status) == ("/w/repo", deque(), "idle")
     path.write_text(path.read_text() + complete[20:])
-    assert tail.read().status == "done"
+    state.fold_many(cursor.read_new())
+    assert state.status == "done"
 
 
 def test_aborted_turn_is_interrupted() -> None:
@@ -336,8 +334,8 @@ def test_aborted_turn_is_interrupted() -> None:
 
 def test_rejects_non_thread_ids(codex_home: Path) -> None:
     sessions = SessionHub.for_codex_home(codex_home)
-    assert sessions.find("../../etc/passwd") is None
-    assert sessions.find("*") is None
+    assert sessions.folder("../../etc/passwd") is None
+    assert sessions.folder("*") is None
 
 
 def test_history_expiry_updates_inbox_and_stream_marker(codex_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:

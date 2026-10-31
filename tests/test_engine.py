@@ -96,7 +96,7 @@ def test_folder_completed_turn() -> None:
     assert turn.ended_at == _ts(7)
     assert turn.prompt == "Fix the bug"
     assert turn.files == ["src/app.py"]
-    assert folder.usage is not None and folder.usage.total_tokens == 15
+    assert folder.token_usage["total_tokens"] == 15
     kinds = [step.kind for step in folder.steps]
     assert kinds[0] == "turn" and kinds[-1] == "turn"
     assert {"user", "command", "edit"} <= set(kinds)
@@ -144,7 +144,7 @@ def test_folder_question_waits_then_user_answers() -> None:
     assert folder.status == "waiting"
     assert folder.decisions[-1].question == "Pick one"
     assert folder.decisions[-1].chosen is None
-    assert folder.inbox_row()["question"] == "Pick one"
+    assert folder.inbox_fields()["question"] == "Pick one"
 
     folder.fold_many(_events([_item(4, {"type": "UserMessage", "content": [{"type": "text", "text": "a"}]})]))
     assert folder.decisions[-1].chosen == "a"
@@ -211,52 +211,45 @@ def test_adapter_title_from_session_index(tmp_path: Path) -> None:
 
 
 def _hub(home: Path) -> SessionHub:
-    return SessionHub([CodexAdapter(home=home)], root=home, rescan_seconds=0.0)
+    return SessionHub([CodexAdapter(home=home)], rescan_seconds=0.0)
 
 
 def test_hub_lists_threads(tmp_path: Path) -> None:
     _write(tmp_path, SID, [_meta(SID), *_turn()])
     _write(tmp_path, SID_B, [_meta(SID_B)])
-    snapshots = _hub(tmp_path).refresh()
-    assert {snapshot.ref.session_id for snapshot in snapshots} == {SID, SID_B}
-    done = next(snapshot for snapshot in snapshots if snapshot.ref.session_id == SID)
-    assert done.phase == "done"
-    assert done.title == "Fix the bug"
-    assert done.recap.turn_count == 1
+    rows = {row["id"]: row for row in _hub(tmp_path).inbox_dicts()}
+    assert set(rows) == {SID, SID_B}
+    assert (rows[SID]["status"], rows[SID]["title"]) == ("done", "Fix the bug")
 
 
 def test_hub_detail_accepts_prefixed_and_bare_ids(tmp_path: Path) -> None:
     _write(tmp_path, SID, [_meta(SID), *_turn()])
     hub = _hub(tmp_path)
-    hub.refresh()
-    prefixed = hub.detail(f"codex:{SID}")
-    bare = hub.detail(SID)
-    keyed = hub.detail(SessionKey.parse(SID))
-    assert prefixed is not None and bare is not None and keyed is not None
-    assert prefixed.snapshot.ref == bare.snapshot.ref == keyed.snapshot.ref
-    assert prefixed.timeline == bare.timeline and prefixed.timeline
-    assert prefixed.handoff.resume_command == f"codex resume {SID}"
+    prefixed = hub.detail_dict(f"codex:{SID}")
+    bare = hub.detail_dict(SID)
+    keyed = hub.detail_dict(SessionKey.parse(SID))
+    assert prefixed is not None and prefixed == bare == keyed
+    assert prefixed["key"] == f"codex:{SID}" and prefixed["steps"]
+    assert prefixed["handoff"]["resume_command"] == f"codex resume {SID}"
 
 
 def test_hub_unknown_or_malformed_ids_are_none(tmp_path: Path) -> None:
     _write(tmp_path, SID, [_meta(SID)])
     hub = _hub(tmp_path)
-    hub.refresh()
-    assert hub.detail(UNKNOWN) is None
-    assert hub.detail(f"codex:{UNKNOWN}") is None
-    assert hub.detail(f"claude:{SID}") is None
-    assert hub.detail("not-a-session") is None
-    assert hub.detail("bogus:123") is None
+    assert hub.detail_dict(UNKNOWN) is None
+    assert hub.detail_dict(f"codex:{UNKNOWN}") is None
+    assert hub.detail_dict(f"claude:{SID}") is None
+    assert hub.detail_dict("not-a-session") is None
+    assert hub.detail_dict("bogus:123") is None
 
 
 def test_hub_refresh_reads_appended_turns(tmp_path: Path) -> None:
     path = _write(tmp_path, SID, [_meta(SID), *_turn(1, "t1")])
     hub = _hub(tmp_path)
-    hub.refresh()
+    assert len(hub.detail_dict(SID)["turns"]) == 1
     with path.open("a", encoding="utf-8") as handle:
         handle.write(_lines(_turn(20, "t2")))
-    (snapshot,) = hub.refresh()
-    assert snapshot.recap.turn_count == 2
+    assert len(hub.detail_dict(SID)["turns"]) == 2
 
 
 # --- App -----------------------------------------------------------------------------------------
@@ -312,7 +305,7 @@ DETAIL_KEYS = {
     "id", "title", "cwd", "project", "parent_id", "subagent", "started_at", "updated_at", "status",
     "context_used", "context_window", "token_usage", "last_token_usage", "token_usage_at", "model",
     "reasoning_effort", "model_provider", "git_branch", "cli_version", "activity", "pending_tool", "attention_key",
-    "version", "turns", "steps", "decisions", "needs_you", "quiet", "capabilities",
+    "version", "turns", "steps", "decisions", "needs_you", "quiet", "capabilities", "history_truncated",
 }
 TURN_KEYS = {
     "index", "started_at", "ended_at", "status", "prompt", "outcome", "recap", "next_kind", "next_text",
@@ -465,18 +458,6 @@ def test_api_json_equals_hub_dicts(tmp_path: Path) -> None:
         assert _without_extras(response.json()) == _without_extras(json.loads(json.dumps(expected)))
         assert response.json()["key"] == f"codex:{SID}"
     assert client.get("/api/inbox").json() == json.loads(json.dumps(hub.inbox_dicts()))
-
-
-def test_hub_typed_detail_shares_the_detail_state(tmp_path: Path) -> None:
-    _rich_home(tmp_path)
-    hub = SessionHub.for_codex_home(tmp_path, scan_ttl=0)
-    data = hub.detail_dict(SID)
-    detail = hub.detail(f"codex:{SID}")
-    assert data is not None and detail is not None
-    assert len(detail.timeline) == len(data["steps"])
-    assert detail.snapshot.title == "Rich chat"
-    assert detail.snapshot.recap.turn_count == 3
-    assert detail.handoff.resume_command == f"codex resume {SID}"
 
 
 def test_version_and_fingerprint_change_only_on_append(tmp_path: Path) -> None:

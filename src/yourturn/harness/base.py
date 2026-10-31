@@ -208,6 +208,8 @@ class EventCursor:
 
     # Bumped whenever the source shrank and the cursor replayed it from the start; the hub then rebuilds the chat.
     truncations: int = 0
+    # Bytes `skip_to_tail` left unread at the start, so the oldest turns are missing from the chat.
+    skipped_bytes: int = 0
 
     @property
     def ref(self) -> SessionRef:
