@@ -2,7 +2,7 @@
 name: your-turn-handoff
 description: End every response to the user with the Your Turn handoff (Outcome and Next step lines, plus Recap on multi-turn chats and Decision for real trade-offs), and run checks after your last code edit. Always active for every task and every turn in Codex so the user can triage chats across apps at a glance.
 metadata:
-  version: "0.2.2"
+  version: "0.4.0"
 ---
 
 # Your Turn handoff
@@ -17,6 +17,8 @@ End **every** response to the user (including turns that ask a question or pause
     **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
 Include `Recap` on every turn after the first, and `Decision` only when a non-trivial trade-off was made this turn.
+
+Prefer the bottom of the response; a contiguous block at the top is also supported. Keep the labels (`Outcome:`, `Next step:`, `Recap:`, `Decision:`) and `Next step` prefixes in English even when replying in another language. Optional suggestions are not next steps: write `none`.
 
 ## `Next step` taxonomy (Poka-yoke)
 
@@ -43,7 +45,7 @@ With the block at the bottom, stop generating right after it. When `Next step` i
 
 Your Turn automatically flags **Edits unchecked** if you modify code without running a check afterwards, and **Check failed** if the last check failed. After your final code edit, run the test, lint, type check, or build that covers it (for example `pytest`, `ruff`, `mypy`, `npm test`, `node --test`, `tsc`, `cargo test`, `go test`, `swift test`, `make check`). Documentation-only edits (`.md`, `.rst`, `.txt`, `docs/`) and scratch files (the project's top-level `tmp/`, system temp folders) need no check. Run a check as its own command, or as the last step of a chain joined with `&&`: one followed by `;` or `||`, or piped into another command, does not prove it passed. If a check still fails, say so in `Outcome`; if you cannot run it, make the next step `run: <command>`.
 
-Edit files with Codex's native edit tool (`apply_patch`), not from the shell (`cat > file`, `sed -i`, a script that writes the file): Your Turn sees edits only through that tool, so a file written from the shell is missing from the chat's file list and never raises **Edits unchecked**.
+Edit files with Codex's native edit tool (`apply_patch`), not from the shell (heredocs or `write_text`): Your Turn sees edits only through that tool, so a file written from the shell is missing from the chat's file list and never raises **Edits unchecked**.
 
 ## Examples
 
@@ -54,6 +56,7 @@ Fixed the off-by-one in the pager.
 
 **Outcome:** The last page now shows its final row.
 **Next step:** none
+**Recap:** Goal: correct pagination. Settled: the final row is visible. Open: nothing.
 ```
 
 Later turn, ready for review, with a trade-off:

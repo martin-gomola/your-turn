@@ -129,7 +129,12 @@ def needs_you(entry: dict[str, Any]) -> bool:
 
 
 def is_check_command(command: str) -> bool:
-    """`uv run pytest -q` and `cd web && npm test` are checks; `rg pytest` is not."""
+    """Recognize checks anywhere in a shell list, without reading quoted prose as commands."""
+    lists, _ = _command_lists(command)
+    return any(_is_check_segment(text) for commands in lists for _, text in commands)
+
+
+def _is_check_segment(command: str) -> bool:
     return CHECK_COMMAND.match(command, CHECK_PREFIX.match(command).end()) is not None
 
 

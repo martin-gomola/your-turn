@@ -1,6 +1,6 @@
 {
   "name": "your-turn",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Read-only inbox view of what the current Codex chat is doing and the decisions it makes.",
   "author": {
     "name": "Martin Gomola"

@@ -93,6 +93,7 @@ group of lines with no prose between them, each on one line, as plain Markdown o
 Keep the labels and prefixes in English, even when you reply in another language, and start no other
 line with them. An optional suggestion goes in the body; never close with a polite offer such as
 "Let me know if…" or "Should I also…?".
+Keep the labels (`Outcome:`, `Next step:`, `Recap:`, `Decision:`) and `Next step` prefixes in English even when replying in another language. Optional suggestions are not next steps: write `none`.
 
 Example:
 
