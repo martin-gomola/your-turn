@@ -105,6 +105,7 @@ const SECTIONS = [
 
 const params = new URLSearchParams(location.search);
 const threadId = params.get("thread") || "";
+const returnOpenId = params.get("returnOpen") || "";
 const statusParam = params.get("status");
 const inboxStatus = Object.hasOwn(INBOX_FILTERS, statusParam) ? statusParam : "";
 const inboxReturn = inboxStatus ? `&status=${inboxStatus}` : "";
@@ -377,7 +378,10 @@ function renderSection({ key, label }, chats, fold = "") {
     toggle.setAttribute("aria-controls", `list-${key}`);
     const chevron = icon("i-chevron");
     chevron.classList.add("disclosure-chevron");
-    if (fold === "closed") content.push(el("span", "section-count", String(chats.length)));
+    if (fold === "closed") {
+      if (key === "working") syncSpin(content[0].querySelector("use"));
+      content.push(el("span", "section-count", String(chats.length)));
+    }
     toggle.append(...content, chevron);
     toggle.addEventListener("click", () => {
       sectionOpen.set(key, fold === "closed");
@@ -1428,6 +1432,14 @@ function inboxUrl(status, id) {
   return text ? `/?${text}` : "/";
 }
 
+function focusedChatUrl(id) {
+  const query = new URLSearchParams();
+  query.set("thread", id);
+  if (inboxStatus) query.set("status", inboxStatus);
+  query.set("returnOpen", id);
+  return `/?${query}`;
+}
+
 function cardFor(id) {
   return [...$("sections").querySelectorAll(".row")].find((row) => new URLSearchParams(row.search).get("thread") === id);
 }
@@ -1449,6 +1461,7 @@ function showPanel(id) {
   threadSource = null;
   threadData = null;
   openId = id;
+  if (id) $("panel-focus").href = focusedChatUrl(id);
   return transition(() => {
     document.body.dataset.panel = id ? "open" : "closed";
     $("thread-view").hidden = !id;
@@ -1509,7 +1522,7 @@ setInterval(() => {
 if (threadId) {
   $("thread-view").hidden = false;
   $("back").hidden = false;
-  $("back").href = inboxStatus ? `/?status=${inboxStatus}` : "/";
+  $("back").href = inboxUrl(inboxStatus, returnOpenId);
   $("back-label").textContent = inboxStatus ? INBOX_FILTERS[inboxStatus].label : "Inbox";
   $("inbox-title").hidden = true;
   $("thread-heading").hidden = false;

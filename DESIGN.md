@@ -65,7 +65,9 @@ calls in older transcripts still read as decisions.
 - Status filters have one owner: the full inbox uses the glass tab bar; the compact detail list
   uses one labeled native selector with the same counts and URL semantics. The outer rail has no
   status filters. The selector uses appearance:auto with explicit indicator clearance.
-  Glass has an opaque fallback. Controls never become rasterized text.
+  Desktop tabs pair category icons with their full labels. At phone widths, they use icons and counts
+  to fit without horizontal scrolling; accessible names retain the full labels. Glass has an opaque
+  fallback. Controls never become rasterized text.
 - Live connection and quick-theme controls remain accessible in a top-right utility row; the chat back link stays on the left.
 - The tab title carries the Needs you count, as "(2) Your Turn", and the favicon gains an orange
   badge while any chat needs the user. Chat pages also follow the inbox stream, so the badge and
@@ -111,6 +113,8 @@ calls in older transcripts still read as decisions.
 
 - At 1280px and above, an ordinary row click opens a bookmarkable `/?open=<id>` detail pane;
   the inbox becomes a compact list beside it. The sidebar remains available.
+- Focus opens the selected chat as a full page without the inbox list; Inbox returns to the same
+  filter with that chat reopened.
 - Compact rows are three-line list items of one height: a one-line title with the age at its
   right ("2d", 12px, tabular), the request or preview, then one quiet "Codex · project" line. The
   status glyph aligns with the title, and the open row needs no chevron.
@@ -254,8 +258,9 @@ layout, responsive adaptation and small optical adjustments. No UI framework or 
 - CSS masks only blend the edge of real scene assets; they do not draw substitute illustration.
   Glass filters retain contrast and have a solid-surface fallback when blur is unsupported.
 - Existing row/page/detail transitions remain; press feedback and dialogs use short opacity/transform
-  motion. Working is the only continuous progress glyph. Reduced motion disables all transitions
-  and animations. No moving capsule, toy drift or parallax changes the approved composition.
+  motion. Working is the only continuous progress glyph; its folded section heading and row glyphs
+  share one rotation phase. Reduced motion disables all transitions and animations. No moving
+  capsule, toy drift or parallax changes the approved composition.
 - Command/path highlighting remains inert selectable text; telemetry is not a billing or quota meter.
 
 ## Accessibility
