@@ -39,7 +39,7 @@ function quietHint(chat) {
   // A chat that never asks before running things cannot be waiting for approval.
   if (chat.approval_policy === "never") {
     const call = chat.pending_tool ? ` Its last call has no result yet (${chat.pending_tool}).` : "";
-    return `No activity recorded.${call} It may still be running, or it may be stuck.`;
+    return `No activity recorded.${call} It may be running a long command, or it may be stuck.`;
   }
   if (chat.pending_tool) return `No activity recorded. Its last call has no result yet (${chat.pending_tool}): it may be waiting for your approval in ${appName(chat)}, or still running.`;
   return `No activity recorded. It may be waiting for your approval in ${appName(chat)}, or running a long command.`;
@@ -103,6 +103,31 @@ const SECTIONS = [
   { key: "earlier", label: "Earlier" },
 ];
 
+// Pure triage helpers, shared by the inbox interactions and their unit tests.
+const AWAY_DIGEST_MS = 10 * 60 * 1000;
+function filterInbox(chats, query) {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  return chats.filter((chat) => {
+    const text = JSON.stringify([chat.title, chat.project, chat.outcome, chat.next_step, chat.next_text,
+      chat.recap, chat.decisions, chat.changed_files]).toLocaleLowerCase();
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+function awayDelta(previousKeys, currentKeys, elapsed) {
+  return elapsed >= AWAY_DIGEST_MS ? [...currentKeys].filter((key) => !previousKeys.has(key)) : [];
+}
+
+function queueTarget(keys, current, direction) {
+  if (!keys.length) return "";
+  const index = keys.indexOf(current);
+  return keys[index < 0 ? 0 : Math.max(0, Math.min(keys.length - 1, index + direction))];
+}
+
+function shortcutBlocked(target, modalOpen) {
+  return modalOpen || Boolean(target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
+}
+// End pure triage helpers.
 const params = new URLSearchParams(location.search);
 const threadId = params.get("thread") || "";
 const returnOpenId = params.get("returnOpen") || "";
@@ -123,6 +148,9 @@ let threadData = null;
 let filter = "key";
 let openId = "";
 let threadSource = null;
+let searchQuery = "";
+let awaySnapshot = null;
+let searchReturnFocus = null;
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -286,6 +314,7 @@ function sectionOf(chat) {
 
 function chatSummary(chat) {
   if (hasAttention(chat)) return chat.question || chat.next_text || chat.outcome;
+  if (chat.status === "working" && chat.capabilities?.live_activity && chat.activity_summary) return chat.activity_summary;
   if (chat.content_available === false) return summaryText(chat);
   if (chat.next_kind !== "none" && chat.next_kind !== "unknown" && chat.next_text) return chat.next_text;
   return chat.outcome;
@@ -472,7 +501,7 @@ function liveInbox(chats) {
 function renderInbox(chats) {
   inboxData = chats;
   const focusedHref = document.activeElement.closest(".row, .show-all")?.getAttribute("href");
-  const groups = groupChats(chats);
+  const groups = groupChats(filterInbox(chats, searchQuery));
   inboxLayout = layoutOf(groups);
   // The approved inbox is a list at every width; wide screens can still open a detail pane.
   const shown = SECTIONS.filter(({ key }) => inboxStatus ? key === inboxStatus && groups.get(key).length > 0 : groups.get(key).length > 0);
@@ -487,12 +516,15 @@ function renderInbox(chats) {
   }
   const fold = (key) => foldable ? ((sectionOpen.get(key) ?? key !== "earlier") ? "open" : "closed") : "";
   $("sections").replaceChildren(...shown.map((section) => renderSection(section, groups.get(section.key), fold(section.key))));
-  $("inbox-empty").hidden = chats.length > 0;
-  $("filter-empty").hidden = !inboxStatus || shown.length > 0 || chats.length === 0;
+  $("inbox-empty").hidden = chats.length > 0 || Boolean(searchQuery);
+  const noMatches = Boolean(searchQuery.trim()) && shown.length === 0;
+  $("search-empty").hidden = !noMatches;
+  $("search-empty").textContent = noMatches ? `No chats match '${searchQuery}'` : "";
+  $("filter-empty").hidden = noMatches || !inboxStatus || shown.length > 0 || chats.length === 0;
   $("filter-empty").textContent = inboxStatus ? INBOX_FILTERS[inboxStatus].empty : "";
   syncNavigation(chats);
   if (focusedHref) [...$("sections").querySelectorAll("a")].find((link) => link.getAttribute("href") === focusedHref)?.focus({ preventScroll: true });
-  const needs = groups.get("waiting").length;
+  const needs = chats.filter(needsAttention).length;
   document.title = needs ? `(${needs}) Your Turn` : "Your Turn";
   setFavicon(needs > 0);
 }
@@ -1480,6 +1512,59 @@ function closePanel() {
 }
 
 if (!threadId) {
+  const search = $("inbox-search");
+  search.addEventListener("focus", (event) => { searchReturnFocus = event.relatedTarget || searchReturnFocus; });
+  search.addEventListener("input", () => {
+    searchQuery = search.value;
+    if (inboxData) renderInbox(inboxData);
+  });
+  search.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    search.value = searchQuery = "";
+    if (inboxData) renderInbox(inboxData);
+    const previous = searchReturnFocus?.isConnected && searchReturnFocus.matches("a, button, [tabindex]") ? searchReturnFocus : null;
+    const target = cardFor(searchReturnFocus?.dataset.id) || previous || document.querySelector("#sections .row") || $("main-content");
+    target.focus();
+  });
+  $("away-dismiss").addEventListener("click", () => { $("away-digest").hidden = true; });
+  window.addEventListener("blur", () => {
+    if (!inboxData || awaySnapshot) return;
+    awaySnapshot = { at: Date.now(), keys: new Set(inboxData.filter(needsAttention).map(chatKey)) };
+  });
+  window.addEventListener("focus", () => {
+    if (!awaySnapshot || !inboxData) return;
+    const delta = awayDelta(awaySnapshot.keys, new Set(inboxData.filter(needsAttention).map(chatKey)), Date.now() - awaySnapshot.at);
+    awaySnapshot = null;
+    $("away-digest").hidden = delta.length === 0;
+    $("away-link").textContent = `While you were away: ${delta.length} ${delta.length === 1 ? "chat now needs" : "chats now need"} you`;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey ||
+        shortcutBlocked(event.target, Boolean(document.querySelector("dialog[open]"))) || document.body.dataset.navigation === "open") return;
+    if (event.key === "/") {
+      event.preventDefault();
+      searchReturnFocus = document.activeElement;
+      search.focus();
+      return;
+    }
+    if (event.key === "n") {
+      const oldest = inboxData && groupChats(inboxData).get("waiting")[0];
+      if (!oldest) return;
+      event.preventDefault();
+      const row = cardFor(chatKey(oldest));
+      if (row?.getClientRects().length) { row.focus(); row.scrollIntoView({ block: "nearest" }); }
+      else location.assign(`/?thread=${encodeURIComponent(chatKey(oldest))}&status=waiting`);
+      return;
+    }
+    const direction = ["j", "ArrowDown"].includes(event.key) ? 1 : ["k", "ArrowUp"].includes(event.key) ? -1 : 0;
+    if (!direction) return;
+    const rows = [...document.querySelectorAll("#sections .row")].filter((row) => row.getClientRects().length);
+    const key = queueTarget(rows.map((row) => row.dataset.id), document.activeElement.dataset.id, direction);
+    const row = rows.find((row) => row.dataset.id === key);
+    if (row) { event.preventDefault(); row.focus(); row.scrollIntoView({ block: "nearest" }); }
+  });
   $("sections").addEventListener("click", (event) => {
     const link = event.target.closest(".row");
     if (!link || !wideDetail.matches || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

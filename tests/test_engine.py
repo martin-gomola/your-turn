@@ -576,7 +576,7 @@ OLD = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5e"
 INBOX_KEYS = {
     "id", "cwd", "status", "updated_at", "turn_ended_at", "outcome", "next_kind", "next_text", "next_basis",
     "question", "options", "attention_key", "check_state", "pending_tool", "approval_policy", "needs_you", "quiet",
-    "project", "title", "content_available", "summary", "capabilities",
+    "project", "title", "content_available", "summary", "capabilities", "recap", "decisions", "changed_files",
 }
 DETAIL_KEYS = {
     "id", "title", "cwd", "project", "parent_id", "subagent", "started_at", "updated_at", "status",
@@ -659,7 +659,8 @@ def test_inbox_dict_keys_and_values(tmp_path: Path) -> None:
 
     assert [row["id"] for row in rows] == [SID, SID_B], "newest file first; out-of-window chats are skipped"
     for row in rows:
-        assert set(row) == INBOX_KEYS | EXTRA_KEYS
+        activity_keys = {"activity_summary"} if row["status"] == "working" else set()
+        assert set(row) == INBOX_KEYS | EXTRA_KEYS | activity_keys
         assert (row["harness"], row["key"]) == ("codex", f"codex:{row['id']}")
         assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", row["updated_at"])
         assert isinstance(row["needs_you"], bool) and isinstance(row["quiet"], bool)

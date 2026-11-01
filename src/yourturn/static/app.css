@@ -487,6 +487,12 @@ html { --scroll-thumb: color-mix(in srgb, var(--color-text) 22%, transparent); s
 @keyframes badge-arrival { 0% { transform: scale(.88); } 50% { transform: scale(1.14); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: no-preference) { .segments [data-kind="new"] .segment-count.is-incoming { animation: badge-arrival var(--motion-enter) var(--ease-standard); } }
 .compact-filter { display: none; }
+.inbox-list { min-width: 0; }
+.inbox-search { padding-top: var(--space-4); }
+.inbox-search input { width: 100%; min-height: 40px; padding: 8px 12px; font: inherit; color: var(--color-text); background: var(--color-bg); border: 1px solid var(--color-separator); border-radius: var(--radius-lg); }
+.away-digest { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); font-size: 14px; }
+.away-digest a { flex: 1; color: var(--color-text); }
+.away-digest button { min-width: 36px; min-height: 36px; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .sections { display: grid; align-content: start; grid-auto-rows: max-content; gap: var(--space-5); padding-top: var(--space-6); }
 #sections .group { gap: 0; }
 #sections .group[data-section="waiting"] { margin-inline: 0; padding-inline: 0; border: 0; border-radius: 0; background: transparent; }
@@ -594,7 +600,7 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   body[data-panel="open"] .segments .segment { flex: 1 1 0; justify-content: center; }
   body[data-panel="open"] .bar { top: calc((var(--hero-pinned) - var(--size-control)) / 2); }
   body[data-panel="open"] .compact-filter { display: none; }
-  body[data-panel="open"] #sections, body[data-panel="open"] #inbox-empty, body[data-panel="open"] #filter-empty { grid-column: 1; grid-row: 2 / 4; min-height: 0; overflow-y: auto; }
+  body[data-panel="open"] .inbox-list { grid-column: 1; grid-row: 2 / 4; min-height: 0; overflow-y: auto; }
   body[data-panel="open"] #thread-view { grid-column: 2; grid-row: 2; }
   body[data-panel="open"] .footer { grid-row: 3; }
   body[data-panel="open"] .row { scroll-margin-block-start: var(--space-3); }

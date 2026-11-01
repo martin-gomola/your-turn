@@ -533,6 +533,9 @@ class TurnFolder:
             "approval_policy": self.approval_policy,
             "content_available": self.content_available,
             "summary": self.summary,
+            "recap": next((t.recap for t in reversed(self.turns) if t.recap), ""),
+            "decisions": [asdict(d) for d in self.decisions],
+            "changed_files": list(dict.fromkeys(path for t in self.turns for path in t.files)),
         }
         row["needs_you"] = needs_you(row)
         return row
@@ -756,6 +759,8 @@ class SessionHub:
         data["handoff"] = asdict(adapter.handoff(ref, folder.cwd or None))
         # What the source can record, so the UI can say what is missing instead of guessing.
         data["capabilities"] = asdict(adapter.capabilities)
+        if not detail and adapter.capabilities.live_activity and data["status"] == "working":
+            data["activity_summary"] = clip(folder.pending_tool or folder.activity, 120)
         if detail:
             data["history_truncated"] = bool(tracked.cursor and tracked.cursor.skipped_bytes)
         return data

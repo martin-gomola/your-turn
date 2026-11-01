@@ -132,9 +132,14 @@ SOFTWARE.
     </nav>
     <div class="compact-filter"><label for="compact-status">Chats</label><span class="select-field"><select id="compact-status" aria-label="Filter chats by status"><option value="">All chats</option><option value="waiting">Needs you</option><option value="working">Working</option><option value="new">New results</option><option value="earlier">Earlier</option></select><svg class="select-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></span></div>
     </header>
+    <div class="inbox-list">
+    <div class="inbox-search"><label class="sr-only" for="inbox-search">Search chats</label><input id="inbox-search" type="search" placeholder="Search chats…  /" autocomplete="off" aria-controls="sections"></div>
+    <div class="away-digest" id="away-digest" hidden><a id="away-link" href="/?status=waiting"></a><button id="away-dismiss" type="button" aria-label="Dismiss away summary">×</button></div>
+    <p class="empty card" id="search-empty" role="status" hidden></p>
     <p class="empty card" id="inbox-empty" hidden>No agent chats found. Start a chat in Codex, Claude Code or Cursor and it appears here.</p>
     <p class="empty card" id="filter-empty" role="status" hidden></p>
     <div class="sections" id="sections"></div>
+    </div>
   </div>
 
   <div id="thread-view" hidden>
@@ -257,6 +262,7 @@ SOFTWARE.
 <section class="aside-panel" id="help" aria-labelledby="help-title" hidden>
   <header class="aside-heading"><h2 id="help-title" tabindex="-1">Help</h2><button type="button" class="button" data-close-aside>Close</button></header>
   <p class="help-intro">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Copy resume command</strong>) to reply or take action.</p>
+  <p>Keyboard: <kbd>/</kbd> searches this inbox; <kbd>j</kbd>/<kbd>k</kbd> or arrow keys move through visible chats; <kbd>Enter</kbd> opens one; <kbd>n</kbd> jumps to the oldest chat needing you. <kbd>Escape</kbd> clears search.</p>
   <table class="help-statuses">
     <caption>Chat statuses</caption>
     <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>

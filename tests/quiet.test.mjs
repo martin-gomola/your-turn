@@ -10,7 +10,7 @@ vm.runInContext(`${helpers}\nObject.assign(this, { quietHint, unavailableNote, u
 
 test('quiet chat that never asks for approval is not said to wait for it', () => {
   const hint = context.quietHint({ harness: 'codex', approval_policy: 'never' });
-  assert.equal(hint, 'No activity recorded. It may still be running, or it may be stuck.');
+  assert.equal(hint, 'No activity recorded. It may be running a long command, or it may be stuck.');
   assert.doesNotMatch(context.quietHint({ harness: 'codex', approval_policy: 'never', pending_tool: 'make test' }), /approval/);
 });
 
