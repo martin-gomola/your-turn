@@ -62,6 +62,7 @@ from yourturn.heuristics import (
     check_state,
     clip,
     code_paths,
+    command_caption,
     is_check_command,
     is_quiet,
     needs_you,
@@ -132,6 +133,7 @@ class TurnFolder:
         self.cli_version = ""
         self.approval_policy = ""
         self.activity = ""
+        self.activity_summary = ""
         self.attention_key = ""
         self.version = 0
         self.turns: deque[Turn] = deque(maxlen=MAX_TURNS)
@@ -171,6 +173,7 @@ class TurnFolder:
         self.steps.append(step)
         if kind not in {"turn", "user"}:
             self.activity = clip(title, 120)
+            self.activity_summary = self.activity
         return step
 
     def _pending(self) -> list[Decision]:
@@ -262,6 +265,7 @@ class TurnFolder:
                 self._checks[turn.index, key] = check
                 turn.edited_after_check = False
         self._step(at, "command", command, detail, "failed" if failed else "done")
+        self.activity_summary = command_caption(event.full_command or command)
 
     def _edit(self, at: str, turn: Turn, paths: list[str], ts: datetime | None, failed: bool) -> None:
         turn.files.extend(path for path in paths if path not in turn.files)
@@ -760,7 +764,9 @@ class SessionHub:
         # What the source can record, so the UI can say what is missing instead of guessing.
         data["capabilities"] = asdict(adapter.capabilities)
         if not detail and adapter.capabilities.live_activity and data["status"] == "working":
-            data["activity_summary"] = clip(folder.pending_tool or folder.activity, 120)
+            pending = folder.pending_tool
+            data["activity_summary"] = (command_caption(pending[6:]) if pending.startswith("Bash: ")
+                                        else clip(pending or folder.activity_summary or folder.activity, 120))
         if detail:
             data["history_truncated"] = bool(tracked.cursor and tracked.cursor.skipped_bytes)
         return data

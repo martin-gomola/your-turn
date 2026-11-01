@@ -109,7 +109,7 @@ plugins off, add the rule by hand as described in
 - 🔒 **Local only.** The server binds `127.0.0.1` (the address behind `localhost`); nothing leaves your machine.
 - 👀 **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
   starts, answers, or approves anything. Its only file is `~/.your-turn/state.json`, which keeps
-  seen results and dismissed reminders in sync across browsers.
+  seen results and dismissed reminders in sync across browsers, with a browser-local backup for recovery.
 - ⚙️ **Zero config.** No account and no setup file; it finds the chats you already have and leaves
   out sub-agents, headless runs, and abandoned chats.
 

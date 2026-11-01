@@ -390,15 +390,26 @@ def write_demo_homes(root: Path, chats: list[Chat], held: int = 0) -> tuple[dict
     return homes, paths
 
 
+def serve_demo(root: Path, port: int) -> None:
+    """Run a disposable app with its own reminder state as well as its own agent homes."""
+    import uvicorn
+
+    from yourturn.app import create_app
+
+    app = create_app(root / "codex", claude_home=root / "claude", cursor_home=root / "cursor",
+                     cursor_user_dir=root / "cursor-user", state_path=root / "inbox-state.json")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+
 @contextmanager
 def demo_server(chats: list[Chat], held: int = 0):
-    """Serve made-up homes for all three apps; never the real ones. The first chat holds back `held` records."""
+    """Serve disposable agent homes and inbox state. The first chat holds back `held` records."""
     with tempfile.TemporaryDirectory() as tmp:
-        homes, paths = write_demo_homes(Path(tmp), chats, held)
+        _, paths = write_demo_homes(Path(tmp), chats, held)
         port = free_port()
-        server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "yourturn"), "serve", "--port", str(port),
-                                   "--codex-home", str(homes["codex"]), "--claude-home", str(homes["claude"]),
-                                   "--cursor-home", str(homes["cursor"]), "--cursor-user-dir", str(homes["cursor-user"])])
+        server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "python"), "-c",
+            ("import sys; from pathlib import Path; from scripts.readme_screenshots import serve_demo; "
+             "serve_demo(Path(sys.argv[1]), int(sys.argv[2]))"), tmp, str(port)], cwd=ROOT)
         try:
             base = f"http://127.0.0.1:{port}"
             wait_for(base + "/", server)

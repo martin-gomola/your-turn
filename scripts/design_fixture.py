@@ -80,7 +80,8 @@ def main() -> None:
                            .ask("Review the task.").answer("**Outcome:** Review complete.\n\n**Next step:** none.")
                            for number in range(201, 225))
         homes, _ = write_demo_homes(Path(folder), entries)
-        app = create_app(homes["codex"], claude_home=homes["claude"], cursor_home=homes["cursor"], cursor_user_dir=homes["cursor-user"])
+        app = create_app(homes["codex"], claude_home=homes["claude"], cursor_home=homes["cursor"], cursor_user_dir=homes["cursor-user"],
+                         state_path=Path(folder) / "inbox-state.json")
         uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 
 

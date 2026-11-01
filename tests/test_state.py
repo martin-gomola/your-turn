@@ -9,8 +9,21 @@ from conftest import OTHER, THREAD
 from fastapi.testclient import TestClient
 
 from yourturn.app import create_app
+from yourturn.state import InboxState
 
 JSON = {"Content-Type": "application/json"}
+
+
+def test_dismissed_request_keeps_its_identity_after_server_restart(codex_home: Path, tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    client = TestClient(create_app(codex_home, state_path=path), base_url="http://127.0.0.1")
+    row = next(row for row in client.get("/api/inbox").json() if row["needs_you"])
+    assert row["attention_key"]
+    assert client.post("/api/state", headers=JSON,
+                       json={"dismissed": {row["key"]: row["attention_key"]}}).status_code == 204
+    restarted = TestClient(create_app(codex_home, state_path=path), base_url="http://127.0.0.1")
+    replayed = next(entry for entry in restarted.get("/api/inbox").json() if entry["key"] == row["key"])
+    assert InboxState(path).snapshot()["dismissed"][row["key"]] == replayed["attention_key"]
 
 
 def test_marks_are_shared_merged_pruned_and_streamed(codex_home: Path, tmp_path: Path) -> None:
@@ -27,7 +40,9 @@ def test_marks_are_shared_merged_pruned_and_streamed(codex_home: Path, tmp_path:
     # A stale tab cannot mark a newer result unread; null restores a reminder.
     app.post("/api/state", headers=JSON, json={"seen": {f"codex:{THREAD}": "2026-10-27T09:00:00Z"}, "dismissed": {OTHER: None}})
     saved = json.loads(path.read_text())
-    assert saved == {"dismissed": {}, "seen": {f"codex:{THREAD}": "2026-10-27T10:03:12Z"}}, "the chat no longer in the inbox is dropped"
+    assert saved["dismissed"] == {f"codex:{OTHER}": None}, "explicit restores survive old browser backups"
+    assert saved["seen"] == {f"codex:{THREAD}": "2026-10-27T10:03:12Z"}, "the chat no longer in the inbox is dropped"
+    assert saved["dismissed_at"][f"codex:{OTHER}"] > 0
 
     with app.stream("GET", "/api/stream") as response:
         head, data = response.read().decode().split("\n", 2)[:2]
@@ -43,3 +58,35 @@ def test_only_this_page_can_write(codex_home: Path, tmp_path: Path) -> None:
     assert app.post("/api/state", json={"seen": {"not-a-key": "x"}}, headers=JSON).status_code == 400
     assert not (tmp_path / "state.json").exists()
     assert app.post("/api/state", json=body, headers={**JSON, "Origin": "http://127.0.0.1:8787"}).status_code == 204
+
+
+def test_old_browser_backups_cannot_overwrite_newer_restores(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    key = f"codex:{THREAD}"
+    state = InboxState(path)
+    state.update({}, {key: "request"}, {key}, {key: 100})
+    state.update({}, {key: None}, {key}, {key: 200})
+    restarted = InboxState(path)
+    restarted.update({}, {key: "request"}, {key}, {key: 100})
+    restarted.update({}, {key: "request"}, {key}, {key: 200})
+    assert restarted.snapshot()["dismissed"][key] is None
+    assert restarted.snapshot()["dismissed_at"][key] == 200
+    restarted.update({}, {key: "new-request"}, {key}, {key: 201})
+    assert restarted.snapshot()["dismissed"][key] == "new-request"
+
+
+def test_empty_server_accepts_legacy_backup_and_prunes_expired_versions(tmp_path: Path) -> None:
+    state = InboxState(tmp_path / "state.json")
+    key = f"codex:{THREAD}"
+    state.update({}, {key: "old-request"}, {key}, {key: 0})
+    assert state.snapshot()["dismissed"][key] == "old-request"
+    state.update({}, {}, set())
+    assert state.snapshot() == {"seen": {}, "dismissed": {}, "dismissed_at": {}}
+
+
+def test_state_timestamp_validation(codex_home: Path, tmp_path: Path) -> None:
+    app = TestClient(create_app(codex_home, state_path=tmp_path / "state.json"), base_url="http://127.0.0.1")
+    for timestamp in [-1, True, "100", 2**53]:
+        assert app.post("/api/state", json={"dismissed": {THREAD: "request"},
+                                          "dismissed_at": {THREAD: timestamp}}).status_code == 400
+    assert app.post("/api/state", json={"dismissed_at": {THREAD: 100}}).status_code == 400

@@ -53,6 +53,16 @@ calls in older transcripts still read as decisions.
 
 ## Inbox
 
+- The main bar offers a focus icon to toggle compact header density. Compact mode removes the
+  decorative artwork and large title from view, keeps an accessible heading, and preserves status
+  filters and utilities: one strip on desktop, utilities above filters in narrow windows. The choice
+  persists in browser-local storage, resolves before first paint, and can be reversed with the same
+  toggle. A blocked storage write changes only the current page. Chat-only pages omit this control.
+- Focus density animates in both directions using the existing motion tokens: artwork and title
+  fade upward while filters and the inbox move into place. Reduced motion, unsupported browsers,
+  and an already compact split view apply the preference immediately; rapid toggles cancel the
+  previous transition without leaving temporary styles behind.
+
 - The icon rail separates application navigation from status filtering. Icons have accessible names
   and hover/keyboard-focus labels. The header shows the active view title, with no tagline, beside
   a shallow architectural niche with the original round metal-and-glass gachapon, plant and two capsules.
@@ -113,11 +123,15 @@ calls in older transcripts still read as decisions.
 
 - At 1280px and above, an ordinary row click opens a bookmarkable `/?open=<id>` detail pane;
   the inbox becomes a compact list beside it. The sidebar remains available.
-- Focus opens the selected chat as a full page without the inbox list; Inbox returns to the same
+- The Hide inbox icon sits at the top-right of the left chat list and opens the selected chat as a full page without that list; Inbox returns to the same
   filter with that chat reopened.
-- Compact rows are three-line list items of one height: a one-line title with the age at its
-  right ("2d", 12px, tabular), the request or preview, then one quiet "Codex · project" line. The
-  status glyph aligns with the title, and the open row needs no chevron.
+- Hiding the inbox slides its left column horizontally off the left edge while the chat expands.
+  Supported browsers use the cross-page view transition; reduced motion and unsupported browsers
+  navigate directly. This navigation does not use the generic upward page entrance.
+- Compact row titles wrap to two lines before truncation. Row height grows with the title; the age
+  stays at the top-right ("2d", 12px, tabular). The request or preview follows the title, then one
+  quiet "Codex · project" line at 11px. The status glyph aligns with the title, and the open row needs
+  no chevron.
 - Selecting another filter keeps the detail open. Modified clicks use the real full-chat link.
 - Escape or the Inbox button returns focus to the originating row, or the current filter if the seen result moved.
   Browser Back/Forward restores pane state. Narrowing the viewport redirects an open pane to the
@@ -126,8 +140,12 @@ calls in older transcripts still read as decisions.
   closes only that panel; elsewhere it closes the detail pane. Gachapon animation and parallax remain deferred; scene composition stays steady.
 - The status card sizes to its complete content; the primary chat action must never be
   clipped by a grid track. Compact-list filters stay pinned, and row scroll margins account for them.
-- Working rows use their status or quiet label without generic per-item coaching text. Actual
-  activity belongs in the opened chat; do not add invented progress just to fill a preview line.
+- Working rows show a compact caption from recorded live activity. Shell chains prefer at most two
+  check tool names (for example `pytest && node --test`), omitting setup, redirects and log-printing
+  commands. Details retain the recorded activity and check evidence. No activity is invented for sources
+  that cannot report it live.
+- Main-list project metadata gets a 280px column on desktop and 220px at intermediate desktop widths,
+  so common repository names remain visible alongside the app badge and folder icon.
 
 ## Settings and Help
 
@@ -296,6 +314,13 @@ Desktop notifications are controlled only in Settings. Appearance and Desktop no
 The full inbox header collapses like a large top app bar: the scene and title fade and scroll away, and only the status tabs stay pinned. Browsers without scroll-linked animation keep the static header rather than pin a slice of the scene. At split-view sizes of at least 1600×800px, only the status tabs sit above both scrollable panes, with no scene, because permanent art would take space from the chat being read. Use those tabs as the sole filter; hide the compact selector. Smaller split views retain the compact header to preserve reading space.
 
 Scrollbars are thin with no track. The page shows a faint thumb; inner panes (the split view's list and chat, the menu, Settings) show it only while pointed at or focused from the keyboard.
+The left split pane's scroll edge meets the vertical divider, with the existing column gap retained
+as internal end padding so text stays clear of the scrollbar.
+
+Inbox marks are shared through the server and backed up in browser-local storage. Local changes
+survive failed saves and are retried. Versioned dismissals and explicit restore markers merge by
+timestamp, so an old backup cannot undo a newer restore. Both layers prune marks outside the current
+inbox, and blocked local storage leaves server sharing available.
 
 On mobile, group the navigation trigger, Live state and quick theme control at the top right. Move the inbox title to the top-left and keep the phone header compact. Full chat pages retain the Back link on the left.
 

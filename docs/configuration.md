@@ -43,7 +43,13 @@ older chats.
 
 `~/.your-turn/state.json` keeps which results you have seen and which reminders you dismissed, so
 every browser and tab shows the same inbox. It is the only file Your Turn writes. Entries for chats
-that leave the inbox are dropped; deleting the file marks recent results unread again.
+that leave the inbox are dropped.
+
+Each browser also backs up this state in `localStorage`. It restores missing server marks after a
+restart or lost state file, and retries local changes after a failed save. Dismiss and restore actions
+carry timestamps; a newer restore wins over an older browser backup. Backups contain only chat keys,
+seen times, and reminder identifiers, and are pruned to the current inbox. With storage blocked,
+server sharing still works. To fully reset marks, clear both the server state file and browser site data.
 
 ## What `install` sets up
 

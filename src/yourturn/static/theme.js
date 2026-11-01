@@ -1,5 +1,12 @@
 "use strict";
 
+// Resolve header density before first paint, alongside appearance.
+try {
+  document.documentElement.dataset.header = localStorage.getItem("compact-header") === "true" ? "compact" : "full";
+} catch {
+  document.documentElement.dataset.header = "full";
+}
+
 // Loaded without defer so the theme is set before first paint.
 (() => {
   const system = matchMedia("(prefers-color-scheme: dark)");

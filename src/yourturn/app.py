@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from urllib.parse import urlsplit
 from collections.abc import AsyncIterator, Callable
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -113,8 +113,14 @@ def create_app(
             return {str(checked(key)): value for key, value in values.items()}
 
         seen, dismissed = entries("seen", False), entries("dismissed", True)
+        stamps = body.get("dismissed_at", {})
+        if not isinstance(stamps, dict) or not all(type(v) is int and 0 <= v <= 2**53 - 1 for v in stamps.values()):
+            raise HTTPException(status_code=400, detail="dismissed_at must map chat keys to timestamps")
+        stamps = {str(checked(key)): value for key, value in stamps.items()}
+        if not stamps.keys() <= dismissed.keys():
+            raise HTTPException(status_code=400, detail="timestamps require a matching dismissal or restore")
         keep = {row["key"] for row in await asyncio.to_thread(hub.inbox_dicts, history_days)}
-        await asyncio.to_thread(state.update, seen, dismissed, keep)
+        await asyncio.to_thread(state.update, seen, dismissed, keep, stamps)
 
     @app.get("/api/stream")
     async def stream(request: Request, thread: str | None = None) -> StreamingResponse:

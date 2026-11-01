@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+import shlex
 import time
 from typing import Any
 
@@ -239,6 +240,33 @@ def check_name(command: str) -> str:
 def check_key(command: str) -> str:
     """`cd repo && pytest` and `pytest` are the same check."""
     return re.sub(r"^cd \S+ *&& *", "", command)
+
+
+def command_caption(command: str) -> str:
+    """Compact tool names for triage; this never changes check detection or result evidence."""
+    lists, _ = _command_lists(command)
+    segments = [text for commands in lists for _, text in commands]
+    checks = [match.group() for text in segments
+              if (match := CHECK_COMMAND.match(text, CHECK_PREFIX.match(text).end()))]
+    if checks:
+        return " && ".join(list(dict.fromkeys(checks))[:2])
+    for text in segments:
+        try:
+            words = shlex.split(text)
+        except ValueError:
+            continue
+        while words and ASSIGNMENT.match(words[0]):
+            words.pop(0)
+        while words[:2] in (["uv", "run"], ["poetry", "run"], ["pnpm", "exec"]):
+            words = words[2:]
+        if not words or words[0] in {"cd", "echo", "printf", "tail", "head", "true"}:
+            continue
+        if words[:2] in (["python", "-m"], ["python3", "-m"]):
+            return clip(words[2] if len(words) > 2 else words[0], 72)
+        program = posixpath.basename(words[0])
+        count = 2 if program in {"git", "make", "cargo", "npm", "pnpm", "yarn", "bun", "swift", "go"} else 1
+        return clip(" ".join([program, *words[1:count]]), 72)
+    return "Shell command"
 
 
 def is_doc_path(path: str) -> bool:

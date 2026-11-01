@@ -12,6 +12,8 @@
 <link rel="stylesheet" href="/assets/tokens.css">
 <link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/theme.js"></script>
+<script src="/assets/navigation.js"></script>
+<script src="/assets/state-sync.js" defer></script>
 <script src="/assets/app.js" defer></script>
 </head>
 <body>
@@ -80,6 +82,13 @@ SOFTWARE.
   <path d="M19 22v.01" />
   <path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></symbol>
 <symbol id="i-brand-github" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 4v16m-6-6 6 6 6-6"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></symbol>
+    <symbol id="i-enter" viewBox="0 0 24 24"><path d="M20 5v8a3 3 0 0 1-3 3H4m5-5-5 5 5 5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-sidebar-left" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-focus" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
   </defs>
 </svg>
 <a class="skip-link" href="#main-content">Skip to content</a>
@@ -105,6 +114,8 @@ SOFTWARE.
 <header class="bar">
   <a class="back" id="back" href="/" hidden><svg aria-hidden="true"><use href="#i-back"/></svg><span id="back-label">Inbox</span></a>
   <div class="utility">
+    <button class="icon-button" id="header-toggle" type="button" aria-label="Hide header artwork" title="Hide header artwork" aria-pressed="false" hidden><svg aria-hidden="true"><use href="#i-focus"/></svg></button>
+    <button class="icon-button" id="search-toggle" type="button" aria-label="Search chats" title="Search chats (/)" aria-controls="search-box" aria-expanded="false" hidden><svg aria-hidden="true"><use href="#i-search"/></svg></button>
     <p class="connection" id="connection" data-state="connecting" role="status">
       <span class="connection-dot" aria-hidden="true"></span><span id="connection-text">Connecting</span>
     </p>
@@ -130,10 +141,10 @@ SOFTWARE.
       <a class="segment" data-kind="new" href="/?status=new"><svg class="segment-icon" aria-hidden="true"><use href="#i-answer"/></svg><span class="segment-count">–</span><span class="segment-label">New results</span></a>
       <a class="segment" data-kind="earlier" href="/?status=earlier"><svg class="segment-icon" aria-hidden="true"><use href="#i-turn"/></svg><span class="segment-count">–</span><span class="segment-label">Earlier</span></a>
     </nav>
-    <div class="compact-filter"><label for="compact-status">Chats</label><span class="select-field"><select id="compact-status" aria-label="Filter chats by status"><option value="">All chats</option><option value="waiting">Needs you</option><option value="working">Working</option><option value="new">New results</option><option value="earlier">Earlier</option></select><svg class="select-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></span></div>
     </header>
     <div class="inbox-list">
-    <div class="inbox-search"><label class="sr-only" for="inbox-search">Search chats</label><input id="inbox-search" type="search" placeholder="Search chats…  /" autocomplete="off" aria-controls="sections"></div>
+    <div class="compact-filter"><label for="compact-status">Chats</label><span class="select-field"><select id="compact-status" aria-label="Filter chats by status"><option value="">All chats</option><option value="waiting">Needs you</option><option value="working">Working</option><option value="new">New results</option><option value="earlier">Earlier</option></select><svg class="select-chevron" aria-hidden="true"><use href="#i-chevron"/></svg></span><a class="icon-button panel-focus" id="panel-focus" href="/" aria-label="Hide inbox" title="Hide inbox"><svg aria-hidden="true"><use href="#i-sidebar-left"/></svg></a></div>
+    <div class="inbox-search" id="search-box" hidden><label class="sr-only" for="inbox-search">Search chats</label><input id="inbox-search" type="search" placeholder="Search chats…" autocomplete="off" aria-controls="sections"></div>
     <div class="away-digest" id="away-digest" hidden><a id="away-link" href="/?status=waiting"></a><button id="away-dismiss" type="button" aria-label="Dismiss away summary">×</button></div>
     <p class="empty card" id="search-empty" role="status" hidden></p>
     <p class="empty card" id="inbox-empty" hidden>No agent chats found. Start a chat in Codex, Claude Code or Cursor and it appears here.</p>
@@ -148,15 +159,16 @@ SOFTWARE.
         <h2 id="panel-title" tabindex="-1">Loading…</h2>
         <p class="subtitle" id="panel-subtitle"></p>
       </div>
-      <a class="button panel-inbox panel-focus" id="panel-focus" href="/">Focus</a>
       <button type="button" class="button panel-inbox" id="panel-close"><svg aria-hidden="true"><use href="#i-inbox"/></svg>Inbox</button>
     </div>
     <section class="card status-card" id="status-card" aria-labelledby="status-title" data-status="idle">
       <div class="status-head">
         <span class="glyph"><svg aria-hidden="true"><use id="status-icon" href="#i-turn"/></svg></span>
-        <h2 id="status-title">Loading…</h2>
-        <button type="button" class="icon-button" id="reminder-toggle" aria-label="Dismiss reminder" hidden><svg aria-hidden="true"><use id="reminder-icon" href="#i-bell-off"/></svg></button>
-        <a class="open-codex" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
+        <div class="status-heading">
+          <h2 id="status-title">Loading…</h2>
+          <button type="button" class="icon-button" id="reminder-toggle" aria-label="Dismiss reminder" hidden><svg aria-hidden="true"><use id="reminder-icon" href="#i-bell-off"/></svg></button>
+        </div>
+        <a class="open-codex open-codex--primary" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
         <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="Open project in Claude Desktop" title="Starts a new Code session using this project folder." hidden>Open project in Claude Desktop<svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
       <div class="status-body" id="status-body" data-kind="unknown" hidden>
@@ -262,7 +274,18 @@ SOFTWARE.
 <section class="aside-panel" id="help" aria-labelledby="help-title" hidden>
   <header class="aside-heading"><h2 id="help-title" tabindex="-1">Help</h2><button type="button" class="button" data-close-aside>Close</button></header>
   <p class="help-intro">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Copy resume command</strong>) to reply or take action.</p>
-  <p>Keyboard: <kbd>/</kbd> searches this inbox; <kbd>j</kbd>/<kbd>k</kbd> or arrow keys move through visible chats; <kbd>Enter</kbd> opens one; <kbd>n</kbd> jumps to the oldest chat needing you. <kbd>Escape</kbd> clears search.</p>
+  <section class="help-keyboard" aria-labelledby="shortcuts-title">
+    <h3 id="shortcuts-title">Keyboard shortcuts</h3>
+    <p class="settings-note">In the inbox, when you’re not typing.</p>
+    <dl class="help-shortcuts">
+      <div><dt><svg aria-hidden="true"><use href="#i-search"/></svg>Search chats</dt><dd><kbd>/</kbd></dd></div>
+      <div><dt><svg aria-hidden="true"><use href="#i-arrow-down"/></svg>Next chat</dt><dd><kbd>j</kbd><span>or</span><kbd aria-label="Arrow down">↓</kbd></dd></div>
+      <div><dt><svg aria-hidden="true"><use href="#i-arrow-up"/></svg>Previous chat</dt><dd><kbd>k</kbd><span>or</span><kbd aria-label="Arrow up">↑</kbd></dd></div>
+      <div><dt><svg aria-hidden="true"><use href="#i-enter"/></svg>Open focused chat</dt><dd><kbd>Enter</kbd></dd></div>
+      <div><dt><svg aria-hidden="true"><use href="#i-message-question"/></svg>Oldest chat needing you</dt><dd><kbd>n</kbd></dd></div>
+      <div><dt><svg aria-hidden="true"><use href="#i-close"/></svg>Clear and close search</dt><dd><kbd>Esc</kbd></dd></div>
+    </dl>
+  </section>
   <table class="help-statuses">
     <caption>Chat statuses</caption>
     <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>

@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 
 const source = readFileSync(new URL('../src/yourturn/static/theme.js', import.meta.url), 'utf8');
 
-function browser({ stored = null, dark = false, blocked = false } = {}) {
+function browser({ stored = null, dark = false, blocked = false, compact = false } = {}) {
   const storage = new Map(stored ? [['theme', stored]] : []);
+  if (compact) storage.set('compact-header', 'true');
   const events = new Map();
   const system = { matches: dark, addEventListener: (_, callback) => events.set('system', callback) };
   const root = { dataset: {} };
@@ -32,6 +33,12 @@ test('system appearance resolves before first paint and follows changes', () => 
   b.system.matches = false; b.events.get('system')();
   assert.equal(b.root.dataset.theme, 'light');
   assert.equal(b.api.preference(), 'system');
+});
+
+test('header density resolves before first paint and safely defaults when storage is unavailable', () => {
+  assert.equal(browser({ compact: true }).root.dataset.header, 'compact');
+  assert.equal(browser().root.dataset.header, 'full');
+  assert.equal(browser({ compact: true, blocked: true }).root.dataset.header, 'full');
 });
 
 test('saved override wins over system until System is selected', () => {

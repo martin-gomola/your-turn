@@ -234,13 +234,20 @@ function projectName(chat) {
   return chat.project || chat.cwd.split("/").pop() || "Unassigned";
 }
 
-// Seen results and dismissed reminders live on the server, so every browser shows the same inbox.
-const shared = { seen: {}, dismissed: {} };
+// Server sharing with a versioned browser backup, including explicit reminder restores.
+const stateSync = new window.YourTurnState();
+const shared = stateSync.data;
 function saveShared(change) {
-  for (const [name, values] of Object.entries(change)) Object.assign(shared[name], values);
-  fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) })
-    .catch(() => {});
+  stateSync.save(change);
 }
+window.addEventListener("online", () => stateSync.flush());
+window.addEventListener("storage", (event) => {
+  if (event.key !== window.YourTurnState.storageKey && event.key !== null) return;
+  stateSync.readBackup();
+  stateSync.persist();
+  stateSync.flush();
+  renderShared();
+});
 const seen = {
   get: (key) => shared.seen[key] || "",
   set: (key, endedAt) => { if (endedAt) saveShared({ seen: { [key]: endedAt } }); },
@@ -269,11 +276,11 @@ function setConnection(state, text) {
 
 function connect(url, event, render) {
   const source = new EventSource(url);
-  source.onopen = () => setConnection("live", "Live");
+  source.onopen = () => { setConnection("live", "Live"); stateSync.flush(); };
   source.onerror = () => setConnection("offline", "Reconnecting");
   source.addEventListener(event, (message) => render(JSON.parse(message.data)));
   source.addEventListener("state", (message) => {
-    Object.assign(shared, JSON.parse(message.data));
+    stateSync.receive(JSON.parse(message.data));
     renderShared();
   });
   return source;
@@ -347,7 +354,7 @@ function renderRow(chat) {
   const summaryNode = el("span", "row-text", summary || "");
   const meta = el("span", "row-tags");
   const action = chat.question ? "Answer" : NEXT_LABEL[chat.next_kind];
-  const tag = state === "waiting" ? action || status.label : state === "done" || state === "idle" ? "" : status.label;
+  const tag = state === "waiting" ? action || status.label : ["done", "idle", "dismissed"].includes(state) ? "" : status.label;
   if (state === "working" && chat.quiet) {
     const quiet = el("span", "tag tag--waiting", `Quiet ${quietFor(chat)}`);
     quiet.dataset.quietAt = chat.updated_at;
@@ -492,6 +499,7 @@ function transition(update, { rows = true } = {}) {
 }
 
 function liveInbox(chats) {
+  stateSync.retain(chats.map(chatKey));
   migrateLocalMarks(chats);
   notifyChanges(chats);
   if (inboxLayout && layoutOf(groupChats(chats)) !== inboxLayout) transition(() => renderInbox(chats));
@@ -1512,7 +1520,60 @@ function closePanel() {
 }
 
 if (!threadId) {
+  const headerToggle = $("header-toggle");
+  headerToggle.hidden = false;
+  function syncHeaderToggle() {
+    const compact = document.documentElement.dataset.header === "compact";
+    headerToggle.setAttribute("aria-pressed", String(compact));
+    headerToggle.title = compact ? "Show header artwork" : "Hide header artwork";
+    headerToggle.setAttribute("aria-label", headerToggle.title);
+  }
+  syncHeaderToggle();
+  let headerMotion = null;
+  let requestedCompact = document.documentElement.dataset.header === "compact";
+  headerToggle.addEventListener("click", () => {
+    const compact = requestedCompact = !requestedCompact;
+    const apply = () => {
+      document.documentElement.dataset.header = compact ? "compact" : "full";
+      try { localStorage.setItem("compact-header", String(compact)); } catch { /* Keep the page-local choice. */ }
+      syncHeaderToggle();
+    };
+    if (calm.matches || !document.startViewTransition || openId) { apply(); return; }
+    headerMotion?.skipTransition();
+    document.documentElement.dataset.headerMotion = "true";
+    const motion = document.startViewTransition(apply);
+    motion.types?.add("header-focus");
+    headerMotion = motion;
+    const finish = () => {
+      if (headerMotion !== motion) return;
+      delete document.documentElement.dataset.headerMotion;
+      headerMotion = null;
+    };
+    motion.finished.then(finish, finish);
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "compact-header" && event.key !== null) return;
+    document.documentElement.dataset.header = readPreference("compact-header") === "true" ? "compact" : "full";
+    requestedCompact = document.documentElement.dataset.header === "compact";
+    syncHeaderToggle();
+  });
   const search = $("inbox-search");
+  const searchToggle = $("search-toggle");
+  searchToggle.hidden = false;
+  function showSearch(show) {
+    $("search-box").hidden = !show;
+    searchToggle.setAttribute("aria-expanded", String(show));
+    if (show) search.focus();
+    else {
+      search.value = searchQuery = "";
+      if (inboxData) renderInbox(inboxData);
+    }
+  }
+  searchToggle.addEventListener("click", () => {
+    const show = $("search-box").hidden;
+    showSearch(show);
+    if (!show) searchToggle.focus();
+  });
   search.addEventListener("focus", (event) => { searchReturnFocus = event.relatedTarget || searchReturnFocus; });
   search.addEventListener("input", () => {
     searchQuery = search.value;
@@ -1522,8 +1583,7 @@ if (!threadId) {
     if (event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
-    search.value = searchQuery = "";
-    if (inboxData) renderInbox(inboxData);
+    showSearch(false);
     const previous = searchReturnFocus?.isConnected && searchReturnFocus.matches("a, button, [tabindex]") ? searchReturnFocus : null;
     const target = cardFor(searchReturnFocus?.dataset.id) || previous || document.querySelector("#sections .row") || $("main-content");
     target.focus();
@@ -1546,7 +1606,7 @@ if (!threadId) {
     if (event.key === "/") {
       event.preventDefault();
       searchReturnFocus = document.activeElement;
-      search.focus();
+      showSearch(true);
       return;
     }
     if (event.key === "n") {
@@ -1595,6 +1655,7 @@ for (const chip of document.querySelectorAll(".chip")) {
 // Nothing is written while a chat is quiet, so durations tick here instead of waiting for the server.
 let attentionData = null;
 setInterval(() => {
+  stateSync.flush();
   const chats = inboxData || attentionData;
   if (chats) notifyChanges(chats);
   if (document.hidden) return;
@@ -1615,6 +1676,7 @@ if (threadId) {
   // The favicon and notifications cover every chat, not just this one; the live label follows this chat's stream.
   new EventSource("/api/stream").addEventListener("inbox", (message) => {
     attentionData = JSON.parse(message.data);
+    stateSync.retain(attentionData.map(chatKey));
     syncNavigation(attentionData);
     notifyChanges(attentionData);
     setFavicon(attentionData.some(needsAttention));
