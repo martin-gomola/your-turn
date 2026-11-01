@@ -12,21 +12,18 @@
 
 </div>
 
-When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat
-blocked on you sits in a window you are not looking at, and every answer is a long log.
+When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat blocked on you sits in a window you are not looking at, and every answer is a long log.
 
-Your Turn is not another orchestrator, IDE wrapper, or cloud dashboard. It is a **read-only,
-zero-config local inbox** that reads the logs your agents already write and answers three questions
-at a glance:
+**Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox that reads the logs your agents already write and answers three questions at a glance:
 
-1. ⏳ **Who is waiting on you?**\
-   Questions, pending Cursor approvals, and finished turns, ordered by how long they have waited.
+* ⏳ **Who is waiting on you?**  
+  Questions, pending approvals, and unreviewed results, ordered strictly by how long they have waited.
 
-2. ✅ **Can you trust the result without reading the log?**\
-   **Check failed** and **Edits unchecked** are tied to the latest code edit.
+* ✅ **Can you trust the result without reading the log?**  
+  `Check failed` and `Edits unchecked` badges tied deterministically to the latest code edit.
 
-3. ➡️ **What is the exact next step, and which decisions were made?**\
-   One line each, with a button that opens the chat in its own app.
+* ➡️ **What is the exact next step, and which decisions were made?**  
+  One line each, with a single click to resume or open the chat in its native app.
 
 <div align="center">
 
