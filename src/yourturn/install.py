@@ -32,13 +32,15 @@ BLOCK = re.compile(rf"\n*{re.escape(START)}.*?{re.escape(END)}\n*", re.DOTALL)
 CLAUDE_BLOCK = f"""{START}
 ## Your Turn handoff
 
-End every final answer with these lines, each on its own line, outside code blocks:
-`**Outcome:**` (one sentence: what is now true), `**Next step:**` (`none`, `answer: …`, `review: …`,
-`approve: …` or `run: …`), and from the second turn on `**Recap:**`. When the task is done, write
-`**Next step:** none` and stop; never close with a polite offer such as "Let me know if…" or
-"Should I also…?". Add `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only
-for a non-trivial trade-off (architecture, edge-case behavior, library or approach). Ask the user
-to choose with `AskUserQuestion`. The `your-turn` skill has the details.
+End every response to the user, on every turn, with these lines at the very bottom, each on one line,
+as plain Markdown outside code blocks: `**Outcome:**` (one sentence: what is now true), `**Next step:**`
+(`none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`), and from the second turn on
+`**Recap:**` (1-2 sentences under 400 characters: goal, what is settled, what is open). When the task is
+done, write `**Next step:** none` and stop; never close with a polite offer such as "Let me know if…" or
+"Should I also…?". Add `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a
+non-trivial trade-off (architecture, edge-case behavior, library or approach), one line each. After your
+last code edit, run the check that covers it; if you cannot, make the next step `run: <command>`. Ask the
+user to choose with `AskUserQuestion`. The `your-turn` skill has the details.
 {END}
 """
 QUESTIONS = """

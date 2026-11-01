@@ -19,13 +19,13 @@ MARKDOWN_EMPHASIS = re.compile(r"\*\*|__|`")
 MARKDOWN_LINK = re.compile(r"!?\[([^\]]*)\]\([^)\s]*\)")
 ANSWER_LABEL = re.compile(
     # The leading class must not match newlines: with MULTILINE, `\s` there is quadratic on blank lines.
-    r"^[ \t#>*_-]*(outcome|result|next step|your next step|next|recap)[*_\s]*:[*_\s]*(.*)$", re.IGNORECASE | re.MULTILINE
+    r"^[ \t#>*_`-]*(outcome|result|next step|your next step|next|recap)[*_\s]*:[*_\s]*(.*)$", re.IGNORECASE | re.MULTILINE
 )
 NEXT_KIND = re.compile(r"^(answer|review|approve|run|decide)\b\s*[:\-–]?\s*", re.IGNORECASE)
-NOTHING_NEEDED = re.compile(r"^(none|nothing|no action|n/a|—|-)\b", re.IGNORECASE)
+NOTHING_NEEDED = re.compile(r"^(none|nothing|no action|no further action|n/a|—|-)\b", re.IGNORECASE)
 # A check is a command that runs the tool itself, so `rg pytest` (exit 1 when nothing matches) is not one.
 CHECK_COMMAND = re.compile(
-    r"(pytest|vitest|jest|mypy|ruff|eslint|tsc|pyright|go test|cargo (test|clippy)|"
+    r"(pytest|unittest|vitest|jest|mypy|ruff|eslint|tsc|pyright|node --test|swift test|go test|cargo (test|clippy)|"
     r"(npm|pnpm|yarn|bun) (run )?(test|lint|check|typecheck|build)|make (check|test|lint|ci|build))\b"
 )
 CHECK_PREFIX = re.compile(r"((cd|source) \S+ *&& *|[A-Z_][A-Z0-9_]*=\S* +|(uv run|uvx|npx|bunx|pnpm exec|poetry run|python3? -m) +)*")
@@ -43,7 +43,7 @@ FINAL_ASKS = (
 )
 FENCE = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
 # `Decision: <question> -> <chosen> (over <alternatives>). <reason>`, bold or plain, `->` or `→`.
-DECISION = re.compile(r"^[ \t#>*_-]*decision[*_ \t]*:[*_ \t]*(.+?)\s*(?:->|→)\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+DECISION = re.compile(r"^[ \t#>*_`-]*decision[*_ \t]*:[*_ \t]*(.+?)\s*(?:->|→)\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 OVER = re.compile(r"^(.*?)\s*\(over ([^)]*)\)\.?\s*(.*)$", re.IGNORECASE)
 ALTERNATIVES = re.compile(r"\s*(?:,|\bor\b)\s*")
 

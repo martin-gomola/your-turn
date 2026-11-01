@@ -49,7 +49,9 @@ def test_readme_edit_after_passing_check_keeps_it_passed() -> None:
 
 @pytest.mark.parametrize(
     ("command", "expected"),
-    [("uv run pytest -q", True), ("cd web && npm test", True), ("rg pytest", False), ("FOO=1 ruff check", True)],
+    [("uv run pytest -q", True), ("cd web && npm test", True), ("rg pytest", False), ("FOO=1 ruff check", True),
+     ("node --test tests/", True), ("python3 -m unittest discover", True), ("python -m pytest -q", True),
+     ("swift test", True), ("node server.js", False)],
 )
 def test_is_check_command(command: str, expected: bool) -> None:
     assert is_check_command(command) is expected
@@ -114,11 +116,40 @@ def test_skill_examples_parse_as_documented() -> None:
 
     from yourturn.install import plugin_text
 
-    done, needs = re.findall(r"## Examples.*?```\n(.*?)```.*?```\n(.*?)```", plugin_text("skills/your-turn-handoff/SKILL.md"), re.DOTALL)[0]
+    examples = plugin_text("skills/your-turn-handoff/SKILL.md").split("## Examples", 1)[1]
+    done, needs, choice = re.findall(r"```\n(.*?)```", examples, re.DOTALL)
     assert parse_answer(done) == ("The last page now shows its final row.", "none", "", True)
+    assert parse_recap(done) == "" and parse_decisions(done) == []
     assert parse_answer(needs)[1:] == ("review", "the skipped-row log format in importer.py", True)
+    assert parse_recap(needs) == "Goal: make imports tolerate bad rows. Settled: skip and log. Open: the log format."
     assert parse_decisions(needs) == [{"question": "Skip or abort on a malformed row?", "options": ["skip and log", "abort", "silent skip"],
                                        "chosen": "skip and log", "reason": "One bad row should not lose a whole import."}]
+    assert parse_answer(choice)[1:] == ("decide", "Redis with a 60 s TTL, or an in-process LRU per worker?", True)
+    assert parse_recap(choice) == "Goal: faster dashboard. Settled: queries are the bottleneck. Open: which cache."
+
+
+def test_every_next_step_kind_is_documented_wherever_the_handoff_is_installed() -> None:
+    from pathlib import Path
+
+    from yourturn.heuristics import NEXT_KIND
+    from yourturn.install import CLAUDE_BLOCK, plugin_text
+
+    kinds = NEXT_KIND.pattern.split("(", 1)[1].split(")", 1)[0].split("|")
+    snippet = (Path(__file__).resolve().parents[1] / "docs" / "agents-snippet.md").read_text(encoding="utf-8")
+    for text in (plugin_text("skills/your-turn-handoff/SKILL.md"), CLAUDE_BLOCK, snippet):
+        assert [kind for kind in kinds if f"{kind}:" not in text] == []
+
+
+def test_backtick_wrapped_handoff_lines_still_parse() -> None:
+    text = "`**Outcome:** Docs updated.`\n`**Next step:** review: the new section`\n`**Decision:** Where? -> README (over wiki). Easier to find.`"
+    assert parse_answer(text) == ("Docs updated.", "review", "the new section", True)
+    assert parse_decisions(text)[0]["chosen"] == "README"
+    assert parse_decisions(text)[0]["reason"] == "Easier to find."
+
+
+@pytest.mark.parametrize("step", ["No further action.", "No action needed", "none"])
+def test_nothing_needed_phrasings_are_none(step: str) -> None:
+    assert parse_answer(f"**Outcome:** Done.\n**Next step:** {step}")[1:3] == ("none", "")
 
 
 def test_handoff_lines_inside_code_blocks_are_ignored() -> None:
