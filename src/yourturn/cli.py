@@ -85,8 +85,8 @@ def main(argv: list[str] | None = None) -> int | None:
         restart = f"Restart {apps} to load the handoff" if names else ""
         # Run from a script, or with input or output redirected, install only sets up and exits.
         if not _interactive():
-            print(f"\n→ {restart}, then start the inbox with: {SERVE}" if restart else f"\n→ Start the inbox with: {SERVE}",
-                  flush=True)
+            start = f"start the inbox with: {SERVE} (or `make up` in a clone)"
+            print(f"\n→ {restart}, then {start}" if restart else f"\n→ {start[0].upper()}{start[1:]}", flush=True)
             return
         if restart:
             print(f"\n→ {restart}.", flush=True)

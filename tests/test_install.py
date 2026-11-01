@@ -273,7 +273,8 @@ def test_cli_install_exits_after_setup(tmp_path: Path, no_clis: Path, capsys: py
     assert (claude / "skills" / "your-turn" / "SKILL.md").is_file()
     # Run through uvx, `your-turn` is not on PATH, so the hint is the full command.
     assert capsys.readouterr().out.endswith("\n→ Restart Claude Code to load the handoff, then start the inbox with: "
-                                            "uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")
+                                            "uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve "
+                                            "(or `make up` in a clone)\n")
 
 
 @pytest.mark.parametrize("running", [False, True])
@@ -308,7 +309,8 @@ def test_cli_install_names_only_the_apps_it_set_up(tmp_path: Path, no_clis: Path
     assert "\n→ Restart Codex, Claude Code and Cursor to load the handoff, then start the inbox with: " in capsys.readouterr().out
     main(["install", "--codex-home", str(tmp_path / "none"), "--claude-home", str(tmp_path / "none"),
           "--cursor-home", str(tmp_path / "none")])
-    assert capsys.readouterr().out.endswith("\n→ Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")
+    assert capsys.readouterr().out.endswith("\n→ Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve "
+                                            "(or `make up` in a clone)\n")
 
 
 def test_install_saves_the_cursor_rule_plugin_without_printing_the_rule(tmp_path: Path, no_clis: Path,
