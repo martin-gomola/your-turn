@@ -69,11 +69,13 @@ It writes only to your home folder and never creates a file in your git reposito
 
 Restart the agents afterwards.
 
-**2. Cursor only: add the User Rule.** Print it, then paste it into Cursor under
-**Customize → Rules → User Rule**:
+**2. Cursor only: add the User Rule.** Copy the rule from
+[docs/configuration.md](./docs/configuration.md#cursor-user-rule) with the copy button on its block,
+then paste it into Cursor under **Customize → Rules → User Rule**. To print it instead, on macOS
+straight to the clipboard:
 
 ```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule | pbcopy
 ```
 
 **3. Run the inbox** whenever you want it, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):

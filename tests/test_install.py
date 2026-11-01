@@ -198,6 +198,7 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
                  "--cursor-home", str(homes["cursor"])]) == 1
     out = capsys.readouterr().out
     assert "content mismatch" in out and "unreadable" in out and "activation unverified" in out and "unverified" in out
+    assert "docs/configuration.md#cursor-user-rule" in out
     assert "`uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule` prints (in a clone: `make cursor-rule`)" in out
     # Only our block is compared, and nothing of the user's CLAUDE.md is shown.
     assert "zebra-ledger" not in out and "edited by hand" not in out
@@ -271,9 +272,10 @@ def test_install_points_to_the_cursor_rule_without_printing_it(tmp_path: Path, n
     install(["codex", "cursor"], homes)
     out = capsys.readouterr().out
     assert "Skill written" in out
-    assert ("  If you haven't added the Cursor User Rule, run: "
-            "uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule\n"
-            "  (in a clone of the repository: make cursor-rule)\n") in out
+    assert ("  If you haven't added the Cursor User Rule, copy it from: "
+            "https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md#cursor-user-rule\n"
+            "  Or print it: uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule"
+            " (in a clone: make cursor-rule)\n") in out
     # Not one line of the rule body, and no claim that the rule is missing: its activation cannot be read.
     assert not any(line.strip() and line.strip() in out for line in rule_text("cursor").splitlines())
     assert "not added" not in out and "missing" not in out

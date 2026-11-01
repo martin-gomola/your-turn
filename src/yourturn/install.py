@@ -27,6 +27,8 @@ MARKETPLACE = "your-turn"
 PLUGIN = f"your-turn@{MARKETPLACE}"
 # The Quickstart's form: run through uvx, `your-turn` is not on PATH.
 CURSOR_RULE = "uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule"
+# The same text in a Markdown block, which GitHub gives a copy button.
+CURSOR_RULE_DOCS = "https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md#cursor-user-rule"
 NAME = "your-turn"  # Skill folder in Claude Code and Cursor, and the name of the legacy MCP server.
 APPS = {"codex": "Codex", "claude": "Claude Code", "cursor": "Cursor"}
 ASK_TOOLS = {"claude": "AskUserQuestion", "cursor": "AskQuestion"}
@@ -261,8 +263,8 @@ def install_cursor(home: Path) -> None:
         print("  Skill saved: the agent uses it when it picks it. The global rule is not activated by install.", flush=True)
     else:
         print("  Skill not saved. The global rule is not activated by install.", flush=True)
-    print(f"  If you haven't added the Cursor User Rule, run: {CURSOR_RULE}", flush=True)
-    print("  (in a clone of the repository: make cursor-rule)", flush=True)
+    print(f"  If you haven't added the Cursor User Rule, copy it from: {CURSOR_RULE_DOCS}", flush=True)
+    print(f"  Or print it: {CURSOR_RULE} (in a clone: make cursor-rule)", flush=True)
 
 
 def uninstall_cursor(home: Path) -> None:
@@ -314,7 +316,8 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
             results.append(("cursor", "User Rule", "activation unverified",
                             "Cursor keeps User Rules in its own settings, so Your Turn cannot tell whether the rule is added; "
                             "a saved skill does not make it apply to every chat. To add it, open Customize → Rules and add a "
-                            f"User Rule with the text that `{CURSOR_RULE}` prints (in a clone: `make cursor-rule`)."))
+                            f"User Rule with the text from {CURSOR_RULE_DOCS}, or the text that `{CURSOR_RULE}` prints "
+                            "(in a clone: `make cursor-rule`)."))
     return results
 
 

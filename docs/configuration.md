@@ -66,17 +66,8 @@ installing.
 ### Cursor User Rule
 
 A saved skill is used only when the agent picks it. To apply the handoff in every Cursor Agent chat,
-open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below. This prints
-exactly that text and changes nothing:
-
-```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
-```
-
-In a clone of the repository, `make cursor-rule` does the same; plain `your-turn cursor-rule` works
-when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
-add one and `doctor` reports **activation unverified** even when the skill is current. A `.cursor/rules` folder belongs to one
-project and is not a User Rule.
+open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below (GitHub shows a
+copy button on the block):
 
 ```markdown
 ## Your Turn handoff
@@ -95,6 +86,18 @@ with `StrReplace`, `Write` or `ApplyPatch`, not from the shell, so Your Turn see
 check that covers it, alone or last in a chain joined with `&&`; if you cannot, make the next step
 `run: <command>`. Ask the user to choose with `AskQuestion`. The `your-turn` skill has the details.
 ```
+
+To print exactly this text instead, without changing anything (on macOS, `| pbcopy` puts it on the
+clipboard):
+
+```sh
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
+```
+
+In a clone of the repository, `make cursor-rule` does the same; plain `your-turn cursor-rule` works
+when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
+add one and `doctor` reports **activation unverified** even when the skill is current. A
+`.cursor/rules` folder belongs to one project and is not a User Rule.
 
 ### Checking the install
 
