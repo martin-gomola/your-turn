@@ -19,12 +19,14 @@ Your Turn is not another orchestrator, IDE wrapper, or cloud dashboard. It is a 
 zero-config local inbox** that reads the logs your agents already write and answers three questions
 at a glance:
 
-1. **Who is waiting on you?** Questions, pending Cursor approvals, and finished turns, ordered by
-   how long they have waited.
-2. **Can you trust the result without reading the log?** **Check failed** and **Edits unchecked**
-   are tied to the latest code edit.
-3. **What is the exact next step, and which decisions were made?** One line each, with a button
-   that opens the chat in its own app.
+1. ⏳ **Who is waiting on you?**\
+   Questions, pending Cursor approvals, and finished turns, ordered by how long they have waited.
+
+2. ✅ **Can you trust the result without reading the log?**\
+   **Check failed** and **Edits unchecked** are tied to the latest code edit.
+
+3. ➡️ **What is the exact next step, and which decisions were made?**\
+   One line each, with a button that opens the chat in its own app.
 
 <div align="center">
 
@@ -54,40 +56,61 @@ VS Code, and you never switch windows to see who needs you.
 You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
 or Cursor.
 
-Run this once, then open [http://localhost:8787](http://localhost:8787):
+**1. Install.** Run this once in a terminal:
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 ```
 
-It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds,
-names the apps to restart, and starts the inbox. It writes only to your home folder and never
-creates a file in your git repositories:
+It adds a skill or rule to each agent it finds, so replies end with `Outcome:` and `Next step:`.
+Then it starts the inbox. Your projects stay untouched.
+
+<details>
+<summary>What it changes per agent</summary>
+
+It writes only to the agents' own folders: `~/.codex`, `~/.claude`, `~/.cursor`, and `~/.agents`.
 
 - **Codex**: installs the `your-turn` plugin, or, without the Codex CLI, saves the skill in
   `~/.agents/skills`, which the Codex app reads too.
 - **Claude Code**: saves the skill and adds a block to `~/.claude/CLAUDE.md`.
 - **Cursor**: saves the skill, and the rule that applies it in every chat as a local plugin.
 
-Your existing chats appear right away. Later, start the inbox with:
+</details>
+<br>
+
+**2. Restart the apps it names** at the end of its output, so they load the handoff.
+
+**3. Open [http://localhost:8787](http://localhost:8787).** Your existing chats are already there.
+
+**Next time**, start the inbox with:
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
 ```
 
-Running only `serve`, without `install`, works too, with guessed recaps.
+<details>
+<summary>Check, remove, or troubleshoot the install</summary>
 
-`your-turn doctor` checks the install without changing anything, and `your-turn uninstall` removes
-it. If your Cursor admin turned local plugins off, add the rule by hand as described in
+To check the install without changing anything, or to remove it:
+
+```sh
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn doctor
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn uninstall
+```
+
+`serve` also works without `install`; recaps are then guessed. If your Cursor admin turned local
+plugins off, add the rule by hand as described in
 [docs/configuration.md](./docs/configuration.md#cursor-user-rule).
+
+</details>
 
 ## Privacy and Design
 
-- **Local only.** The server binds `127.0.0.1` (the address behind `localhost`); nothing leaves your machine.
-- **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
+- 🔒 **Local only.** The server binds `127.0.0.1` (the address behind `localhost`); nothing leaves your machine.
+- 👀 **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
   starts, answers, or approves anything. Its only file is `~/.your-turn/state.json`, which keeps
   seen results and dismissed reminders in sync across browsers.
-- **Zero config.** No account and no setup file; it finds the chats you already have and leaves
+- ⚙️ **Zero config.** No account and no setup file; it finds the chats you already have and leaves
   out sub-agents, headless runs, and abandoned chats.
 
 Every feature has to shorten one of the three questions above; anything else stays out.
@@ -101,12 +124,20 @@ Every feature has to shorten one of the three questions above; anything else sta
 | [DESIGN.md](./DESIGN.md) | Design contract and the UI's references |
 | [docs/agents-snippet.md](./docs/agents-snippet.md) | The handoff format to paste without installing anything |
 
-## Development
+## Run from a clone
 
 ```sh
-make install   # first setup: handoff for each app found (Codex plugin from your checkout), server in the background
+git clone https://github.com/martin-gomola/your-turn.git
+cd your-turn
+make install   # set up the handoff from this checkout, start the server
+```
+
+Then open [http://localhost:8787](http://localhost:8787). Later, from the same folder:
+
+```sh
+make up        # start the server in the background
+make down      # stop it
 make doctor    # check the installed handoff without changing it
-make cursor-rule  # print the Cursor User Rule to paste into Customize → Rules
 make test      # run the test suite
 ```
 

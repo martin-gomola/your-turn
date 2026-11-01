@@ -206,7 +206,8 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
     out = capsys.readouterr().out
     assert "content mismatch" in out and "unreadable" in out and "rule loaded: unverified" in out
     assert "docs/configuration.md#cursor-user-rule" in out
-    assert "`uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule` prints (in a clone: `make cursor-rule`)" in out
+    assert "`uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule` prints." in out
+    assert "make cursor-rule" not in out
     # Only our block is compared, and nothing of the user's CLAUDE.md is shown.
     assert "zebra-ledger" not in out and "edited by hand" not in out
     assert _tree(homes["claude"]) == before and not install_log.exists() and not claude_log.exists()

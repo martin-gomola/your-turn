@@ -117,8 +117,7 @@ clipboard):
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
 ```
 
-In a clone of the repository, `make cursor-rule` does the same; plain `your-turn cursor-rule` works
-when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
+Plain `your-turn cursor-rule` works when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
 add one there. Whether Cursor loaded the plugin is not visible outside Cursor, so `doctor` reports
 **rule loaded: unverified** even when the plugin is current. A `.cursor/rules` folder belongs to one
 project and does not apply elsewhere.
@@ -164,7 +163,6 @@ Decisions that older chats logged through the `log_decision` tool still show. Th
 | --- | --- |
 | `make install` | First setup, or to update the handoff |
 | `make doctor` | Check, without changing anything, whether the installed handoff is current |
-| `make cursor-rule` | Print the Cursor User Rule to paste into Customize → Rules |
 | `make up` | Start the server in the background (`PORT=...` to change from 8787) |
 | `make status` | Check whether it is running |
 | `make logs` | Follow the server log |

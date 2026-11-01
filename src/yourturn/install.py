@@ -422,8 +422,7 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
             results.append(("cursor", "rule loaded", "unverified",
                             "Cursor loads the local plugin after a reload unless an admin turned local plugins off, and "
                             "Your Turn cannot see whether it did; Customize → Rules shows it. Without it, add a User Rule "
-                            f"with the text from {CURSOR_RULE_DOCS}, or the text that `{CURSOR_RULE}` prints "
-                            "(in a clone: `make cursor-rule`)."))
+                            f"with the text from {CURSOR_RULE_DOCS}, or the text that `{CURSOR_RULE}` prints."))
     return results
 
 

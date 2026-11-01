@@ -5,7 +5,7 @@ LOG_FILE := $(STATE_DIR)/server.log
 URL := http://localhost:$(PORT)
 MARKETPLACE := your-turn
 
-.PHONY: install doctor cursor-rule up down restart status logs test screenshots
+.PHONY: install doctor up down restart status logs test screenshots
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
@@ -20,9 +20,6 @@ install:
 
 doctor:
 	@uv run your-turn doctor
-
-cursor-rule:
-	@uv run --quiet your-turn cursor-rule
 
 up:
 	@mkdir -p "$(STATE_DIR)"
