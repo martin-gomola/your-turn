@@ -76,6 +76,12 @@ def append(path: Path, *records: dict) -> None:
         handle.write("".join(json.dumps(record) + "\n" for record in records))
 
 
+@pytest.fixture(autouse=True)
+def _private_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install writes the shared skill under the home folder, so no test may see the real one."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+
 @pytest.fixture
 def codex_home(tmp_path: Path) -> Path:
     home = tmp_path / "codex"

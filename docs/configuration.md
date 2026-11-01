@@ -7,8 +7,8 @@ Commands, flags, the handoff install, and the handoff format. What each app reco
 
 | Command | What it does |
 | --- | --- |
-| `your-turn serve` | Starts the inbox on `http://127.0.0.1:8787` and runs until Ctrl+C |
-| `your-turn install` | Sets up the handoff for each app it finds, then exits |
+| `your-turn serve` | Starts the inbox on `http://localhost:8787` and runs until Ctrl+C |
+| `your-turn install` | Sets up the handoff for each app it finds. Run in a terminal, it then starts the inbox, or says so when it is already running; from a script, or with input or output redirected, it exits |
 | `your-turn uninstall` | Removes exactly what `install` added |
 | `your-turn doctor` | Checks, without changing anything, whether the installed handoff matches this version |
 | `your-turn cursor-rule` | Prints the [Cursor User Rule](#cursor-user-rule) to paste into Cursor, without changing anything |
@@ -52,40 +52,63 @@ a `.gitignore` entry:
 
 | App | What `install` sets up | What `uninstall` removes |
 | --- | --- | --- |
-| Codex | The `your-turn` plugin from the `your-turn` marketplace, which holds the handoff skill | The plugin and its marketplace |
+| Codex | The `your-turn` plugin from the `your-turn` marketplace, which holds the handoff skill. Without the Codex CLI, the skill in `~/.agents/skills/your-turn/SKILL.md` instead, worded for any app; Cursor reads that folder too, so it then keeps no copy of its own. Once the CLI is there, `install` adds the plugin and removes that copy | The plugin and its marketplace, and the shared skill |
 | Claude Code | `~/.claude/skills/your-turn/SKILL.md` and a marked `your-turn` block in `~/.claude/CLAUDE.md` | The skill file and the block; the rest of `CLAUDE.md` stays |
-| Cursor | `~/.cursor/skills/your-turn/SKILL.md`; the User Rule you add yourself, from `cursor-rule` | The skill file |
+| Cursor | `~/.cursor/skills/your-turn/SKILL.md` and the [rule](#cursor-user-rule) as a local plugin in `~/.cursor/plugins/local/your-turn` | The skill file and the plugin |
 
 The handoff is plain text in the agent's answer, so nothing runs in the background and no app asks
 for a permission. `install` rewrites its own skill files and block whenever their text differs from
-this version, whatever version they name; running it again then changes nothing. A `SKILL.md` that
-Your Turn did not write, and other files in the skill folder, are left alone by both commands. Both
+this version, whatever version they name; running it again then changes nothing. A `SKILL.md` or a
+`your-turn` plugin that Your Turn did not write, a symlinked one, and other files in those folders
+are left alone by both commands. Both
 also remove the `your-turn` MCP server that earlier versions registered. Restart the apps after
 installing.
 
 ### Cursor User Rule
 
 A saved skill is used only when the agent picks it. To apply the handoff in every Cursor Agent chat,
-open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below (GitHub shows a
-copy button on the block):
+`install` saves the text below as an always-applied rule in a
+[local plugin](https://cursor.com/docs/plugins#test-plugins-locally),
+`~/.cursor/plugins/local/your-turn`. Cursor loads it after a restart or **Developer: Reload Window**,
+and **Customize → Rules** then lists it.
 
-```markdown
+On Enterprise plans, an admin can turn local plugins off, and they are off by default there. If the
+rule is not listed after a reload, open **Customize → Rules**, add a **User Rule**, and paste the
+text below (GitHub shows a copy button on the block):
+
+````markdown
 ## Your Turn handoff
 
-End every response to the user, on every turn, with these lines at the very top or the very bottom, as
-one group with no prose between them, each on one line, as plain Markdown outside code blocks:
-`**Outcome:**` (one sentence: what is now true), `**Next step:**` (`none`, `answer: …`, `decide: …`,
-`review: …`, `approve: …` or `run: …`), and from the second turn on `**Recap:**` (1-2 sentences under 400
-characters: goal, what is settled, what is open). Keep the labels and prefixes in English, even when you
-reply in another language, and start no other line with them. When the task is done, write exactly
-`**Next step:** none` and stop; an optional suggestion goes in the body, and never close with a polite
-offer such as "Let me know if…" or "Should I also…?". A question the user must react to also goes in
-`Next step`. Add `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a
-non-trivial trade-off (architecture, edge-case behavior, library or approach), one line each. Edit files
-with `StrReplace`, `Write` or `ApplyPatch`, not from the shell, so Your Turn sees them. After your last code edit, run the
-check that covers it, alone or last in a chain joined with `&&`; if you cannot, make the next step
-`run: <command>`. Ask the user to choose with `AskQuestion`. The `your-turn` skill has the details.
+End every response to the user, on every turn, with this block at the very top or the very bottom: one
+group of lines with no prose between them, each on one line, as plain Markdown outside code blocks.
+
+- `**Outcome:**` one sentence: what is now true.
+- `**Next step:**` `none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`. When the task
+  is done, write exactly `**Next step:** none` and stop. A question the user must react to goes here.
+- `**Recap:**` from the second turn on: 1-2 sentences under 400 characters (goal, what is settled, what
+  is open).
+- `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a non-trivial trade-off
+  (architecture, edge-case behavior, library or approach), one line each.
+
+Keep the labels and prefixes in English, even when you reply in another language, and start no other
+line with them. An optional suggestion goes in the body; never close with a polite offer such as
+"Let me know if…" or "Should I also…?".
+
+Example:
+
+```markdown
+**Outcome:** The login redirect bug is fixed and covered by a test.
+**Next step:** none
+**Recap:** Fixing login redirects; the fix and its test are in, nothing is open.
 ```
+
+While working:
+
+- Edit files with `StrReplace`, `Write` or `ApplyPatch`, not from the shell, so Your Turn sees them.
+- After your last code edit, run the check that covers it, alone or last in a chain joined with `&&`;
+  if you cannot, make the next step `run: <command>`.
+- Ask the user to choose with `AskQuestion`. The `your-turn` skill has the details.
+````
 
 To print exactly this text instead, without changing anything (on macOS, `| pbcopy` puts it on the
 clipboard):
@@ -96,15 +119,17 @@ uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
 
 In a clone of the repository, `make cursor-rule` does the same; plain `your-turn cursor-rule` works
 when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
-add one and `doctor` reports **activation unverified** even when the skill is current. A
-`.cursor/rules` folder belongs to one project and is not a User Rule.
+add one there. Whether Cursor loaded the plugin is not visible outside Cursor, so `doctor` reports
+**rule loaded: unverified** even when the plugin is current. A `.cursor/rules` folder belongs to one
+project and does not apply elsewhere.
 
 ### Checking the install
 
 `your-turn doctor` compares each file with the text this version would write and reports **current**,
 **missing**, **content mismatch**, or **unreadable**; run `install` to fix the last three. For Claude
 Code it checks the skill and only the Your Turn block of `CLAUDE.md`, and shows nothing else from that
-file. Codex keeps the plugin in its own cache, so the plugin is **unverified**. Neither `doctor` nor
+file. For Cursor it checks the skill and both files of the rule plugin. Codex keeps the plugin in
+its own cache, so the plugin is **unverified**. Neither `doctor` nor
 the saved files prove that an app has loaded the handoff into a chat.
 
 | You want | Do this |

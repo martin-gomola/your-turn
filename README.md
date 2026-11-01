@@ -46,7 +46,7 @@ at a glance:
 <img src="docs/images/in-codex.png" width="800" alt="Codex window with a chat on the left and Your Turn in the in-app browser on the right, showing the chat waiting for an answer and its passing check">
 
 Your Turn runs in any browser, but it works best right beside the agent you are driving. Open
-`http://127.0.0.1:8787` in the Codex in-app browser, or in a Simple Browser panel in Cursor or
+`http://localhost:8787` in the Codex in-app browser, or in a Simple Browser panel in Cursor or
 VS Code, and you never switch windows to see who needs you.
 
 ## Quickstart
@@ -54,43 +54,36 @@ VS Code, and you never switch windows to see who needs you.
 You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
 or Cursor.
 
-**1. Install the handoff**, once:
+Run this once, then open [http://localhost:8787](http://localhost:8787):
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 ```
 
-It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds.
-It writes only to your home folder and never creates a file in your git repositories:
+It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds,
+names the apps to restart, and starts the inbox. It writes only to your home folder and never
+creates a file in your git repositories:
 
-- **Codex**: installs the `your-turn` plugin.
+- **Codex**: installs the `your-turn` plugin, or, without the Codex CLI, saves the skill in
+  `~/.agents/skills`, which the Codex app reads too.
 - **Claude Code**: saves the skill and adds a block to `~/.claude/CLAUDE.md`.
-- **Cursor**: saves the skill. To apply it in every chat, also do step 2.
+- **Cursor**: saves the skill, and the rule that applies it in every chat as a local plugin.
 
-Restart the agents afterwards.
-
-**2. Cursor only: add the User Rule.** Copy the rule from
-[docs/configuration.md](./docs/configuration.md#cursor-user-rule) with the copy button on its block,
-then paste it into Cursor under **Customize → Rules → User Rule**. To print it instead, on macOS
-straight to the clipboard:
-
-```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule | pbcopy
-```
-
-**3. Run the inbox** whenever you want it, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
+Your existing chats appear right away. Later, start the inbox with:
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
 ```
 
-Your existing chats appear right away. Skipping steps 1 and 2 works too, with guessed recaps.
+Running only `serve`, without `install`, works too, with guessed recaps.
 
-To check the install without changing anything, run `your-turn doctor`. To remove it, run `your-turn uninstall`.
+`your-turn doctor` checks the install without changing anything, and `your-turn uninstall` removes
+it. If your Cursor admin turned local plugins off, add the rule by hand as described in
+[docs/configuration.md](./docs/configuration.md#cursor-user-rule).
 
 ## Privacy and Design
 
-- **Local only.** The server binds `127.0.0.1`; nothing leaves your machine.
+- **Local only.** The server binds `127.0.0.1` (the address behind `localhost`); nothing leaves your machine.
 - **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
   starts, answers, or approves anything. Its only file is `~/.your-turn/state.json`, which keeps
   seen results and dismissed reminders in sync across browsers.

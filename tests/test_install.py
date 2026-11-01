@@ -67,6 +67,10 @@ def test_install_is_global_idempotent_and_uninstall_restores_the_files(tmp_path:
     assert (homes["claude"] / "CLAUDE.md").read_text() == f"{MINE}\n{CLAUDE_BLOCK}"
     assert "**Decision:**" in CLAUDE_BLOCK
     assert json.loads((homes["cursor"] / "mcp.json").read_text()) == OTHER  # Not touched: nothing to register.
+    plugin = homes["cursor"] / "plugins" / "local" / "your-turn"
+    assert json.loads((plugin / ".cursor-plugin" / "plugin.json").read_text())["name"] == "your-turn"
+    assert (plugin / "rules" / "your-turn.mdc").read_text() == (
+        "---\ndescription: Your Turn handoff at the end of every response\nalwaysApply: true\n---\n\n" + rule_text("cursor"))
     # Nothing lands in the project, and Codex (not selected) is untouched.
     assert list(no_clis.iterdir()) == [] and list(homes["codex"].iterdir()) == []
 
@@ -77,6 +81,7 @@ def test_install_is_global_idempotent_and_uninstall_restores_the_files(tmp_path:
     assert (homes["claude"] / "CLAUDE.md").read_text() == MINE
     assert json.loads((homes["cursor"] / "mcp.json").read_text()) == OTHER
     assert not (homes["claude"] / "skills" / "your-turn").exists() and not (homes["cursor"] / "skills" / "your-turn").exists()
+    assert not plugin.exists()
     after = _tree(tmp_path)
     uninstall(["claude", "cursor"], homes)
     assert _tree(tmp_path) == after
@@ -95,7 +100,8 @@ def test_block_is_replaced_in_place_and_files_it_created_are_removed(tmp_path: P
     memory.unlink()
     install(["claude", "cursor"], homes)
     uninstall(["claude", "cursor"], homes)
-    assert not memory.exists() and list(homes["cursor"].iterdir()) == [homes["cursor"] / "skills"]
+    assert not memory.exists() and sorted(path.name for path in homes["cursor"].iterdir()) == ["plugins", "skills"]
+    assert list((homes["cursor"] / "plugins" / "local").iterdir()) == []
 
 
 def _stale(text: str) -> str:
@@ -112,7 +118,8 @@ def test_install_rewrites_owned_text_that_differs_under_the_same_version(tmp_pat
         path.write_text(_stale(skill_text(app)))
     memory.write_text(f"{MINE}\n{_stale(CLAUDE_BLOCK)}\nAfter.\n")
     assert _stale(skill_text("claude")) != skill_text("claude") and 'version: "' in _stale(skill_text("claude"))
-    assert {state for _, _, state, _ in check(["claude", "cursor"], homes) if state != "activation unverified"} == {"content mismatch"}
+    assert {state for _, artifact, state, _ in check(["claude", "cursor"], homes)
+            if artifact in ("skill", "CLAUDE.md block")} == {"content mismatch"}
 
     install(["claude", "cursor"], homes)
     assert claude_skill.read_text() == skill_text("claude") and cursor_skill.read_text() == skill_text("cursor")
@@ -180,15 +187,15 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
         return {(app, artifact): state for app, artifact, state, _ in check(["codex", "claude", "cursor"], homes)}
 
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "missing", ("claude", "CLAUDE.md block"): "missing",
-                        ("cursor", "skill"): "missing", ("cursor", "User Rule"): "activation unverified"}
+                        ("cursor", "skill"): "missing", ("cursor", "rule plugin"): "missing", ("cursor", "rule loaded"): "unverified"}
     install(["claude", "cursor"], homes)
     install_log.unlink(missing_ok=True)
     claude_log.unlink()
     secret = "zebra-ledger-42 instructions\n"
     (homes["claude"] / "CLAUDE.md").write_text(secret + (homes["claude"] / "CLAUDE.md").read_text())
-    # A saved skill is current text, never proof that Cursor applies the rule in every chat.
+    # A saved plugin is current text, never proof that Cursor loaded it.
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "current", ("claude", "CLAUDE.md block"): "current",
-                        ("cursor", "skill"): "current", ("cursor", "User Rule"): "activation unverified"}
+                        ("cursor", "skill"): "current", ("cursor", "rule plugin"): "current", ("cursor", "rule loaded"): "unverified"}
 
     (homes["cursor"] / "skills" / "your-turn" / "SKILL.md").write_bytes(b"\xff\xfe not text")
     (homes["claude"] / "CLAUDE.md").write_text(secret + f"{START}\nedited by hand\n{END}\n")
@@ -197,7 +204,7 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
     assert main(["doctor", "--codex-home", str(homes["codex"]), "--claude-home", str(homes["claude"]),
                  "--cursor-home", str(homes["cursor"])]) == 1
     out = capsys.readouterr().out
-    assert "content mismatch" in out and "unreadable" in out and "activation unverified" in out and "unverified" in out
+    assert "content mismatch" in out and "unreadable" in out and "rule loaded: unverified" in out
     assert "docs/configuration.md#cursor-user-rule" in out
     assert "`uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule` prints (in a clone: `make cursor-rule`)" in out
     # Only our block is compared, and nothing of the user's CLAUDE.md is shown.
@@ -213,7 +220,8 @@ def test_cursor_rule_carries_the_contract_itself_and_the_docs_match_it() -> None
     assert "AskUserQuestion" not in rule and "`Edit`" not in rule and START not in rule
     assert CLAUDE_BLOCK == f"{START}\n{rule_text('claude')}{END}\n"
     docs = (Path(__file__).resolve().parents[1] / "docs" / "configuration.md").read_text(encoding="utf-8")
-    assert f"```markdown\n{rule}```" in docs
+    # Four backticks, because the rule holds a fenced example of its own.
+    assert f"\n````markdown\n{rule}````\n" in docs
 
 
 def test_install_removes_the_mcp_server_an_earlier_version_added(tmp_path: Path, no_clis: Path) -> None:
@@ -263,24 +271,104 @@ def test_cli_install_exits_after_setup(tmp_path: Path, no_clis: Path, capsys: py
     main(["install", "--harness", "claude", "--claude-home", str(claude)])  # Returns instead of serving.
     assert (claude / "skills" / "your-turn" / "SKILL.md").is_file()
     # Run through uvx, `your-turn` is not on PATH, so the hint is the full command.
-    assert capsys.readouterr().out.endswith("Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")
+    assert capsys.readouterr().out.endswith("\n→ Restart Claude Code to load the handoff, then start the inbox with: "
+                                            "uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")
 
 
-def test_install_points_to_the_cursor_rule_without_printing_it(tmp_path: Path, no_clis: Path,
-                                                               capsys: pytest.CaptureFixture[str]) -> None:
-    homes = _homes(tmp_path)
-    install(["codex", "cursor"], homes)
+@pytest.mark.parametrize("running", [False, True])
+def test_cli_install_in_a_terminal_starts_the_inbox_unless_it_runs(tmp_path: Path, no_clis: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                    capsys: pytest.CaptureFixture[str], running: bool) -> None:
+    import uvicorn
+
+    from yourturn import cli
+
+    served: list[int] = []
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    monkeypatch.setattr(cli, "_inbox_running", lambda port: running)
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: served.append(port))
+    claude = tmp_path / "claude"
+    main(["install", "--harness", "claude", "--claude-home", str(claude), "--codex-home", str(tmp_path / "codex"),
+          "--cursor-home", str(tmp_path / "cursor")])
     out = capsys.readouterr().out
-    assert "Skill written" in out
-    assert ("  If you haven't added the Cursor User Rule, copy it from: "
-            "https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md#cursor-user-rule\n"
-            "  Or print it: uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule"
-            " (in a clone: make cursor-rule)\n") in out
-    # Not one line of the rule body, and no claim that the rule is missing: its activation cannot be read.
+    assert "\n→ Restart Claude Code to load the handoff.\n" in out and (claude / "skills" / "your-turn" / "SKILL.md").is_file()
+    if running:
+        assert served == [] and out.endswith("→ Your Turn is already running at http://localhost:8787\n")
+    else:
+        assert served == [8787]
+        assert "→ Next time, start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n" in out
+        assert out.endswith("Starting Your Turn at http://localhost:8787. Press Ctrl+C to stop it.\n")
+
+
+def test_cli_install_names_only_the_apps_it_set_up(tmp_path: Path, no_clis: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    main(["install", "--codex-home", str(homes["codex"]), "--claude-home", str(homes["claude"]),
+          "--cursor-home", str(homes["cursor"])])
+    # Codex has no CLI here, so it gets the shared skill instead of the plugin, and still needs a restart.
+    assert "\n→ Restart Codex, Claude Code and Cursor to load the handoff, then start the inbox with: " in capsys.readouterr().out
+    main(["install", "--codex-home", str(tmp_path / "none"), "--claude-home", str(tmp_path / "none"),
+          "--cursor-home", str(tmp_path / "none")])
+    assert capsys.readouterr().out.endswith("\n→ Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")
+
+
+def test_install_saves_the_cursor_rule_plugin_without_printing_the_rule(tmp_path: Path, no_clis: Path,
+                                                                        capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    install(["cursor"], homes)
+    out = capsys.readouterr().out
+    assert "Skill written · rule plugin written" in out
+    # The happy path asks for nothing: no check to run, no link to follow, no rule body.
+    assert "Customize" not in out and "http" not in out
     assert not any(line.strip() and line.strip() in out for line in rule_text("cursor").splitlines())
-    assert "not added" not in out and "missing" not in out
-    # Warnings stay visible.
-    assert "Codex CLI not found" in out
+    assert "loaded" not in out and "missing" not in out
+
+
+def test_codex_without_cli_gets_one_shared_skill_until_the_plugin_replaces_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                              capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    shared = tmp_path / "home" / ".agents" / "skills" / "your-turn" / "SKILL.md"
+    own = homes["cursor"] / "skills" / "your-turn" / "SKILL.md"
+    install(["cursor"], homes)
+    assert own.is_file()
+
+    install(["codex", "claude", "cursor"], homes)
+    out = capsys.readouterr().out
+    assert "Skill written (Codex CLI not found, so no plugin)" in out and "Skill shared from ~/.agents/skills" in out
+    # Worded for every app that reads the folder, and Cursor keeps no second copy beside it.
+    text = shared.read_text()
+    for part in ("name: your-turn\n", "`apply_patch` in Codex", "`StrReplace`, `Write` or `ApplyPatch` in Cursor",
+                 "`AskQuestion` in Cursor", "`AskUserQuestion` in Claude Code"):
+        assert part in text, part
+    assert "{tool}" not in text and not own.exists()
+    states = {(app, artifact): state for app, artifact, state, _ in check(["codex", "cursor"], homes)}
+    assert states[("codex", "shared skill")] == "current" and states[("cursor", "skill")] == "current"
+
+    # Once the CLI is there, the plugin holds the skill, so the shared copy goes and Cursor writes its own again.
+    log = _fake(tmp_path, "codex", monkeypatch)
+    install(["codex", "cursor"], homes)
+    assert "Plugin your-turn@your-turn installed, shared skill removed" in capsys.readouterr().out
+    assert not shared.exists() and own.read_text() == skill_text("cursor") and log.exists()
+
+
+@pytest.mark.parametrize("kind", ["own", "symlink"])
+def test_cursor_plugin_the_user_owns_is_left_untouched(tmp_path: Path, no_clis: Path, capsys: pytest.CaptureFixture[str],
+                                                       kind: str) -> None:
+    homes = _homes(tmp_path)
+    folder = homes["cursor"] / "plugins" / "local" / "your-turn"
+    target = tmp_path / "elsewhere" if kind == "symlink" else folder
+    (target / ".cursor-plugin").mkdir(parents=True)
+    (target / ".cursor-plugin" / "plugin.json").write_text('{"name": "your-turn", "description": "mine"}\n')
+    if kind == "symlink":
+        folder.parent.mkdir(parents=True)
+        folder.symlink_to(target, target_is_directory=True)
+    before = _tree(tmp_path / "elsewhere" if kind == "symlink" else folder)
+    install(["cursor"], homes)
+    uninstall(["cursor"], homes)
+    out = capsys.readouterr().out
+    assert _tree(tmp_path / "elsewhere" if kind == "symlink" else folder) == before
+    assert "rule plugin kept (" in out and "Rule plugin not saved." in out
 
 
 def test_cli_install_failure_stays_visible(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

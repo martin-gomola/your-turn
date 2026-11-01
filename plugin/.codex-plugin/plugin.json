@@ -17,7 +17,7 @@
   "interface": {
     "displayName": "Your Turn",
     "shortDescription": "See what the agent is doing and why",
-    "longDescription": "Ends every turn with short Outcome and Next step lines, and a Decision line for each real choice, that the local dashboard at http://127.0.0.1:8787 turns into an inbox of your chats.",
+    "longDescription": "Ends every turn with short Outcome and Next step lines, and a Decision line for each real choice, that the local dashboard at http://localhost:8787 turns into an inbox of your chats.",
     "developerName": "Martin Gomola",
     "category": "Productivity",
     "capabilities": [

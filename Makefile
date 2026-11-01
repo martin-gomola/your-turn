@@ -2,7 +2,7 @@ PORT ?= 8787
 STATE_DIR ?= $(HOME)/.your-turn
 PID_FILE := $(STATE_DIR)/server.pid
 LOG_FILE := $(STATE_DIR)/server.log
-URL := http://127.0.0.1:$(PORT)
+URL := http://localhost:$(PORT)
 MARKETPLACE := your-turn
 
 .PHONY: install doctor cursor-rule up down restart status logs test screenshots
@@ -14,9 +14,9 @@ install:
 	@if command -v codex >/dev/null; then \
 		codex plugin marketplace list 2>/dev/null | grep -q "^$(MARKETPLACE) " || codex plugin marketplace add "$(CURDIR)"; \
 	fi
-	@uv run --quiet your-turn install
+	@# No input, so install only sets up and `up` starts the server in the background on $(PORT).
+	@uv run --quiet your-turn install </dev/null
 	@$(MAKE) --no-print-directory up
-	@echo "Restart the agent apps so they load the handoff."
 
 doctor:
 	@uv run your-turn doctor

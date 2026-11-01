@@ -33,7 +33,7 @@ The apps do not record the same things, so each chat shows only what its source 
 | Check results | Real exit codes | Pass or fail of the whole command (tool error flag) | Not recorded |
 | Timestamps | Per event | Per event | Per turn |
 | Token usage | Yes | Yes | No |
-| Handoff from `install` | Plugin with the skill | Skill and `CLAUDE.md` block | Skill; the User Rule you add yourself |
+| Handoff from `install` | Plugin with the skill; without the CLI, the skill in `~/.agents/skills` | Skill and `CLAUDE.md` block | Skill and the rule as a local plugin |
 | Chat action | **Open in Codex** | **Copy resume command** (`claude --resume <id>`) | **Open in Cursor** (project folder) |
 
 ## Needs you
@@ -100,5 +100,5 @@ The inbox lists only chats you opened and only what you typed:
 | Cursor | Transcripts record commands, not results | No pass or fail; timeline times per turn |
 | Cursor | Activity during a turn is not known to be written | No Quiet; an open turn stays Working until its end is recorded |
 | Cursor | Chats without a transcript | **Status unknown** with title, folder, branch and Cursor's summary; Needs you only for a pending approval |
-| Cursor | No global instructions file; User Rules live in Cursor's settings | The skill applies when the agent picks it; every chat follows the handoff only with the [User Rule](./configuration.md#cursor-user-rule) added, which `doctor` cannot confirm |
+| Cursor | No global instructions file; User Rules live in Cursor's settings | Every chat follows the handoff once Cursor loads the [rule plugin](./configuration.md#cursor-user-rule), which an admin can turn off and `doctor` cannot confirm; without it, only when the agent picks the skill or with the rule added as a User Rule |
 | Cursor | No chat deep link | **Open in Cursor** opens the project folder |

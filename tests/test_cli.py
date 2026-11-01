@@ -34,9 +34,10 @@ def test_install_reuses_existing_marketplace(tmp_path: Path, monkeypatch: pytest
     assert log.read_text().splitlines() == ["plugin marketplace list", "plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
 
 
-def test_install_without_codex_still_lets_the_inbox_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_without_codex_cli_saves_the_shared_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert not install_plugin()
+    assert install_plugin()
+    assert (tmp_path / "home" / ".agents" / "skills" / "your-turn" / "SKILL.md").is_file()
 
 
 @pytest.mark.parametrize("argv", [[], ["--port", "9000"], ["serve", "--port", "9000"]])
@@ -47,7 +48,7 @@ def test_no_subcommand_serves(argv: list[str], monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: ports.append(port))
     main(argv)
     assert ports == [9000 if argv else 8787]
-    assert "Starting Your Turn at http://127.0.0.1:" in capsys.readouterr().out
+    assert "Starting Your Turn at http://localhost:" in capsys.readouterr().out
 
 
 def test_serve_explains_startup_failure(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -61,7 +62,7 @@ def test_serve_explains_startup_failure(monkeypatch: pytest.MonkeyPatch, capsys:
         main(["serve"])
 
     error = capsys.readouterr().err
-    assert "If it is already running, open http://127.0.0.1:8787" in error
+    assert "If it is already running, open http://localhost:8787" in error
     assert "your-turn serve --port 8788" in error
 
 
