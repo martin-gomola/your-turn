@@ -9,11 +9,13 @@ Title, workspace folder, archived and sub-agent flags, and whether the composer 
 approval (`hasBlockingPendingActions`) come from the `composerHeaders` table of
 Cursor's `globalStorage/state.vscdb`, opened with `mode=ro` (never written, WAL included).
 When that database is readable, transcripts it does not index (deleted or cleaned-up chats) are
-skipped, as are empty transcripts. A turn left open with no write for an hour is closed as stopped.
+skipped, as are empty transcripts. Cursor may not write the transcript while a turn runs, so its
+silence is not read as a quiet or abandoned chat: an open turn stays open until `turn_ended`.
 
 Newer Cursor versions write no transcript for top-level chats and keep their messages in the cloud
 (`cursorDiskKV` holds no bubbles for them). Such a chat is served from its header alone (title,
-folder, branch, `subtitle`, last update, pending approval) through `HeaderCursor`.
+folder, branch, `subtitle`, pending approval) through `HeaderCursor`, as a chat whose content and
+current state are unknown.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from typing import Any
 from urllib.parse import quote
 
 from yourturn.harness.base import (
+    END_NOT_RECORDED,
     EventCursor,
     HarnessAdapter,
     AgentMessage,
@@ -47,7 +50,7 @@ from yourturn.harness.base import (
     UserMessage,
 )
 from yourturn.harness.codex import ASK_USER_TOOL, DECISION_TOOL, SUBAGENT_TOOL, TURN_COMPLETED, CodexCursor, _command
-from yourturn.heuristics import QUIET_SECONDS, clip
+from yourturn.heuristics import clip
 from yourturn.model import Capabilities, Handoff, Harness, SessionRef
 
 TRANSCRIPT_GLOB = "*/agent-transcripts/*/*.jsonl"  # Sub-agent transcripts live deeper, in .../subagents/.
@@ -57,9 +60,6 @@ USER_QUERY = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.DOTALL)
 PROMPT_TIME = re.compile(r"<timestamp>\s*(.*?)\s*</timestamp>", re.DOTALL)
 PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 APPROVAL_TEXT = "Approve pending action in Cursor"
-# A turn with no `turn_ended` and no transcript write for this long was abandoned (window closed, run killed).
-ABANDONED_SECONDS = 3600
-ABANDONED = "no activity for over an hour"
 # Cursor sometimes never clears `hasBlockingPendingActions` on an abandoned chat; after a day it is ignored.
 PENDING_EXPIRY_SECONDS = 24 * 3600
 UTC_OFFSET = re.compile(r"\(UTC([+-])(\d{1,2})(?::(\d\d))?\)")
@@ -152,11 +152,17 @@ class CursorCursor(CodexCursor):
         self._ts: datetime | None = None
         self._asked: list[str] = []
         self._approval = False
-        self._open = False  # A turn started and has not ended.
+        # Whether the last turn read is still open; None after a seek, when its start was not read.
+        self._open: bool | None = False
 
     def reset(self) -> None:
         super().reset()
         self._clear()
+
+    def seek(self, start: int) -> None:
+        super().seek(start)
+        if self._offset:
+            self._open = None
 
     def _head_events(self) -> list[Event]:
         return self._meta()
@@ -200,22 +206,13 @@ class CursorCursor(CodexCursor):
         if pending != self._approval:
             self._approval = pending
             events.append(ApprovalPending(ts=header.get("updated"), pending=pending, text=APPROVAL_TEXT))
-        # An open turn nobody is approving or answering, untouched for an hour, will not end on its own.
-        if self._open and not pending and not self._asked:
-            try:
-                modified = self._path.stat().st_mtime
-            except OSError:
-                return events
-            if time.time() - modified > ABANDONED_SECONDS:
-                self._open = False
-                events.append(TurnEnded(ts=datetime.fromtimestamp(modified, timezone.utc), reason=ABANDONED))
         return events
 
     def _events(self, record: dict[str, Any]) -> list[Event]:
         events = self._meta()
         if record.get("type") == "turn_ended":
-            self._open = False
             ok = record.get("status") == "success"
+            self._open = False
             return events + [TurnEnded(ts=self._ts, reason=TURN_COMPLETED if ok else str(record.get("error") or "error"))]
         message = record.get("message") if isinstance(record.get("message"), dict) else {}
         content = message.get("content") if isinstance(message.get("content"), list) else []
@@ -227,11 +224,14 @@ class CursorCursor(CodexCursor):
                 return events
             self._ts = parse_prompt_time(raw) or self._ts
             self._asked = []
+            if self._open is not False:
+                # Older transcripts record no `turn_ended`, and a prompt sent mid-turn records none either:
+                # nothing says whether the previous turn finished or was stopped.
+                events.append(TurnEnded(ts=self._ts, reason=END_NOT_RECORDED))
             self._open = True
             return events + [TurnStarted(ts=self._ts), UserMessage(ts=self._ts, text=text)]
         if record.get("role") != "assistant":
             return events
-        self._open = True  # Also covers a read that started mid-turn.
         if self._asked:
             # The agent carried on, so the user answered in Cursor; the transcript does not say what,
             # so the answer text stays empty ("answered, text not recorded").
@@ -274,8 +274,10 @@ class CursorCursor(CodexCursor):
 class HeaderCursor(EventCursor):
     """A chat known only from its `composerHeaders` row.
 
-    The header is a state, not a log, so every change replays the whole chat and bumps
-    `truncations`, which makes the hub rebuild the chat from scratch.
+    The row records no turn start or end and no message, so the chat's content is unavailable and
+    its current state unknown; only a pending approval is explicit. `subtitle` is Cursor's own
+    summary, kept apart from any answer. The header is a state, not a log, so every change replays
+    the whole chat and bumps `truncations`, which makes the hub rebuild the chat from scratch.
     """
 
     def __init__(self, ref: SessionRef, header: Callable[[], dict[str, Any]]) -> None:
@@ -294,9 +296,7 @@ class HeaderCursor(EventCursor):
     def read_new(self) -> list[Event]:
         header = self._header()
         updated: datetime | None = header.get("updated")
-        # No turn end is recorded: a chat Cursor touched in the last two minutes counts as working.
-        active = updated is not None and time.time() - updated.timestamp() < QUIET_SECONDS
-        state = (updated, bool(header.get("pending")), header.get("subtitle"), header.get("title"), active)
+        state = (updated, bool(header.get("pending")), header.get("subtitle"), header.get("title"), header.get("branch"))
         if state == self._state:
             return []
         if self._state is not None:
@@ -313,13 +313,11 @@ class HeaderCursor(EventCursor):
                 git_branch=header.get("branch"),
                 subagent=False,
                 parent_id="",
+                content_available=False,
+                summary=str(header.get("subtitle") or ""),
             ),
-            TurnStarted(ts=updated),
+            Meta(ts=updated),  # Cursor's last update of the row: when the chat last changed, not what changed.
         ]
-        if not active:
-            if header.get("subtitle"):
-                events.append(AgentMessage(ts=updated, text=str(header["subtitle"])))
-            events.append(TurnEnded(ts=updated, reason=TURN_COMPLETED, duration_ms=0))
         if state[1]:
             events.append(ApprovalPending(ts=updated, pending=True, text=APPROVAL_TEXT))
         return events
@@ -340,7 +338,8 @@ class CursorAdapter(HarnessAdapter):
     """Finds Cursor agent transcripts and opens cursors on them."""
 
     name: str = Harness.CURSOR.value
-    capabilities: Capabilities = Capabilities()
+    # No command results, and no proof the transcript is written while a turn runs.
+    capabilities: Capabilities = Capabilities(live_activity=False)
 
     def __init__(
         self,
@@ -428,12 +427,12 @@ class CursorAdapter(HarnessAdapter):
         )
 
     def state_token(self, ref: SessionRef) -> str:
-        """Changes when Cursor's own state for the session changes (activity, pending approvals)."""
+        """Changes when Cursor's own state for the session changes (its row's update, a pending approval).
+
+        Time alone changes nothing here except a day-old approval expiring, which the header read already reflects.
+        """
         header = self._headers.get(ref.session_id, {})
-        modified = self.mtime_ns(ref)
-        idle = (time.time() - modified / 1e9) if modified is not None else 0.0
-        # These flip with time alone, so a header-only chat stops working and an abandoned turn closes without a write.
-        return f"{header.get('updated')}:{header.get('pending', False)}:{idle > QUIET_SECONDS}:{idle > ABANDONED_SECONDS}"
+        return f"{header.get('updated')}:{header.get('pending', False)}"
 
     def mtime_ns(self, ref: SessionRef) -> int | None:
         """Last activity: the transcript's mtime, or Cursor's `lastUpdatedAt` for a header-only chat."""

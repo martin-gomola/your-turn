@@ -57,7 +57,7 @@ class Parser:
     """Folds raw Codex records into a `TurnFolder`, the way the Codex adapter's cursor does."""
 
     def __init__(self, thread_id: str = THREAD) -> None:
-        self.state = TurnFolder(SessionRef(harness="codex", session_id=thread_id))
+        self.state = TurnFolder(SessionRef(harness="codex", session_id=thread_id), exit_codes=True)
 
     def feed(self, record: dict) -> None:
         self.state.fold_many(record_to_events(record))

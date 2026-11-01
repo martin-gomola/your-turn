@@ -125,3 +125,6 @@ class Capabilities:
     """What a harness's session source can tell us."""
 
     exit_codes: bool = False  # Commands report real exit codes (else only success/failure).
+    command_results: bool = False  # Commands report at least whether they succeeded or failed.
+    # The source is written while the agent works, so a long silence can mean the chat went quiet.
+    live_activity: bool = True

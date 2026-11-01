@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from yourturn.cli import main
-from yourturn.install import CLAUDE_BLOCK, END, START, install, uninstall
+from yourturn.install import CLAUDE_BLOCK, END, START, check, install, rule_text, skill_text, uninstall
 
 MINE = "# My rules\n\nKeep answers short.\n"
 OTHER = {"mcpServers": {"context7": {"command": "npx", "args": ["context7"]}}}
@@ -95,6 +96,122 @@ def test_block_is_replaced_in_place_and_files_it_created_are_removed(tmp_path: P
     install(["claude", "cursor"], homes)
     uninstall(["claude", "cursor"], homes)
     assert not memory.exists() and list(homes["cursor"].iterdir()) == [homes["cursor"] / "skills"]
+
+
+def _stale(text: str) -> str:
+    """An older copy: same version line, different wording."""
+    return text.replace("End every response", "Finish each reply", 1)
+
+
+def test_install_rewrites_owned_text_that_differs_under_the_same_version(tmp_path: Path, no_clis: Path) -> None:
+    homes = _homes(tmp_path)
+    claude_skill, cursor_skill = (homes[app] / "skills" / "your-turn" / "SKILL.md" for app in ("claude", "cursor"))
+    memory = homes["claude"] / "CLAUDE.md"
+    for path, app in ((claude_skill, "claude"), (cursor_skill, "cursor")):
+        path.parent.mkdir(parents=True)
+        path.write_text(_stale(skill_text(app)))
+    memory.write_text(f"{MINE}\n{_stale(CLAUDE_BLOCK)}\nAfter.\n")
+    assert _stale(skill_text("claude")) != skill_text("claude") and 'version: "' in _stale(skill_text("claude"))
+    assert {state for _, _, state, _ in check(["claude", "cursor"], homes) if state != "activation unverified"} == {"content mismatch"}
+
+    install(["claude", "cursor"], homes)
+    assert claude_skill.read_text() == skill_text("claude") and cursor_skill.read_text() == skill_text("cursor")
+    assert memory.read_text() == f"{MINE}\n{CLAUDE_BLOCK}\nAfter.\n"
+    first = _tree(tmp_path)
+    install(["claude", "cursor"], homes)
+    assert _tree(tmp_path) == first
+
+
+@pytest.mark.parametrize("app", ["claude", "cursor"])
+@pytest.mark.parametrize("linked", ["folder", "file"])
+@pytest.mark.parametrize("action", [install, uninstall])
+def test_linked_skill_and_its_target_are_left_untouched(tmp_path: Path, no_clis: Path, capsys: pytest.CaptureFixture[str],
+                                                        app: str, linked: str, action: Any) -> None:
+    homes = _homes(tmp_path)
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "SKILL.md").write_text(_stale(skill_text(app)))  # Ours, so only the link stops a rewrite or removal.
+    folder = homes[app] / "skills" / "your-turn"
+    folder.parent.mkdir()
+    if linked == "folder":
+        folder.symlink_to(shared, target_is_directory=True)
+        link = folder
+    else:
+        folder.mkdir()
+        link = folder / "SKILL.md"
+        link.symlink_to(shared / "SKILL.md")
+    capsys.readouterr()
+
+    action([app], homes)
+    assert (shared / "SKILL.md").read_text() == _stale(skill_text(app)) and link.is_symlink()
+    assert sorted(path.name for path in shared.iterdir()) == ["SKILL.md"]
+    out = capsys.readouterr().out
+    assert f"kept (symlink, left untouched: {link})" in out
+    assert "Skill saved" not in out and "removed" not in out.split("skill", 1)[-1].split(",", 1)[0]
+
+
+def test_uninstall_and_install_leave_what_your_turn_did_not_write(tmp_path: Path, no_clis: Path) -> None:
+    homes = _homes(tmp_path)
+    install(["claude", "cursor"], homes)
+    notes = homes["claude"] / "skills" / "your-turn" / "notes.md"
+    notes.write_text("my notes\n")
+    uninstall(["claude", "cursor"], homes)
+    # Only our SKILL.md goes; the folder stays for the user's own file.
+    assert _tree(homes["claude"]) == {"skills/your-turn/notes.md": "my notes\n"}
+    assert not (homes["cursor"] / "skills" / "your-turn").exists()
+
+    # A user's own skill that happens to use the name is neither overwritten nor removed.
+    own = homes["cursor"] / "skills" / "your-turn" / "SKILL.md"
+    own.parent.mkdir(parents=True)
+    own.write_text("---\nname: your-turn\ndescription: my own turn-taking notes\n---\n\nMine.\n")
+    install(["cursor"], homes)
+    uninstall(["cursor"], homes)
+    assert own.read_text().endswith("Mine.\n")
+    assert [(app, artifact, state) for app, artifact, state, _ in check(["cursor"], homes)][0] == ("cursor", "skill", "content mismatch")
+
+
+def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                          capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    install_log = _fake(tmp_path, "codex", monkeypatch)
+    claude_log = _fake(tmp_path, "claude", monkeypatch)
+
+    def states() -> dict[tuple[str, str], str]:
+        return {(app, artifact): state for app, artifact, state, _ in check(["codex", "claude", "cursor"], homes)}
+
+    assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "missing", ("claude", "CLAUDE.md block"): "missing",
+                        ("cursor", "skill"): "missing", ("cursor", "User Rule"): "activation unverified"}
+    install(["claude", "cursor"], homes)
+    install_log.unlink(missing_ok=True)
+    claude_log.unlink()
+    secret = "zebra-ledger-42 instructions\n"
+    (homes["claude"] / "CLAUDE.md").write_text(secret + (homes["claude"] / "CLAUDE.md").read_text())
+    # A saved skill is current text, never proof that Cursor applies the rule in every chat.
+    assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "current", ("claude", "CLAUDE.md block"): "current",
+                        ("cursor", "skill"): "current", ("cursor", "User Rule"): "activation unverified"}
+
+    (homes["cursor"] / "skills" / "your-turn" / "SKILL.md").write_bytes(b"\xff\xfe not text")
+    (homes["claude"] / "CLAUDE.md").write_text(secret + f"{START}\nedited by hand\n{END}\n")
+    before = _tree(homes["claude"])
+    capsys.readouterr()
+    assert main(["doctor", "--codex-home", str(homes["codex"]), "--claude-home", str(homes["claude"]),
+                 "--cursor-home", str(homes["cursor"])]) == 1
+    out = capsys.readouterr().out
+    assert "content mismatch" in out and "unreadable" in out and "activation unverified" in out and "unverified" in out
+    # Only our block is compared, and nothing of the user's CLAUDE.md is shown.
+    assert "zebra-ledger" not in out and "edited by hand" not in out
+    assert _tree(homes["claude"]) == before and not install_log.exists() and not claude_log.exists()
+
+
+def test_cursor_rule_carries_the_contract_itself_and_the_docs_match_it() -> None:
+    rule = rule_text("cursor")
+    for part in ("**Outcome:**", "**Next step:**", "**Recap:**", "**Decision:**", "`none`", "answer: …", "decide: …", "review: …",
+                 "approve: …", "run: …", "`**Next step:** none`", "in English", "`AskQuestion`", "`StrReplace`", "&&"):
+        assert part in rule, part
+    assert "AskUserQuestion" not in rule and "`Edit`" not in rule and START not in rule
+    assert CLAUDE_BLOCK == f"{START}\n{rule_text('claude')}{END}\n"
+    docs = (Path(__file__).resolve().parents[1] / "docs" / "configuration.md").read_text(encoding="utf-8")
+    assert f"```markdown\n{rule}```" in docs
 
 
 def test_install_removes_the_mcp_server_an_earlier_version_added(tmp_path: Path, no_clis: Path) -> None:

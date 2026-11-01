@@ -32,27 +32,46 @@ class Meta:
     git_repo_url: str | None = None
     subagent: bool | None = None
     parent_id: str | None = None
+    # When the agent asks before running things ("never", "on-request"...); "" clears an earlier turn's.
+    approval_policy: str | None = None
+    # False when the app keeps no record of the chat's messages, so its turns and current state are unknown.
+    content_available: bool | None = None
+    # The app's own one-line summary of the chat; never the agent's answer.
+    summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TurnStarted:
-    """A new agent turn began."""
+    """A new agent turn began.
+
+    `trigger` is "" for the user's prompt, or what else started it: "task-notification" when a background
+    task the agent started finished and the agent carried on, with no prompt from the user.
+    """
 
     ts: datetime | None = None
     turn_id: str | None = None
+    trigger: str = ""
+
+
+# The turn's end was never recorded: neither finished nor stopped, as far as the source says.
+END_NOT_RECORDED = "end not recorded"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TurnEnded:
     """An agent turn finished (completed, interrupted, failed...).
 
+    `reason` is None or "completed" for a finished turn, END_NOT_RECORDED when the source moved on to a
+    new turn without recording how this one ended, and anything else is why it stopped.
     `duration_ms` is the harness-reported duration; None falls back to the turn's start time.
+    `last_message` is the harness's own record of the turn's last agent message, "" when it keeps none.
     """
 
     ts: datetime | None = None
     turn_id: str | None = None
     reason: str | None = None
     duration_ms: float | None = None
+    last_message: str = ""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -81,13 +100,20 @@ class AgentMessage:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CommandRun:
-    """A shell command the agent ran. `exit_code` is None while running or unknown."""
+    """A shell command the agent ran. `exit_code` is None while running or unknown.
+
+    `command` is the short display text. `full_command` is the whole command, read only to judge checks
+    and never shown; "" means the source keeps no more than `command`. `turn_id` is the turn the source
+    says ran it, None when it does not say.
+    """
 
     ts: datetime | None = None
     command: str = ""
+    full_command: str = ""
     exit_code: int | None = None
     duration_ms: int | None = None
     output_tail: str | None = None
+    turn_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

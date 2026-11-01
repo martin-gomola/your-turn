@@ -9,10 +9,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from yourturn.app import create_app
 from yourturn.engine import SessionHub, TurnFolder
+from yourturn.harness.base import END_NOT_RECORDED, AgentMessage, CommandRun, FilesEdited, TurnEnded, TurnStarted
 from yourturn.harness.codex import DECISION_TOOL, CodexAdapter, record_to_events
 from yourturn.heuristics import QUIET_SECONDS
 from yourturn.model import SessionKey, SessionRef
@@ -148,6 +150,281 @@ def test_folder_question_waits_then_user_answers() -> None:
 
     folder.fold_many(_events([_item(4, {"type": "UserMessage", "content": [{"type": "text", "text": "a"}]})]))
     assert folder.decisions[-1].chosen == "a"
+
+
+def _codex(records: list[dict[str, Any]], root: str = "") -> TurnFolder:
+    """A folder for a source with real exit codes, as the hub builds it for Codex."""
+    folder = TurnFolder(_ref(), exit_codes=CodexAdapter.capabilities.exit_codes, root=root)
+    folder.fold_many(_events([_meta(SID), *records]))
+    return folder
+
+
+def _run(second: int, command: str, exit_code: int | None, turn_id: str | None = "t1") -> dict[str, Any]:
+    record = _item(second, {"type": "CommandExecution", "command": ["/bin/zsh", "-lc", command], "exit_code": exit_code})
+    if turn_id:
+        record["payload"]["turn_id"] = turn_id
+    return record
+
+
+def _edit(second: int, path: str) -> dict[str, Any]:
+    return _item(second, {"type": "FileChange", "changes": {path: {}}, "status": "completed"})
+
+
+def _say(second: int, text: str, phase: str | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"type": "AgentMessage", "content": [{"type": "text", "text": text}]}
+    if phase:
+        body["phase"] = phase
+    return _item(second, body)
+
+
+def _start(second: int, turn_id: str = "t1", policy: str | None = None) -> list[dict[str, Any]]:
+    context: dict[str, Any] = {"model": "gpt-5"} | ({"approval_policy": policy} if policy else {})
+    return [{"timestamp": _ts(second), "type": "turn_context", "payload": context}, _event(second, {"type": "task_started", "turn_id": turn_id})]
+
+
+def _complete(second: int, turn_id: str = "t1", last: str | None = None) -> dict[str, Any]:
+    return _event(second, {"type": "task_complete", "turn_id": turn_id} | ({"last_agent_message": last} if last is not None else {}))
+
+
+def test_codex_check_in_a_long_compound_command_is_proven() -> None:
+    command = "node --check src/app.js && git diff --check && " + "true && " * 20 + "\\\n  make test"
+    folder = _codex([*_start(1), _edit(2, "/work/repo/src/app.js"), _run(3, command, 0), _complete(4)])
+    turn = folder.turns[-1]
+    assert [check.exit_code for check in turn.checks] == [0] and len(turn.checks[0].command) <= 120
+    assert folder.inbox_fields()["check_state"] == ""
+
+
+def test_codex_unprovable_check_leaves_edits_unchecked() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "uv run pytest -q || true", 0), _run(4, "pytest", None), _complete(5)])
+    assert folder.turns[-1].checks == []
+    assert folder.inbox_fields()["check_state"] == "unchecked"
+    assert [step.detail for step in folder.steps if step.kind == "command"] == ["check result not proven"] * 2
+
+
+def test_codex_unprovable_check_does_not_clear_an_edit_after_a_passing_one() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "make test", 0), _edit(4, "/work/repo/app.py"),
+                     _run(5, "make test | tail -3", 0), _complete(6)])
+    assert folder.turns[-1].edited_after_check is True
+    assert folder.inbox_fields()["check_state"] == "unchecked"
+
+
+def test_codex_rerun_check_replaces_its_earlier_result() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "cd /work/repo && uv run pytest -q", 1), _run(4, "uv run pytest -q", 0), _complete(5)])
+    assert [(check.command, check.exit_code) for check in folder.turns[-1].checks] == [("uv run pytest -q", 0)]
+    assert folder.inbox_fields()["check_state"] == ""
+
+
+def test_sources_without_exit_codes_keep_counting_checks_as_before() -> None:
+    folder = TurnFolder(_ref())
+    folder.fold_many(_events([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "uv run pytest -q", None, turn_id=None), _complete(4)]))
+    assert [(check.command, check.exit_code) for check in folder.turns[-1].checks] == [("uv run pytest -q", None)]
+    assert folder.inbox_fields()["check_state"] == ""
+
+
+def test_codex_checks_with_the_same_title_keep_their_own_results() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "printf ready\npytest tests/test_a.py", 1),
+                     _run(4, "printf ready\npytest tests/test_b.py", 0), _complete(5)])
+    turn = folder.turns[-1]
+    assert [step.title for step in folder.steps if step.kind == "command"] == ["printf ready", "printf ready"]
+    assert [(check.command, check.exit_code) for check in turn.checks] == [("pytest tests/test_a.py", 1), ("pytest tests/test_b.py", 0)]
+    assert folder.inbox_fields()["check_state"] == "failed"
+
+
+def test_codex_checks_sharing_their_first_120_characters_do_not_collide() -> None:
+    common = "uv run pytest " + " ".join(f"tests/test_module_{n}.py" for n in range(8))
+    assert len(common) > 120
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, common + " -k slow", 1), _run(4, common + " -k fast", 0), _complete(5)])
+    turn = folder.turns[-1]
+    assert [check.exit_code for check in turn.checks] == [1, 0]
+    assert all(len(check.command) <= 120 for check in turn.checks)
+    assert folder.inbox_fields()["check_state"] == "failed"
+
+
+def test_codex_checks_differing_only_inside_quotes_keep_their_own_results() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, 'pytest "tests/test one.py"', 1),
+                     _run(4, 'pytest "tests/test  one.py"', 0), _run(5, 'pytest "tests/test one.py"', 1), _complete(6)])
+    # Two files; the rerun of the first replaces only its own result. Titles stay shortened for display.
+    assert [(check.command, check.exit_code) for check in folder.turns[-1].checks] == [
+        ('pytest "tests/test one.py"', 0), ('pytest "tests/test one.py"', 1)]
+    assert folder.inbox_fields()["check_state"] == "failed"
+
+
+def test_codex_rerun_of_the_same_check_replaces_its_result_whatever_ran_before_it() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "pytest tests/test_a.py", 1),
+                     _run(4, "printf ready\ncd /work/repo && pytest tests/test_a.py", 0), _complete(5)])
+    assert [(check.command, check.exit_code) for check in folder.turns[-1].checks] == [("pytest tests/test_a.py", 0)]
+    assert folder.inbox_fields()["check_state"] == ""
+
+
+def test_codex_compound_check_is_named_by_its_checks_with_one_shared_result() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "git status --short\nnode --check app.js && make test && ruff check .", 0), _complete(5)])
+    assert [(check.command, check.exit_code) for check in folder.turns[-1].checks] == [("make test && ruff check .", 0)]
+    assert [step.title for step in folder.steps if step.kind == "command"] == ["git status --short"]
+
+
+def test_api_keeps_the_full_command_and_check_identity_private(tmp_path: Path) -> None:
+    secret = "pytest tests/test_private_marker.py"
+    _write(tmp_path, SID, [_meta(SID), *_start(1), _edit(2, "/work/repo/app.py"), _run(3, "printf ready\n" + secret, 0), _complete(4)])
+    hub = SessionHub.for_codex_home(tmp_path, scan_ttl=0)
+    detail, rows = hub.detail_dict(SID), hub.inbox_dicts()
+    assert detail is not None and detail["turns"][-1]["checks"][0]["command"] == secret
+    assert set(detail["turns"][-1]["checks"][0]) == {"command", "exit_code", "at"}
+    text = json.dumps([detail, rows])
+    assert "full_command" not in text and "printf ready\\n" not in text and "turn_id" not in text
+
+
+def test_codex_check_after_set_or_sourced_code_changes_nothing() -> None:
+    for setup in ("set -n", "source /dev/stdin", ". /dev/stdin"):
+        failed = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "pytest", 1), _run(4, f"{setup}; pytest", 0), _complete(5)])
+        assert [(check.command, check.exit_code) for check in failed.turns[-1].checks] == [("pytest", 1)], setup
+        assert failed.inbox_fields()["check_state"] == "failed"
+
+        unchecked = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, f"{setup}; pytest", 0), _complete(4)])
+        assert unchecked.turns[-1].checks == [] and unchecked.inbox_fields()["check_state"] == "unchecked", setup
+
+
+def test_codex_late_command_without_turn_id_does_not_change_a_closed_turn() -> None:
+    folder = TurnFolder(SessionRef(harness="codex", session_id=SID, cwd="/work/repo"), exit_codes=True)
+    folder.fold_many([
+        TurnStarted(ts=None, turn_id="t1"), FilesEdited(ts=None, paths=("/work/repo/app.py",)),
+        TurnEnded(ts=None, turn_id="t1", reason="completed"), CommandRun(ts=None, command="make test", exit_code=0),
+    ])
+    assert folder.turns[-1].checks == [] and folder.inbox_fields()["check_state"] == "unchecked"
+    assert folder.steps[-1].kind == "command" and folder.steps[-1].title == "make test"
+
+
+def test_hub_exempts_tmp_only_under_a_confirmed_project_root(tmp_path: Path) -> None:
+    repo, plain = tmp_path / "repo", tmp_path / "plain"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "src").mkdir()
+    plain.mkdir()
+    # The repository root is found from a subfolder cwd; a folder without .git confirms nothing.
+    for sid, cwd, path in ((SID, repo, repo / "tmp/probe.py"), (SID_B, repo / "src", repo / "tmp/probe.py"), (UNKNOWN, plain, plain / "tmp/probe.py")):
+        records = [{"timestamp": _ts(0), "type": "session_meta", "payload": {"id": sid, "cwd": str(cwd), "timestamp": _ts(0)}},
+                   *_start(1), _edit(2, str(path)), _complete(3)]
+        _write(tmp_path / "codex", sid, records)
+    hub = SessionHub.for_codex_home(tmp_path / "codex", scan_ttl=0)
+    assert {row["id"]: row["check_state"] for row in hub.inbox_dicts()} == {SID: "", SID_B: "", UNKNOWN: "unchecked"}
+    detail, rows = hub.detail_dict(SID_B), hub.inbox_dicts()
+    assert detail is not None and "root" not in detail and all("root" not in row for row in rows)
+
+
+def test_codex_late_command_result_does_not_change_a_closed_turn() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _say(3, "**Outcome:** Edited.\n**Next step:** none", "final_answer"),
+                     _complete(4), _run(5, "make test", 2)])
+    turn = folder.turns[-1]
+    assert turn.checks == [] and folder.inbox_fields()["check_state"] == "unchecked"
+    assert folder.steps[-1].kind == "command" and folder.steps[-1].title == "make test"
+
+
+def test_codex_command_from_another_turn_does_not_count_in_the_open_one() -> None:
+    folder = _codex([*_start(1, "t1"), _complete(2, "t1"), *_start(3, "t2"), _edit(4, "/work/repo/app.py"),
+                     _run(5, "make test", 0, turn_id="t1"), _run(6, "uv run pytest -q", 1, turn_id="t2")])
+    assert [(check.command, check.exit_code) for check in folder.turns[-1].checks] == [("uv run pytest -q", 1)]
+
+
+def test_codex_final_answer_wins_over_later_commentary_and_reported_message() -> None:
+    folder = _codex([*_start(1), _say(2, "**Outcome:** Fixed.\n**Next step:** none", "final_answer"),
+                     _say(3, "Running one more look.", "commentary"), _complete(4, last="Something else.")])
+    turn = folder.turns[-1]
+    assert (turn.outcome, turn.next_kind) == ("Fixed.", "none")
+    assert [step.kind for step in folder.steps].count("answer") == 1
+
+
+def test_codex_completed_turn_without_final_answer_uses_reported_then_commentary() -> None:
+    reported = _codex([*_start(1), _say(2, "I'll run the tests.", "commentary"), _complete(3, last="**Outcome:** All set.\n**Next step:** none")])
+    assert (reported.turns[-1].outcome, reported.turns[-1].next_kind) == ("All set.", "none")
+
+    commentary = _codex([*_start(1), _say(2, "Exploring first.", "commentary"), _say(3, "I'll run the tests.", "commentary"), _complete(4, last="")])
+    turn = commentary.turns[-1]
+    assert turn.outcome == "I'll run the tests." and turn.formatted is False
+    assert [step.kind for step in commentary.steps if step.kind in ("answer", "message")] == ["message", "answer"]
+
+
+def test_codex_reported_answer_equal_to_commentary_is_applied_once() -> None:
+    text = "**Outcome:** Done.\n**Next step:** none\n**Decision:** Which cache? -> LRU (over Redis). Simpler."
+    folder = _codex([*_start(1), _say(2, text, "commentary"), _complete(3, last=text)])
+    assert [step.kind for step in folder.steps].count("answer") == 1
+    assert [decision.chosen for decision in folder.decisions] == ["LRU"]
+
+
+def test_codex_aborted_or_open_turn_gets_no_fallback_answer() -> None:
+    aborted = _codex([*_start(1), _say(2, "Halfway there.", "commentary"), _event(3, {"type": "turn_aborted", "turn_id": "t1", "reason": "interrupted"})])
+    assert aborted.turns[-1].outcome == "" and aborted.turns[-1].status == "interrupted"
+
+    still_open = _codex([*_start(1), _say(2, "Halfway there.", "commentary")])
+    assert still_open.turns[-1].outcome == ""
+
+    carried = _codex([*_start(1, "t1"), _say(2, "From turn one.", "commentary"), _event(3, {"type": "turn_aborted", "turn_id": "t1", "reason": "interrupted"}),
+                      *_start(4, "t2"), _complete(5, "t2")])
+    assert carried.turns[-1].outcome == ""
+
+
+def test_codex_commentary_with_questions_still_waits() -> None:
+    question = {"title": "Pick one", "options": ["a", "b"]}
+    folder = _codex([*_start(1), _item(2, {"type": "AgentMessage", "phase": "commentary", "content": [{"type": "text", "text": "Which?"}],
+                                            "questions": [question]}), _complete(3)])
+    assert folder.status == "waiting" and folder.turns[-1].outcome == ""
+
+
+def test_phaseless_turn_keeps_its_latest_message_and_commands_without_turn_ids() -> None:
+    folder = TurnFolder(SessionRef(harness="claude", session_id=SID, cwd="/work/repo"))
+    folder.fold_many([
+        TurnStarted(ts=None, turn_id=None), AgentMessage(ts=None, text="Checking."), TurnEnded(ts=None, reason="completed"),
+        FilesEdited(ts=None, paths=("/work/repo/app.py",)), CommandRun(ts=None, command="uv run pytest -q", exit_code=0),
+        AgentMessage(ts=None, text="**Outcome:** Fixed.\n**Next step:** none"), TurnEnded(ts=None, reason="completed"),
+    ])
+    turn = folder.turns[-1]
+    assert (turn.outcome, turn.next_kind) == ("Fixed.", "none")
+    assert [check.exit_code for check in turn.checks] == [0] and folder.inbox_fields()["check_state"] == ""
+    assert folder.inbox_fields()["approval_policy"] == ""
+
+
+ANSWER = "**Outcome:** Recorded answer.\n**Next step:** review: the plan"
+
+
+@pytest.mark.parametrize(("reason", "status"), [(END_NOT_RECORDED, "unknown"), ("completed", "done"), ("interrupted", "interrupted")])
+def test_end_without_a_time_still_ends_the_turn(reason: str, status: str) -> None:
+    folder = TurnFolder(SessionRef(harness="cursor", session_id=SID, cwd="/work/repo"))
+    folder.fold_many([TurnStarted(ts=None), AgentMessage(ts=None, text=ANSWER), TurnEnded(ts=None, reason=reason)])
+    assert folder.turns[0].status == status
+    folder.fold_many([TurnStarted(ts=None)])
+    first, second = folder.turns
+    assert (first.status, first.ended_at, second.status) == (status, "", "working")
+    if reason != "interrupted":
+        assert (first.outcome, first.next_kind, first.next_text) == ("Recorded answer.", "review", "the plan")
+    assert [step.title for step in folder.steps if step.title.startswith("Turn 1")].count("Turn 1 stopped") == (reason == "interrupted")
+
+
+def test_turn_left_open_is_interrupted_by_the_next_start() -> None:
+    folder = TurnFolder(SessionRef(harness="cursor", session_id=SID, cwd="/work/repo"))
+    folder.fold_many([TurnStarted(ts=None), AgentMessage(ts=None, text=ANSWER), TurnStarted(ts=None)])
+    assert [turn.status for turn in folder.turns] == ["interrupted", "working"]
+
+
+def test_approval_policy_follows_each_turn_context() -> None:
+    folder = _codex([*_start(1, "t1", policy="never"), _complete(2, "t1")])
+    assert folder.inbox_fields()["approval_policy"] == "never"
+    folder.fold_many(_events([*_start(3, "t2")]))
+    assert folder.inbox_fields()["approval_policy"] == ""
+    assert folder.to_dict()["approval_policy"] == "" and folder.inbox_fields()["status"] == "working"
+    assert folder.inbox_fields()["needs_you"] is False
+
+
+def test_scratch_edits_keep_a_passing_check_valid() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "make test", 0), _edit(4, "/tmp/companion/probe.cjs"),
+                     _edit(5, "/work/repo/tmp/render.py"), _complete(6)], root="/work/repo")
+    turn = folder.turns[-1]
+    assert turn.files == ["/work/repo/app.py", "/tmp/companion/probe.cjs", "/work/repo/tmp/render.py"]
+    assert turn.edited_after_check is False and folder.inbox_fields()["check_state"] == ""
+
+
+def test_scratch_only_edits_need_no_check_but_a_tmp_checkout_does() -> None:
+    assert _codex([*_start(1), _edit(2, "/tmp/probe.js"), _complete(3)]).inbox_fields()["check_state"] == ""
+    checkout = TurnFolder(_ref(), exit_codes=True)
+    checkout.fold_many(_events([{"timestamp": _ts(0), "type": "session_meta", "payload": {"id": SID, "cwd": "/tmp/checkout", "timestamp": _ts(0)}},
+                                *_start(1), _edit(2, "/tmp/checkout/app.py"), _complete(3)]))
+    assert checkout.inbox_fields()["check_state"] == "unchecked"
 
 
 # --- CodexAdapter --------------------------------------------------------------------------------
@@ -297,14 +574,16 @@ def test_app_stream_validates_thread_and_stops(tmp_path: Path) -> None:
 OLD = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5e"
 
 INBOX_KEYS = {
-    "id", "cwd", "status", "updated_at", "turn_ended_at", "outcome", "next_kind", "next_text",
-    "question", "options", "attention_key", "check_state", "pending_tool", "needs_you", "quiet", "project", "title",
+    "id", "cwd", "status", "updated_at", "turn_ended_at", "outcome", "next_kind", "next_text", "next_basis",
+    "question", "options", "attention_key", "check_state", "pending_tool", "approval_policy", "needs_you", "quiet",
+    "project", "title", "content_available", "summary", "capabilities",
 }
 DETAIL_KEYS = {
     "id", "title", "cwd", "project", "parent_id", "subagent", "started_at", "updated_at", "status",
     "context_used", "context_window", "token_usage", "last_token_usage", "token_usage_at", "model",
-    "reasoning_effort", "model_provider", "git_branch", "cli_version", "activity", "pending_tool", "attention_key",
-    "version", "turns", "steps", "decisions", "needs_you", "quiet", "capabilities", "history_truncated",
+    "reasoning_effort", "model_provider", "git_branch", "cli_version", "activity", "pending_tool", "approval_policy",
+    "attention_key", "version", "turns", "steps", "decisions", "needs_you", "quiet", "capabilities", "history_truncated",
+    "content_available", "summary", "next_kind", "next_text", "next_basis",
 }
 TURN_KEYS = {
     "index", "started_at", "ended_at", "status", "prompt", "outcome", "recap", "next_kind", "next_text",

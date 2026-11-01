@@ -24,6 +24,7 @@ const STATUS = {
   done: { label: "Done", icon: "i-answer" },
   interrupted: { label: "Stopped", icon: "i-stop" },
   idle: { label: "Not started", icon: "i-turn" },
+  unknown: { label: "Status unknown", icon: "i-question" },
   dismissed: { label: "Reminder dismissed", icon: "i-question" },
 };
 const SECTION_ICONS = { waiting: "i-message-question", working: "i-working", new: "i-answer", earlier: "i-turn" };
@@ -35,8 +36,49 @@ function appName(chat) {
 }
 
 function quietHint(chat) {
+  // A chat that never asks before running things cannot be waiting for approval.
+  if (chat.approval_policy === "never") {
+    const call = chat.pending_tool ? ` Its last call has no result yet (${chat.pending_tool}).` : "";
+    return `No activity recorded.${call} It may still be running, or it may be stuck.`;
+  }
   if (chat.pending_tool) return `No activity recorded. Its last call has no result yet (${chat.pending_tool}): it may be waiting for your approval in ${appName(chat)}, or still running.`;
   return `No activity recorded. It may be waiting for your approval in ${appName(chat)}, or running a long command.`;
+}
+
+// A chat the app keeps no messages of: neither finished nor running as far as anything recorded says.
+function unavailableNote(chat) {
+  return `${appName(chat)} keeps no local record of this chat’s messages, so whether it is working or finished is unknown.`;
+}
+
+// A working chat whose app may not write while a turn runs, so silence cannot be read as quiet.
+function unverifiedNote(chat) {
+  return `This is the last recorded state. ${appName(chat)} may not record activity while a turn runs, so it can’t be checked live.`;
+}
+
+function liveUnverified(chat) {
+  return chat.status === "working" && chat.capabilities?.live_activity === false;
+}
+
+// The app's own one-line summary, labelled so it is never mistaken for the agent's answer.
+function summaryText(chat) {
+  return chat.summary ? `${appName(chat)} summary: ${chat.summary}` : "";
+}
+
+// Why a chat's state is unknown: no local record of its messages, or a last turn that ended unrecorded.
+function unknownNote(chat) {
+  return chat.content_available === false ? unavailableNote(chat)
+    : "The last turn ended without a recorded result or reason, so whether it finished is unknown.";
+}
+
+// A next step not named by the source or the handoff; the others need no mark.
+const BASIS = {
+  inferred: { label: "Inferred", note: "Read from the answer’s wording: the answer has no handoff." },
+  no_handoff: { label: "No handoff", note: "The answer did not say what comes next." },
+  no_next_step: { label: "No next step", note: "The handoff has an outcome but no next step." },
+};
+
+function basisOf(chat) {
+  return BASIS[chat.next_basis] || null;
 }
 const QUIET_NOTIFY_MS = 5 * 60 * 1000;
 const CHECK_TAGS = {
@@ -227,9 +269,14 @@ function attentionState(chat) {
   return hasAttention(chat) ? reminderDismissed(chat) ? "dismissed" : "waiting" : chat.status;
 }
 
+// An end recorded without saying how, and with nothing to show, is no finished result.
+function hasResult(chat) {
+  return chat.status !== "working" && chat.status !== "interrupted" && !(chat.status === "unknown" && !chat.outcome);
+}
+
 function isNewResult(chat) {
   const ended = new Date(chat.turn_ended_at).getTime();
-  return !hasAttention(chat) && chat.status !== "working" && chat.status !== "interrupted" && Date.now() - ended < NEW_WINDOW_MS && chat.turn_ended_at > seen.get(chatKey(chat));
+  return !hasAttention(chat) && hasResult(chat) && Date.now() - ended < NEW_WINDOW_MS && chat.turn_ended_at > seen.get(chatKey(chat));
 }
 
 function sectionOf(chat) {
@@ -238,6 +285,7 @@ function sectionOf(chat) {
 
 function chatSummary(chat) {
   if (hasAttention(chat)) return chat.question || chat.next_text || chat.outcome;
+  if (chat.content_available === false) return summaryText(chat);
   if (chat.next_kind !== "none" && chat.next_kind !== "unknown" && chat.next_text) return chat.next_text;
   return chat.outcome;
 }
@@ -275,7 +323,18 @@ function renderRow(chat) {
     quiet.dataset.quietAt = chat.updated_at;
     quiet.title = quietHint(chat);
     meta.append(quiet);
-  } else if (tag) meta.append(el("span", `tag tag--${state}`, tag));
+  } else if (tag) {
+    const node = el("span", `tag tag--${state}`, tag);
+    if (state === "unknown") node.title = unknownNote(chat);
+    else if (state === "working" && liveUnverified(chat)) node.title = unverifiedNote(chat);
+    meta.append(node);
+  }
+  const basis = basisOf(chat);
+  if (basis) {
+    const node = el("span", "tag tag--idle", basis.label);
+    node.title = basis.note;
+    meta.append(node);
+  }
   if (unread && sectionOf(chat) !== "new") meta.append(el("span", "tag tag--new", "New"));
   // A Run step already says the check is still to do.
   const check = state === "working" || (chat.check_state === "unchecked" && chat.next_kind === "run") ? "" : CHECK_TAGS[chat.check_state];
@@ -663,7 +722,9 @@ function setStatusText(content, command = false) {
 }
 
 function renderStatus(thread, turn) {
-  const chat = { ...thread, next_kind: turn?.next_kind, next_text: turn?.next_text };
+  // A chat without turns (content unavailable) still carries a pending approval on the thread itself.
+  const next = turn || thread;
+  const chat = { ...thread, next_kind: next.next_kind, next_text: next.next_text };
   const state = attentionState(chat);
   const status = STATUS[state] || STATUS.idle;
   $("status-card").dataset.status = state;
@@ -693,7 +754,7 @@ function renderStatus(thread, turn) {
   $("status-body").hidden = false;
 
   const pending = [...thread.decisions].reverse().find((d) => d.source === "asked" && d.chosen === null);
-  let kind = turn ? turn.next_kind : "unknown";
+  let kind = next.next_kind || "unknown";
   let label = NEXT_LABEL[kind] || "";
   if (thread.status === "working") {
     const step = [...thread.steps].reverse().find((step) => step.turn === turn?.index && !["turn", "user"].includes(step.kind));
@@ -709,12 +770,20 @@ function renderStatus(thread, turn) {
     kind = "answer";
     label = NEXT_LABEL.answer;
     setStatusText(pending.question);
+  } else if (thread.content_available === false && kind !== "approve") {
+    kind = "unknown";
+    label = thread.summary ? `${appName(thread)} summary` : "";
+    setStatusText(thread.summary || unavailableNote(thread));
   } else if (kind === "none") {
     setStatusText(failed ? "No further action was requested, but a check failed." : "No further action was requested.");
   } else if (kind === "unknown") {
-    setStatusText(failed ? "No next action was recorded, but a check failed." : "No next action was recorded.");
+    const basis = basisOf(thread);
+    if (basis) label = basis.label;
+    const note = basis?.note || "No next action was recorded.";
+    setStatusText(failed ? `${note.replace(/\.$/, "")}, but a check failed.` : note);
   } else {
-    setStatusText(turn.next_text);
+    if (basisOf(thread)?.label === BASIS.inferred.label) label = `${label} · ${BASIS.inferred.label}`;
+    setStatusText(next.next_text);
   }
   // An approval request names no step, so show the latest recorded one, and only while its turn is
   // still open: a turn that already ended has nothing left to approve, whatever the app reports.
@@ -728,8 +797,11 @@ function renderStatus(thread, turn) {
   }
   $("status-body").dataset.kind = kind;
   $("status-body").dataset.check = failed && (kind === "none" || kind === "unknown") ? "failed" : "";
-  const quietNote = quiet ? `No activity since ${clock(thread.updated_at)} (${ago(thread.updated_at)}). ${quietHint(thread).replace(/^No activity recorded\. /, "")}` : "";
-  $("quiet-note").hidden = !quiet;
+  const quietNote = quiet ? `No activity since ${clock(thread.updated_at)} (${ago(thread.updated_at)}). ${quietHint(thread).replace(/^No activity recorded\. /, "")}`
+    : thread.status === "unknown" && (thread.content_available !== false || thread.summary) ? unknownNote(thread)
+    : liveUnverified(thread) ? unverifiedNote(thread) : "";
+  $("quiet-note").hidden = !quietNote;
+  $("quiet-note").dataset.tone = quiet ? "" : "muted";
   if ($("quiet-note").textContent !== quietNote) $("quiet-note").textContent = quietNote;
   // One headline per request: drop the kind label when the request already starts with it
   // ("Approve" above "Approve pending action in Cursor").

@@ -175,7 +175,7 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 .tag--working { color: var(--color-working); }
 .tag--new { color: var(--color-new); }
 .tag--interrupted { color: var(--color-danger); }
-.tag--idle, .tag--dismissed { color: var(--color-text-muted); }
+.tag--idle, .tag--dismissed, .tag--unknown { color: var(--color-text-muted); }
 
 /* Chat */
 .status-card {
@@ -215,6 +215,7 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 .status-kind, .recap-label { color: var(--color-text-muted); font-size: var(--text-label); font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: 0.02em; }
 [data-status="waiting"] .status-kind, [data-quiet="true"] .status-kind, .quiet-note { color: var(--color-waiting); }
 .quiet-note { font-size: var(--text-sm); }
+.quiet-note[data-tone="muted"] { color: var(--color-text-muted); }
 .status-body[data-check="failed"] .status-text { color: var(--color-danger); }
 @media (max-width: 480px) { .quiet-note { font-size: var(--text-md); } }
 .status-text { font-size: var(--text-md); line-height: var(--leading-relaxed); overflow-wrap: anywhere; white-space: pre-wrap; }

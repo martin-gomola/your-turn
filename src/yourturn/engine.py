@@ -25,6 +25,7 @@ from typing import Any
 
 from yourturn.config import DEFAULT_HISTORY_DAYS
 from yourturn.harness.base import (
+    END_NOT_RECORDED,
     AgentMessage,
     ApprovalPending,
     ToolPending,
@@ -54,7 +55,10 @@ from yourturn.harness.codex import (
 from yourturn.harness.claude import ClaudeAdapter
 from yourturn.harness.cursor import CursorAdapter
 from yourturn.heuristics import (
+    ACTION_KINDS,
     check_key,
+    check_name,
+    check_result,
     check_state,
     clip,
     code_paths,
@@ -97,8 +101,14 @@ class TurnFolder:
     `started_at` / `updated_at` are the raw timestamp strings the API returns.
     """
 
-    def __init__(self, ref: SessionRef) -> None:
+    def __init__(self, ref: SessionRef, *, exit_codes: bool = False, command_results: bool = False, root: str = "") -> None:
         self.ref = ref
+        # The source reports real exit codes, shown as numbers.
+        self.exit_codes = exit_codes
+        # The source reports each command's success or failure: a check counts only when its result is proven.
+        self.command_results = command_results or exit_codes
+        # The project root, when the hub confirmed it on disk; cwd alone may be a subfolder.
+        self.root = root
         self.title = ""
         self.project = ""
         self.cwd: str = ref.cwd or ""
@@ -107,6 +117,9 @@ class TurnFolder:
         self.started_at = ""
         self.updated_at = ""
         self.status = "idle"
+        # False when the app keeps none of the chat's messages; `summary` is then the app's own line about it.
+        self.content_available = True
+        self.summary = ""
         self.context_used = 0
         self.context_window = 0
         self.token_usage: dict[str, int] = {}
@@ -117,6 +130,7 @@ class TurnFolder:
         self.model_provider = ""
         self.git_branch = ""
         self.cli_version = ""
+        self.approval_policy = ""
         self.activity = ""
         self.attention_key = ""
         self.version = 0
@@ -125,6 +139,14 @@ class TurnFolder:
         self.decisions: list[Decision] = []
         self._updated_ts: datetime | None = None
         self._last_message: tuple[int, str, str, Step] | None = None  # (turn, at, text, step)
+        self._answer: tuple[int, str] | None = None  # (turn, text) of the last explicit final answer
+        self._turn_id: str | None = None
+        # The turn whose end the source reported with its id: no later result belongs to it.
+        self._sealed: int | None = None
+        # Whether the latest turn's end was reported; the end's time is optional, so `ended_at` cannot say.
+        self._ended = False
+        # Each check's identity (the whole text of the checks that ran), kept out of the API.
+        self._checks: dict[tuple[int, str], Check] = {}
         # A pending approval overlays the latest turn's state until the harness clears it.
         self.approval = ""
         self._attention_before = ""
@@ -159,21 +181,24 @@ class TurnFolder:
         value = json.dumps([self.ref.session_id, at, kind, content], sort_keys=True, ensure_ascii=False)
         self.attention_key = hashlib.sha256(value.encode()).hexdigest() if at else ""
 
-    def _turn_started(self, at: str) -> None:
+    def _turn_started(self, at: str, turn_id: str | None, trigger: str = "") -> None:
         self.attention_key = ""
-        if self.turns and not self.turns[-1].ended_at:
+        self._turn_id = turn_id
+        if self.turns and not self._ended:
             self.turns[-1].ended_at, self.turns[-1].status = at, "interrupted"
         index = self.turns[-1].index + 1 if self.turns else 1
         self.turns.append(Turn(index=index, started_at=at))
+        self._ended = False
+        self._checks = {key: check for key, check in self._checks.items() if key[0] >= self.turns[0].index}
         self._last_message = None
         self.status = "working"
         self.pending_tool = ""
-        self._step(at, "turn", f"Turn {index} started")
+        self._step(at, "turn", f"Turn {index} started" + (" by a background task" if trigger == "task-notification" else ""))
 
     def _close_turn(self, at: str, stopped: str | None, duration: str) -> None:
         """End the current turn: `stopped` is the abort reason, or None for a completed turn."""
         turn = self._turn(at)
-        turn.ended_at = at
+        turn.ended_at, self._ended = at, True
         self.pending_tool = ""
         if stopped is not None:
             turn.status = "interrupted"
@@ -201,20 +226,47 @@ class TurnFolder:
         turn.prompt = turn.prompt or clip(text, 160)
         self._step(at, "user", "You", text)
 
-    def _run(self, at: str, turn: Turn, command: str, exit_code: Any) -> None:
+    def _owns(self, turn: Turn, event: CommandRun) -> bool:
+        """Whether a command's result belongs to `turn`.
+
+        Sources that name each command's turn can deliver a result after that turn ended, or one from
+        another turn (a background server's startup). A turn whose end came with its id stays closed even
+        to a result without one; otherwise, without an id, the current turn is assumed (Claude Code can
+        report several ends for one piece of work).
+        """
+        if self._sealed == turn.index:
+            return False
+        if event.turn_id is None:
+            return True
+        return not self._ended and (self._turn_id is None or event.turn_id == self._turn_id)
+
+    def _run(self, at: str, turn: Turn, event: CommandRun) -> None:
+        command, exit_code = event.command, event.exit_code
         failed = exit_code not in (0, None)
-        if is_check_command(command):
-            # `cd repo && pytest` and `pytest` are the same check; a later run replaces the earlier result.
-            key = check_key(command)
-            turn.checks = [check for check in turn.checks if check_key(check.command) != key]
-            turn.checks.append(Check(command, exit_code, at))
-            turn.edited_after_check = False
-        self._step(at, "command", command, f"exit {exit_code}" if failed else "", "failed" if failed else "done")
+        detail = f"exit {exit_code}" if failed and self.exit_codes else ""
+        if self.command_results:
+            whole = event.full_command or command
+            (found, result), name = check_result(whole, exit_code), check_name(whole)
+            title, key = clip(name, 120), name
+        else:
+            # `cd repo && pytest` and `pytest` are the same check.
+            found, result, title, key = is_check_command(command), exit_code, command, check_key(command)
+        if found and self._owns(turn, event):
+            if result is None and self.command_results:
+                detail = detail or "check result not proven"
+            else:
+                # A later run of the same check replaces its earlier result.
+                earlier = self._checks.pop((turn.index, key), None)
+                turn.checks = [check for check in turn.checks if check is not earlier]
+                turn.checks.append(check := Check(title, result, at))
+                self._checks[turn.index, key] = check
+                turn.edited_after_check = False
+        self._step(at, "command", command, detail, "failed" if failed else "done")
 
     def _edit(self, at: str, turn: Turn, paths: list[str], ts: datetime | None, failed: bool) -> None:
         turn.files.extend(path for path in paths if path not in turn.files)
-        # Documentation edits after a passing check do not make it stale.
-        turn.edited_after_check = turn.edited_after_check or (bool(turn.checks) and bool(code_paths(paths)))
+        # Documentation and scratch edits after a passing check do not make it stale.
+        turn.edited_after_check = turn.edited_after_check or (bool(turn.checks) and bool(code_paths(paths, self.cwd, self.root)))
         noun = "file" if len(paths) == 1 else "files"
         self._step(at, "edit", f"Edited {len(paths)} {noun}", ", ".join(Path(p).name for p in paths), "failed" if failed else "done")
 
@@ -256,7 +308,7 @@ class TurnFolder:
         if isinstance(event, Meta):
             self._meta(event)
         elif isinstance(event, TurnStarted):
-            self._turn_started(at)
+            self._turn_started(at, event.turn_id, event.trigger)
         elif isinstance(event, TurnEnded):
             self._turn_ended(at, event)
         elif isinstance(event, Usage):
@@ -276,7 +328,7 @@ class TurnFolder:
         elif isinstance(event, ToolPending):
             self.pending_tool = clip(event.text, 160)
         elif isinstance(event, CommandRun):
-            self._run(at, self._turn(at), event.command, event.exit_code)
+            self._run(at, self._turn(at), event)
         elif isinstance(event, FilesEdited):
             self._edit(at, self._turn(at), list(event.paths), event.ts, event.ok is False)
         elif isinstance(event, ToolCall):
@@ -301,16 +353,27 @@ class TurnFolder:
             self.subagent = event.subagent
         if event.parent_id is not None:
             self.parent_id = event.parent_id
+        if event.approval_policy is not None:
+            self.approval_policy = event.approval_policy
+        if event.summary is not None:
+            self.summary = clip(event.summary, 200)
+        if event.content_available is False:
+            # Neither done nor working: nothing recorded says which.
+            self.content_available, self.status = False, "unknown"
         # Only the session header carries cwd; turn_context Meta events carry just the model.
         if event.cwd is not None and event.ts is not None:
             self.started_at = format_ts(event.ts)
 
     def _turn_ended(self, at: str, event: TurnEnded) -> None:
+        if event.reason == END_NOT_RECORDED:
+            self._end_not_recorded(at, event)
+            return
+        self._sealed = self._turn(at).index if event.turn_id else None
         if event.reason not in (TURN_COMPLETED, None):
             self._close_turn(at, str(event.reason), "")
             return
         turn = self._turn(at)
-        self._final_answer(turn)
+        self._final_answer(turn, at, event.last_message)
         if event.duration_ms is not None:
             seconds = round(event.duration_ms / 1000)
         else:
@@ -318,25 +381,47 @@ class TurnFolder:
             seconds = round((event.ts - started).total_seconds()) if started and event.ts else 0
         self._close_turn(at, None, f"{seconds}s" if seconds > 0 else "")
 
-    def _final_answer(self, turn: Turn) -> None:
-        """Without message phases, the turn's last plain agent message is its final answer."""
-        if self._last_message is None or self._last_message[0] != turn.index:
-            return
-        _, at, text, step = self._last_message
-        self._apply_answer(turn, at, text)
-        step.kind, step.title = "answer", clip(turn.outcome or text)
+    def _end_not_recorded(self, at: str, event: TurnEnded) -> None:
+        """Close the open turn without claiming it finished or stopped; its last message stays as reported."""
+        if not self.turns or self._ended:
+            return  # Nothing open: an unknown end must not invent a turn.
+        turn = self.turns[-1]
+        self._final_answer(turn, at, event.last_message)
+        turn.ended_at, turn.status, self.pending_tool, self._ended = at, "unknown", "", True
+        self._step(at, "turn", f"Turn {turn.index} ended", END_NOT_RECORDED)
+        self.status = turn.status
+
+    def _answered(self, turn: Turn) -> str | None:
+        return self._answer[1] if self._answer and self._answer[0] == turn.index else None
+
+    def _final_answer(self, turn: Turn, at: str, reported: str) -> None:
+        """A completed turn without an explicit final answer: the harness's reported last message, else
+        the turn's last agent message without questions, whatever its phase."""
+        candidate = self._last_message if self._last_message and self._last_message[0] == turn.index else None
         self._last_message = None
+        if self._answered(turn) is not None:
+            return
+        if reported.strip() and (candidate is None or candidate[2] != reported):
+            self._apply_answer(turn, at, reported)
+            self._step(at, "answer", turn.outcome or reported)
+        elif candidate is not None:
+            _, at, text, step = candidate
+            self._apply_answer(turn, at, text)
+            step.kind, step.title = "answer", clip(turn.outcome or text)
 
     def _agent(self, at: str, event: AgentMessage) -> None:
         turn, text = self._turn(at), event.text
         if event.phase == "final_answer":
-            self._apply_answer(turn, at, text)
-            self._step(at, "answer", turn.outcome or text)
+            # A repeated final answer would apply its decisions twice.
+            if self._answered(turn) != text:
+                self._answer = (turn.index, text)
+                self._apply_answer(turn, at, text)
+                self._step(at, "answer", turn.outcome or text)
             self._last_message = None
         else:
             step = self._step(at, "message", text)
             # A message that asks questions waits for answers; it is not the turn's answer.
-            if event.phase is None and not event.questions:
+            if not event.questions and self._answered(turn) is None:
                 self._last_message = (turn.index, at, text, step)
         for question in event.questions:
             self._ask(at, turn, question)
@@ -365,7 +450,8 @@ class TurnFolder:
             self.approval = clip(event.text, 160) or "Approve the pending action"
             self._attention_before = self.attention_key
             self._attention(at, "approve", self.approval)
-            self._step(at, "question", self.approval, status="waiting")
+            if self.content_available:  # A step would invent a turn for a chat whose turns are unknown.
+                self._step(at, "question", self.approval, status="waiting")
         elif not event.pending and self.approval:
             self.approval = ""
             self.attention_key = self._attention_before
@@ -377,6 +463,18 @@ class TurnFolder:
         if self.approval:
             return "approve", self.approval
         return (turn.next_kind, turn.next_text) if turn else ("unknown", "")
+
+    def _next_basis(self, turn: Turn | None) -> str:
+        """How the next step is known: `source` (an approval or question the app recorded), `handoff`
+        (the answer's `Next step:`, `none` included), `inferred` (read from the answer's wording),
+        `no_handoff` or `no_next_step` (an answer that names none); empty when there is no finished answer."""
+        if self.approval or self._pending():
+            return "source"
+        if turn is None or turn.status != "done" or not turn.outcome:
+            return ""
+        if turn.formatted:
+            return "no_next_step" if turn.next_kind == "unknown" else "handoff"
+        return "inferred" if turn.next_kind in ACTION_KINDS else "no_handoff"
 
     def _usage(self, at: str, event: Usage) -> None:
         total = (
@@ -426,11 +524,15 @@ class TurnFolder:
             "outcome": turn.outcome if turn else "",
             "next_kind": next_kind,
             "next_text": next_text,
+            "next_basis": self._next_basis(turn),
             "question": pending.question if pending else "",
             "options": pending.options if pending else [],
             "attention_key": self.attention_key,
-            "check_state": check_state(turn),
+            "check_state": check_state(turn, self.cwd, self.root),
             "pending_tool": self.pending_tool,
+            "approval_policy": self.approval_policy,
+            "content_available": self.content_available,
+            "summary": self.summary,
         }
         row["needs_you"] = needs_you(row)
         return row
@@ -440,7 +542,8 @@ class TurnFolder:
         turns = [asdict(turn) for turn in self.turns]
         if turns and self.approval:
             turns[-1]["next_kind"], turns[-1]["next_text"] = self._next(None)
-        last = turns[-1] if turns else {"next_kind": "unknown", "next_text": ""}
+        next_kind, next_text = self._next(self.turns[-1] if self.turns else None)
+        last = {"next_kind": next_kind, "next_text": next_text}
         return {
             "id": self.id,
             "title": self.title,
@@ -463,6 +566,13 @@ class TurnFolder:
             "cli_version": self.cli_version,
             "activity": self.activity,
             "pending_tool": self.pending_tool,
+            "approval_policy": self.approval_policy,
+            "content_available": self.content_available,
+            "summary": self.summary,
+            # What the latest turn or a pending approval asks of the user; also set for a chat without turns.
+            "next_kind": next_kind,
+            "next_text": next_text,
+            "next_basis": self._next_basis(self.turns[-1] if self.turns else None),
             "attention_key": self.attention_key,
             "version": self.version,
             "turns": turns,
@@ -497,8 +607,32 @@ class _Tracked:
         self.adapter = adapter
         self.ref = ref
         self.cursor: EventCursor | None = None
-        self.folder = TurnFolder(ref)
+        self.folder = self.new_folder()
         self.truncations = 0
+
+    def new_folder(self) -> TurnFolder:
+        capabilities = self.adapter.capabilities
+        return TurnFolder(
+            self.ref, exit_codes=capabilities.exit_codes, command_results=capabilities.command_results, root=project_root(self.ref.cwd)
+        )
+
+    def quiet(self, status: str, modified_ns: int | None) -> bool:
+        """Quiet only where the source is written as the agent works; elsewhere silence proves nothing."""
+        return self.adapter.capabilities.live_activity and modified_ns is not None and is_quiet(status, modified_ns)
+
+
+def project_root(cwd: str | None) -> str:
+    """The git work tree holding `cwd` (the nearest folder up with `.git`), "" when none is found."""
+    if not cwd:
+        return ""
+    folder = Path(cwd)
+    for candidate in (folder, *folder.parents):
+        try:
+            if (candidate / ".git").exists():
+                return str(candidate)
+        except OSError:
+            return ""
+    return ""
 
 
 class SessionHub:
@@ -576,7 +710,7 @@ class SessionHub:
         if tracked.cursor.truncations != tracked.truncations:
             # The file shrank and the cursor replayed from the start: rebuild state.
             tracked.truncations = tracked.cursor.truncations
-            tracked.folder = TurnFolder(tracked.ref)
+            tracked.folder = tracked.new_folder()
         if events:
             tracked.folder.fold_many(events)
         if not tracked.folder.project:
@@ -616,13 +750,13 @@ class SessionHub:
         data = folder.to_dict() if detail else folder.inbox_fields(mtime)
         data["title"] = folder.title or folder._first_prompt()
         data["project"] = folder.project
-        data["quiet"] = is_quiet(data["status"], mtime) if mtime is not None else False
+        data["quiet"] = tracked.quiet(data["status"], mtime)
         data["harness"] = ref.harness
         data["key"] = str(ref.key)
         data["handoff"] = asdict(adapter.handoff(ref, folder.cwd or None))
+        # What the source can record, so the UI can say what is missing instead of guessing.
+        data["capabilities"] = asdict(adapter.capabilities)
         if detail:
-            # What the source can record, so the UI can say what is missing instead of guessing.
-            data["capabilities"] = asdict(adapter.capabilities)
             data["history_truncated"] = bool(tracked.cursor and tracked.cursor.skipped_bytes)
         return data
 
@@ -634,7 +768,7 @@ class SessionHub:
         return rows
 
     def inbox_fingerprint(self, history_days: int = DEFAULT_HISTORY_DAYS) -> str:
-        """Changes when a chat file changes, and when a working chat turns quiet without any write."""
+        """Changes when a chat file changes, and when a working chat whose source writes as it works turns quiet."""
         parts = []
         with self._lock:
             for tracked in self._recent(history_days, pump=False):
@@ -644,7 +778,7 @@ class SessionHub:
                     continue
                 # Adapters whose state lives outside the session file (Cursor approvals) add a token for it.
                 token = tracked.adapter.state_token(tracked.ref)
-                parts.append(f"{tracked.ref.key}:{sig}:{token}:{is_quiet(tracked.folder._status(), sig[1])}")
+                parts.append(f"{tracked.ref.key}:{sig}:{token}:{tracked.quiet(tracked.folder._status(), sig[1])}")
         return "|".join(parts)
 
     def folder(self, key: SessionKey | str) -> TurnFolder | None:

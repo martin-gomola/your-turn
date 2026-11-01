@@ -65,12 +65,16 @@ def _texts(content: object) -> str:
     return "\n".join(part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str))
 
 
-def _command(item: dict[str, Any]) -> str:
+def _full_command(item: dict[str, Any]) -> str:
     command = item.get("command")
     if isinstance(command, list):
         shell = len(command) >= 3 and command[-2] in SHELL_WRAPPERS
         command = command[-1] if shell else " ".join(map(str, command))
-    lines = str(command or "").strip().splitlines()
+    return str(command or "").strip()
+
+
+def _command(item: dict[str, Any]) -> str:
+    lines = _full_command(item).splitlines()
     return _clip(lines[0] if lines else "", 120)
 
 
@@ -169,6 +173,7 @@ def record_to_events(record: dict[str, Any]) -> list[Event]:
                 ts=ts,
                 model=_str_or_none(payload.get("model")) or "",
                 reasoning_effort=_str_or_none(payload.get("effort"), 80) or "",
+                approval_policy=_str_or_none(payload.get("approval_policy"), 40) or "",
             )
         ]
     if kind != "event_msg":
@@ -183,7 +188,16 @@ def record_to_events(record: dict[str, Any]) -> list[Event]:
     if event == "task_complete":
         duration = payload.get("duration_ms")
         duration_ms = duration if isinstance(duration, (int, float)) else None
-        return [TurnEnded(ts=ts, turn_id=turn_id, reason=TURN_COMPLETED, duration_ms=duration_ms)]
+        last = payload.get("last_agent_message")
+        return [
+            TurnEnded(
+                ts=ts,
+                turn_id=turn_id,
+                reason=TURN_COMPLETED,
+                duration_ms=duration_ms,
+                last_message=last if isinstance(last, str) else "",
+            )
+        ]
     if event == "turn_aborted":
         # Any reason other than TURN_COMPLETED (including "") means the turn was stopped.
         return [TurnEnded(ts=ts, turn_id=turn_id, reason=str(payload.get("reason", "")))]
@@ -204,11 +218,11 @@ def record_to_events(record: dict[str, Any]) -> list[Event]:
             )
         ]
     if event == "item_completed" and isinstance(payload.get("item"), dict):
-        return _item_events(ts, payload["item"])
+        return _item_events(ts, payload["item"], turn_id)
     return []
 
 
-def _item_events(ts: datetime | None, item: dict[str, Any]) -> list[Event]:
+def _item_events(ts: datetime | None, item: dict[str, Any], turn_id: str | None = None) -> list[Event]:
     kind = item.get("type")
     if kind == "UserMessage":
         text = user_text(_texts(item.get("content")))
@@ -240,9 +254,11 @@ def _item_events(ts: datetime | None, item: dict[str, Any]) -> list[Event]:
             CommandRun(
                 ts=ts,
                 command=_command(item),
+                full_command=_full_command(item),
                 exit_code=_int_or_none(item.get("exit_code")),
                 duration_ms=_int_or_none(item.get("duration_ms")),
                 output_tail=output[-OUTPUT_TAIL:] if isinstance(output, str) and output else None,
+                turn_id=turn_id,
             )
         ]
     if kind == "FileChange":
@@ -385,7 +401,7 @@ class CodexAdapter(HarnessAdapter):
     """Finds Codex rollouts and opens cursors on them."""
 
     name: str = Harness.CODEX.value
-    capabilities: Capabilities = Capabilities(exit_codes=True)
+    capabilities: Capabilities = Capabilities(exit_codes=True, command_results=True)
 
     def __init__(
         self,

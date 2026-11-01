@@ -3,8 +3,10 @@
 
 Codex gets the plugin, which holds the skill. Claude Code and Cursor get the same skill in their global
 skills folder; Claude Code also gets a short block in its global CLAUDE.md so every chat follows the
-handoff, not only those where the skill is picked. The handoff is plain text, so no process runs and no
+handoff, not only those where the skill is picked. Cursor keeps its global User Rules in its own settings,
+so install prints the rule for the user to add there. The handoff is plain text, so no process runs and no
 app asks for a permission. Every step is idempotent, and `uninstall` removes only what `install` added.
+`doctor` compares the installed text with the current one without writing or running anything.
 
 Earlier versions also registered a `your-turn` MCP server; both commands remove it where it is left over.
 """
@@ -26,22 +28,28 @@ PLUGIN = f"your-turn@{MARKETPLACE}"
 NAME = "your-turn"  # Skill folder in Claude Code and Cursor, and the name of the legacy MCP server.
 APPS = {"codex": "Codex", "claude": "Claude Code", "cursor": "Cursor"}
 ASK_TOOLS = {"claude": "AskUserQuestion", "cursor": "AskQuestion"}
+# Each app's own edit tools, named in place of Codex's `apply_patch`.
+EDIT_TOOLS = {"claude": "`Edit` or `Write`", "cursor": "`StrReplace`, `Write` or `ApplyPatch`"}
 START, END = "<!-- your-turn:start -->", "<!-- your-turn:end -->"
 # The block with the blank lines around it, so removing or replacing it leaves one blank line between neighbours.
 BLOCK = re.compile(rf"\n*{re.escape(START)}.*?{re.escape(END)}\n*", re.DOTALL)
-CLAUDE_BLOCK = f"""{START}
-## Your Turn handoff
+# The skill's rules that must be in every chat's context, not only when the agent picks the skill:
+# Claude Code's CLAUDE.md block and the Cursor User Rule.
+RULE = """## Your Turn handoff
 
-End every response to the user, on every turn, with these lines at the very bottom, each on one line,
-as plain Markdown outside code blocks: `**Outcome:**` (one sentence: what is now true), `**Next step:**`
-(`none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`), and from the second turn on
-`**Recap:**` (1-2 sentences under 400 characters: goal, what is settled, what is open). When the task is
-done, write `**Next step:** none` and stop; never close with a polite offer such as "Let me know if…" or
-"Should I also…?". Add `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a
-non-trivial trade-off (architecture, edge-case behavior, library or approach), one line each. After your
-last code edit, run the check that covers it; if you cannot, make the next step `run: <command>`. Ask the
-user to choose with `AskUserQuestion`. The `your-turn` skill has the details.
-{END}
+End every response to the user, on every turn, with these lines at the very top or the very bottom, as
+one group with no prose between them, each on one line, as plain Markdown outside code blocks:
+`**Outcome:**` (one sentence: what is now true), `**Next step:**` (`none`, `answer: …`, `decide: …`,
+`review: …`, `approve: …` or `run: …`), and from the second turn on `**Recap:**` (1-2 sentences under 400
+characters: goal, what is settled, what is open). Keep the labels and prefixes in English, even when you
+reply in another language, and start no other line with them. When the task is done, write exactly
+`**Next step:** none` and stop; an optional suggestion goes in the body, and never close with a polite
+offer such as "Let me know if…" or "Should I also…?". A question the user must react to also goes in
+`Next step`. Add `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a
+non-trivial trade-off (architecture, edge-case behavior, library or approach), one line each. Edit files
+with {edit}, not from the shell, so Your Turn sees them. After your last code edit, run the
+check that covers it, alone or last in a chain joined with `&&`; if you cannot, make the next step
+`run: <command>`. Ask the user to choose with `{ask}`. The `your-turn` skill has the details.
 """
 QUESTIONS = """
 ## Questions
@@ -76,7 +84,16 @@ def skill_text(harness: str) -> str:
     """The Codex handoff skill, renamed and worded for another app, plus how it asks questions."""
     text = plugin_text("skills/your-turn-handoff/SKILL.md")
     text = text.replace("name: your-turn-handoff", f"name: {NAME}").replace("Codex", APPS[harness])
+    text = text.replace("`apply_patch`", EDIT_TOOLS[harness])
     return text.rstrip("\n") + "\n" + QUESTIONS.format(tool=ASK_TOOLS[harness])
+
+
+def rule_text(harness: str) -> str:
+    """The always-on part of the skill, worded for Claude Code or Cursor."""
+    return RULE.format(edit=EDIT_TOOLS[harness], ask=ASK_TOOLS[harness])
+
+
+CLAUDE_BLOCK = f"{START}\n{rule_text('claude')}{END}\n"
 
 
 def detect(homes: dict[str, Path]) -> list[str]:
@@ -92,10 +109,44 @@ def _write(path: Path, text: str) -> str:
     return "written"
 
 
-def _remove_tree(path: Path) -> str:
+def _ours(path: Path) -> bool:
+    """A skill file Your Turn wrote, in any version: its name and heading, whatever the wording."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return text.startswith(f"---\nname: {NAME}\n") and "\n# Your Turn handoff\n" in text
+
+
+def _linked(folder: Path) -> str:
+    """A linked skill folder or SKILL.md: its target may be shared, so it is never written or removed."""
+    link = next((path for path in (folder, folder / "SKILL.md") if path.is_symlink()), None)
+    return f"kept (symlink, left untouched: {link})" if link else ""
+
+
+def _write_skill(harness: str, home: Path) -> str:
+    folder = home / "skills" / NAME
+    path = folder / "SKILL.md"
+    if linked := _linked(folder):
+        return linked
+    if path.exists() and not _ours(path):
+        return "kept (not written by Your Turn)"
+    return _write(path, skill_text(harness))
+
+
+def _remove_skill(home: Path) -> str:
+    """Remove our SKILL.md, and its folder only when nothing else is left in it."""
+    folder = home / "skills" / NAME
+    path = folder / "SKILL.md"
+    if linked := _linked(folder):
+        return linked
     if not path.exists():
         return "not present"
-    shutil.rmtree(path)
+    if not _ours(path):
+        return "kept (not written by Your Turn)"
+    path.unlink()
+    if not any(folder.iterdir()):
+        folder.rmdir()
     return "removed"
 
 
@@ -154,7 +205,7 @@ def _legacy_claude_mcp(home: Path) -> str:
 
 
 def install_claude(home: Path) -> None:
-    skill = _write(home / "skills" / NAME / "SKILL.md", skill_text("claude"))
+    skill = _write_skill("claude", home)
     memory = home / "CLAUDE.md"
     current = memory.read_text(encoding="utf-8") if memory.is_file() else ""
     if BLOCK.search(current):
@@ -166,7 +217,7 @@ def install_claude(home: Path) -> None:
 
 
 def uninstall_claude(home: Path) -> None:
-    skill = _remove_tree(home / "skills" / NAME)
+    skill = _remove_skill(home)
     memory, block = home / "CLAUDE.md", "not present"
     if memory.is_file():
         current = memory.read_text(encoding="utf-8")
@@ -201,13 +252,84 @@ def _legacy_cursor_mcp(home: Path) -> str:
 
 
 def install_cursor(home: Path) -> None:
-    skill = _write(home / "skills" / NAME / "SKILL.md", skill_text("cursor"))
+    skill = _write_skill("cursor", home)
     _install_result("cursor", f"Skill {skill}{_legacy_cursor_mcp(home)}", home)
+    # Cursor reads User Rules only from its own settings, so install cannot add or confirm the global rule.
+    if skill in ("written", "unchanged"):
+        print("  Skill saved: the agent uses it when it picks it. The global rule is not activated by install.", flush=True)
+    else:
+        print("  Skill not saved. The global rule is not activated by install.", flush=True)
+    print("  For every Agent chat, open Customize → Rules in Cursor, add a User Rule, and paste:", flush=True)
+    # Not indented: pasted with leading spaces, the rule would read as a code block.
+    print(f"\n{rule_text('cursor')}", flush=True)
 
 
 def uninstall_cursor(home: Path) -> None:
-    skill = _remove_tree(home / "skills" / NAME)
-    print(f"Cursor: skill {skill}{_legacy_cursor_mcp(home)} ({home}).", flush=True)
+    skill = _remove_skill(home)
+    print(f"Cursor: skill {skill}{_legacy_cursor_mcp(home)} ({home}). Remove the Your Turn User Rule in Customize → Rules"
+          " if you added one.", flush=True)
+
+
+# --- doctor --------------------------------------------------------------------------------------
+
+
+def _state(path: Path, expected: str) -> str:
+    try:
+        return "current" if path.read_text(encoding="utf-8") == expected else "content mismatch"
+    except FileNotFoundError:
+        return "missing"
+    except (OSError, UnicodeDecodeError):
+        return "unreadable"
+
+
+def _block_state(memory: Path) -> str:
+    """Our CLAUDE.md block against the current one; the rest of the file is never compared or shown."""
+    try:
+        text = memory.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return "missing"
+    except (OSError, UnicodeDecodeError):
+        return "unreadable"
+    found = re.search(rf"{re.escape(START)}.*?{re.escape(END)}\n?", text, re.DOTALL)
+    if found is None:
+        return "content mismatch" if START in text else "missing"
+    return "current" if found.group(0).rstrip("\n") == CLAUDE_BLOCK.rstrip("\n") else "content mismatch"
+
+
+def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, str, str]]:
+    """(app, artifact, state, note) for each handoff artifact, read-only and without running any app CLI."""
+    results: list[tuple[str, str, str, str]] = []
+    for harness in harnesses:
+        home = homes[harness]
+        if harness == "codex":
+            results.append(("codex", "plugin", "unverified", "Codex keeps the plugin from its marketplace in its own cache, "
+                            "which Your Turn does not read; `install` refreshes it."))
+            continue
+        results.append((harness, "skill", _state(home / "skills" / NAME / "SKILL.md", skill_text(harness)),
+                        str(home / "skills" / NAME / "SKILL.md")))
+        if harness == "claude":
+            results.append(("claude", "CLAUDE.md block", _block_state(home / "CLAUDE.md"), str(home / "CLAUDE.md")))
+        else:
+            results.append(("cursor", "User Rule", "activation unverified",
+                            "Cursor keeps User Rules in its own settings, so Your Turn cannot tell whether the rule is added; "
+                            "a saved skill does not make it apply to every chat. To add it, open Customize → Rules and add a "
+                            "User Rule with the text that `install` prints, also in docs/configuration.md."))
+    return results
+
+
+def doctor(harnesses: list[str], homes: dict[str, Path]) -> int:
+    """Print each artifact's state; 1 when one is missing, differs from the current text, or cannot be read."""
+    print(_paint("Your Turn doctor (read-only)", "1;36"), flush=True)
+    results = check(harnesses, homes)
+    for app in dict.fromkeys(app for app, *_ in results):
+        print(_paint(APPS[app], "1;36"), flush=True)
+        for _, artifact, state, note in (result for result in results if result[0] == app):
+            color = "32" if state == "current" else "33" if "unverified" in state else "31"
+            print(f"  {artifact}: {_paint(state, color)}", flush=True)
+            print(f"    {_paint(note, '2')}", flush=True)
+    if not results:
+        print("No Codex, Claude Code or Cursor folder found, so there is nothing to check.", flush=True)
+    return 1 if any(state in ("missing", "content mismatch", "unreadable") for _, _, state, _ in results) else 0
 
 
 def install(harnesses: list[str], homes: dict[str, Path]) -> None:

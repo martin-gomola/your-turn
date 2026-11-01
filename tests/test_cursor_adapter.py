@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from yourturn.app import create_app
@@ -209,6 +210,50 @@ def test_open_question_waits_and_failed_turn_is_interrupted(tmp_path: Path) -> N
     assert (failed.status, failed.steps[-1].title, failed.steps[-1].status) == ("interrupted", "Turn 1 stopped", "failed")
 
 
+def _shape(folder: TurnFolder) -> tuple[list[tuple[int, str, str, str]], list[tuple[str, str, str, str]]]:
+    turns = [(turn.index, turn.status, turn.prompt, turn.outcome) for turn in folder.turns]
+    return turns, [(step.kind, step.title, step.detail, step.status) for step in folder.steps]
+
+
+def _incremental(path: Path, records: list[dict[str, Any]]) -> TurnFolder:
+    """The same records appended one at a time, read after each."""
+    path.write_text("", encoding="utf-8")
+    ref = SessionRef(harness="cursor", session_id=path.stem, path=path, cwd=CWD)
+    folder, cursor = TurnFolder(ref), CursorCursor(ref)
+    for record in records:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+        folder.fold_many(cursor.read_new())
+    return folder
+
+
+A_STAMP = "<timestamp>Friday, Oct 31, 2026, 9:00 AM (UTC+2)</timestamp>"
+
+
+@pytest.mark.parametrize("end", [ENDED, {"type": "turn_ended", "status": "error", "error": "aborted"}])
+def test_next_prompt_without_a_recorded_end_leaves_the_earlier_turn_unknown(tmp_path: Path, end: dict[str, Any]) -> None:
+    records = [user("Plan it", A_STAMP), assistant(text("Outcome: Plan written.\nNext step: review: the plan")),
+               user("Now build it"), assistant(text(FINAL)), end]
+    full = _fold(_write(tmp_path, records))
+    assert _shape(_incremental(tmp_path / "incremental.jsonl", records)) == _shape(full)
+    first, second = full.turns
+    # Nothing recorded says the first turn was stopped, or that it succeeded; its answer stays as reported.
+    assert (first.status, first.outcome, first.next_kind, first.ended_at) == ("unknown", "Plan written.", "review", second.started_at)
+    assert ("turn", "Turn 1 ended", "end not recorded", "done") in _shape(full)[1]
+    assert not [step for step in full.steps if step.title == "Turn 1 stopped"]
+    # The explicit end of the second turn is applied as recorded.
+    assert second.status == ("done" if end is ENDED else "interrupted")
+    assert full.status == second.status
+
+
+def test_unrecorded_end_without_any_time_stays_unknown(tmp_path: Path) -> None:
+    records = [user("Plan it", ""), assistant(text("Outcome: Plan written.\nNext step: review: the plan")), user("Now build it", "")]
+    full = _fold(_write(tmp_path, records))
+    assert _shape(_incremental(tmp_path / "incremental.jsonl", records)) == _shape(full)
+    assert [(turn.status, turn.outcome, turn.ended_at) for turn in full.turns] == [("unknown", "Plan written.", ""), ("working", "", "")]
+    assert not [step for step in full.steps if step.title == "Turn 1 stopped"]
+
+
 def test_incremental_reads_only_return_appended_records(tmp_path: Path) -> None:
     path = _write(tmp_path, [user("First")])
     cursor = CursorCursor(SessionRef(harness="cursor", session_id=CID, path=path, cwd=CWD))
@@ -277,8 +322,8 @@ def test_pending_approval_needs_you_until_cursor_clears_it(tmp_path: Path) -> No
     hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
 
     (row,) = hub.inbox_dicts()
-    assert (row["status"], row["next_kind"], row["next_text"], row["needs_you"]) == (
-        "waiting", "approve", "Approve pending action in Cursor", True)
+    assert (row["status"], row["next_kind"], row["next_text"], row["needs_you"], row["next_basis"]) == (
+        "waiting", "approve", "Approve pending action in Cursor", True, "source")
     assert row["attention_key"]
     detail = hub.detail_dict(f"cursor:{CID}")
     assert detail is not None and (detail["status"], detail["needs_you"], detail["turns"][-1]["next_kind"]) == ("waiting", True, "approve")
@@ -290,8 +335,10 @@ def test_pending_approval_needs_you_until_cursor_clears_it(tmp_path: Path) -> No
     assert hub.inbox_fingerprint() != waiting
     (row,) = hub.inbox_dicts()
     assert (row["status"], row["next_kind"], row["needs_you"], row["attention_key"]) == ("done", "unknown", False, "")
+    # Once the approval is gone, what is left is the agent's answer, which had no handoff.
+    assert row["next_basis"] == "no_handoff"
     detail = hub.detail_dict(f"cursor:{CID}")
-    assert detail is not None and (detail["status"], detail["needs_you"]) == ("done", False)
+    assert detail is not None and (detail["status"], detail["needs_you"], detail["next_basis"]) == ("done", False, "no_handoff")
 
 
 def test_discover_skips_orphaned_and_empty_transcripts(tmp_path: Path) -> None:
@@ -308,15 +355,35 @@ def test_discover_skips_orphaned_and_empty_transcripts(tmp_path: Path) -> None:
     assert found == {CID, orphan}
 
 
-def test_open_turn_untouched_for_an_hour_is_stopped(tmp_path: Path) -> None:
-    path = _write(tmp_path, [user("Fix the bug"), assistant(text("Looking."), tool("Shell", {"command": "make build"}))])
-    assert _fold(path).status == "working"
-    hours_ago = time.time() - 2 * 3600
-    os.utime(path, (hours_ago, hours_ago))
-    folder = _fold(path)
-    assert (folder.status, folder.turns[-1].status) == ("interrupted", "interrupted")
-    assert folder.steps[-1].detail == "no activity for over an hour"
+def test_open_turn_keeps_its_last_recorded_state_however_old(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home, user_dir = tmp_path / "cursor", tmp_path / "User"
+    path = _write(home, [user("Fix the bug"), assistant(text("Looking."), tool("Shell", {"command": "make build"}))])
+    _database(user_dir, [(CID, 0, 0, _header("Fix parser", updated=_now_ms(3 * 3600)))])
+    codex_home = tmp_path / "codex"
+    (codex_home / "sessions").mkdir(parents=True)
+    hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
+    # Cursor may not write the transcript while a turn runs, so its silence proves nothing either way.
+    for seconds_ago in (600, 2 * 3600):
+        stamp = time.time() - seconds_ago
+        os.utime(path, (stamp, stamp))
+        (row,) = hub.inbox_dicts()
+        assert (row["status"], row["quiet"], row["needs_you"]) == ("working", False, False)
+        detail = hub.detail_dict(f"cursor:{CID}")
+        assert detail is not None and (detail["status"], detail["quiet"], detail["turns"][-1]["status"]) == ("working", False, "working")
+        assert [step.title for step in _fold(path).steps if step.kind == "turn"] == ["Turn 1 started"]
+        assert detail["capabilities"]["live_activity"] is False
+    before = hub.inbox_fingerprint()
+    later = time.time() + 6 * 3600
+    monkeypatch.setattr(time, "time", lambda: later)
+    assert hub.inbox_fingerprint() == before, "time passing alone must not change a Cursor chat"
+    monkeypatch.undo()
+    # The transcript's own turn end still finishes it.
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(assistant(text(FINAL))) + "\n" + json.dumps(ENDED) + "\n")
+    (row,) = hub.inbox_dicts()
+    assert (row["status"], row["outcome"], row["quiet"]) == ("done", "Fixed the bug.", False)
     # A pending approval or an open question still waits for the user, however old.
+    hours_ago = time.time() - 2 * 3600
     header = {"pending": True}
     ref = SessionRef(harness="cursor", session_id=CID, path=path, cwd=CWD)
     approval = TurnFolder(ref)
@@ -334,33 +401,49 @@ def _now_ms(seconds_ago: float = 0) -> int:
 def test_chat_without_a_transcript_is_served_from_its_header(tmp_path: Path) -> None:
     home, user_dir = tmp_path / "cursor", tmp_path / "User"
     (home / "projects").mkdir(parents=True)
-    done, draft, stale = CID, "9f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5f", "9f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a60"
+    known, draft, stale = CID, "9f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5f", "9f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a60"
     header = {**_header("Deploy improvements", updated=_now_ms(600)), "subtitle": "Edited Makefile, .env.example",
               "trackedGitRepos": [{"repoPath": CWD, "branches": [{"branchName": "old", "lastInteractionAt": 1},
                                                                  {"branchName": "feat/deploy", "lastInteractionAt": 2}]}]}
-    _database(user_dir, [(done, 0, 0, header), (draft, 0, 0, {"composerId": draft}),
+    _database(user_dir, [(known, 0, 0, header), (draft, 0, 0, {"composerId": draft}),
                          (stale, 0, 0, _header("Old chat", updated=_now_ms(30 * 86400)))])
     codex_home = tmp_path / "codex"
     (codex_home / "sessions").mkdir(parents=True)
     hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
 
+    def unknown(row: dict[str, Any]) -> None:
+        # No messages, so no turn and no outcome: Cursor's own summary is kept apart, labelled as its own.
+        assert (row["status"], row["outcome"], row["next_kind"], row["turn_ended_at"]) == ("unknown", "", "unknown", "")
+        assert (row["needs_you"], row["quiet"], row["next_basis"]) == (False, False, "")
+        assert (row.get("content_available"), row.get("summary")) == (False, "Edited Makefile, .env.example")
+
     # The draft has no title or activity, and the old chat is outside the history window.
     (row,) = hub.inbox_dicts()
-    assert (row["key"], row["title"], row["status"], row["outcome"], row["needs_you"]) == (
-        f"cursor:{done}", "Deploy improvements", "done", "Edited Makefile, .env.example", False)
-    detail = hub.detail_dict(f"cursor:{done}")
+    assert (row["key"], row["title"]) == (f"cursor:{known}", "Deploy improvements")
+    unknown(row)
+    detail = hub.detail_dict(f"cursor:{known}")
     assert detail is not None and (detail["git_branch"], detail["cwd"], detail["project"]) == ("feat/deploy", CWD, "my-repo")
+    assert (detail["turns"], detail["steps"], detail["decisions"], detail["needs_you"]) == ([], [], [], False)
+    assert (detail["status"], detail["content_available"], detail["summary"]) == ("unknown", False, "Edited Makefile, .env.example")
 
-    # Cursor is working on it again, then asks for an approval: the header alone tells both.
+    # A fresh header is not proof of work either.
     _set_header(user_dir, {**header, "lastUpdatedAt": _now_ms()})
     (row,) = hub.inbox_dicts()
-    assert (row["status"], row["quiet"]) == ("working", False)
+    unknown(row)
+    # An explicit approval needs the user even without the chat's content, until Cursor clears it.
     _set_header(user_dir, {**header, "lastUpdatedAt": _now_ms(), "hasBlockingPendingActions": True})
     (row,) = hub.inbox_dicts()
-    assert (row["status"], row["next_kind"], row["needs_you"]) == ("waiting", "approve", True)
-    # Each change rebuilds the chat rather than stacking turns.
-    detail = hub.detail_dict(f"cursor:{done}")
-    assert detail is not None and len(detail["turns"]) == 1
+    assert (row["status"], row["next_kind"], row["next_text"], row["needs_you"]) == (
+        "waiting", "approve", "Approve pending action in Cursor", True)
+    assert row["attention_key"] and row["content_available"] is False and row["next_basis"] == "source"
+    detail = hub.detail_dict(f"cursor:{known}")
+    assert detail is not None and (detail["status"], detail["needs_you"], detail["turns"]) == ("waiting", True, [])
+    assert detail["next_basis"] == "source"
+    assert (detail["next_kind"], detail["next_text"]) == ("approve", "Approve pending action in Cursor")
+    _set_header(user_dir, {**header, "lastUpdatedAt": _now_ms(), "hasBlockingPendingActions": False})
+    (row,) = hub.inbox_dicts()
+    unknown(row)
+    assert row["attention_key"] == ""
 
 
 def test_approval_untouched_for_a_day_expires(tmp_path: Path) -> None:

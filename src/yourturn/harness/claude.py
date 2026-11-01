@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from yourturn.harness.base import (
+    END_NOT_RECORDED,
     HarnessAdapter,
     AgentMessage,
     CommandRun,
@@ -51,9 +52,13 @@ SESSION_GLOB = "*/*.jsonl"  # Sub-agent transcripts live deeper, in <slug>/<sess
 EDIT_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 SUBAGENT_TOOLS = frozenset({"Task", "Agent"})
 ASK_TOOL = "AskUserQuestion"
-# Substring prefilter: attachments, file-history snapshots and queue records are never parsed.
-WANTED = (b'"user"', b'"assistant"', b'"summary"', b'"custom-title"')
+# Substring prefilter: file-history snapshots, queue records and attachments other than queued messages
+# are never parsed.
+WANTED = (b'"user"', b'"assistant"', b'"summary"', b'"custom-title"', b'"queued_command"')
+NOTIFICATION = "task-notification"  # `origin.kind` of the record Claude Code adds when a background task ends.
+SYNTHETIC = "<synthetic>"  # The `model` of a message Claude Code writes itself: an API error, or a note.
 HEAD_LINES = 50
+ORIGIN_TAIL_BYTES = 256  # The last bytes read for a transcript's origin, checked before reading only what was appended.
 INTERRUPTED = "[Request interrupted by user"
 LOCAL_OUTPUT = "<local-command-std"
 # Claude Code wraps slash commands, hook output and reminders in tags; none of it is what the user typed.
@@ -124,12 +129,21 @@ class ClaudeCursor(CodexCursor):
         self._tools: dict[str, tuple[str, dict[str, Any]]] = {}  # tool_use id -> (name, input)
         self._messages: set[str] = set()
         self._waiting = ""  # The outstanding tool call last reported as ToolPending.
+        # Whether the last turn read is still open; None after a seek, when its start was not read.
+        self._open: bool | None = False
+        # The user's messages already reported, queued or prompted, by their recorded identity.
+        self._said: set[str] = set()
         # ponytail: totals restart at the read start, so a tail read under-counts; a full read is exact.
         self._totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
     def reset(self) -> None:
         super().reset()
         self._clear()
+
+    def seek(self, start: int) -> None:
+        super().seek(start)
+        if self._offset:
+            self._open = None
 
     def read_new(self) -> list[Event]:
         events = super().read_new()
@@ -181,6 +195,13 @@ class ClaudeCursor(CodexCursor):
         ]
 
     def _events(self, record: dict[str, Any]) -> list[Event]:
+        events = self._record_events(record)
+        for event in events:
+            if isinstance(event, (TurnStarted, TurnEnded)):
+                self._open = isinstance(event, TurnStarted)
+        return events
+
+    def _record_events(self, record: dict[str, Any]) -> list[Event]:
         kind = record.get("type")
         if kind in ("summary", "custom-title"):
             title = record.get("summary") if kind == "summary" else record.get("customTitle")
@@ -188,6 +209,8 @@ class ClaudeCursor(CodexCursor):
                 return []
             self._title = title
             return [Meta(title=clip(title, 160))]
+        if kind == "attachment":
+            return self._queued_message(record)
         if kind not in ("user", "assistant"):
             return []
         ts = parse_ts(record.get("timestamp"))
@@ -195,19 +218,50 @@ class ClaudeCursor(CodexCursor):
         events = self._meta(record)
         if kind == "user":
             if not record.get("isMeta"):
-                events.extend(self._user(ts, message.get("content")))
+                events.extend(self._user(ts, message.get("content"), record.get("origin"), str(record.get("uuid") or "")))
         else:
             events.extend(self._assistant(ts, record, message))
         return events
 
     # -- user records: prompts and tool results ----------------------------------------------------
 
-    def _user(self, ts: datetime | None, content: object) -> list[Event]:
+    def _queued_message(self, record: dict[str, Any]) -> list[Event]:
+        """A message the user typed while the agent worked: part of the running turn, which goes on."""
+        attachment = record.get("attachment")
+        if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":
+            return []
+        origin = attachment.get("origin")
+        if isinstance(origin, dict) and origin.get("kind") == NOTIFICATION or attachment.get("commandMode") == NOTIFICATION:
+            return []  # A background task's notice queued for the agent, not something the user said.
+        # One message may be recorded more than once; a message typed twice has its own identity.
+        identity = str(attachment.get("source_uuid") or record.get("uuid") or "")
+        if identity and identity in self._said:
+            return []
+        prompt = attachment.get("prompt")
+        images = sum(1 for block in prompt if isinstance(block, dict) and block.get("type") == "image") if isinstance(prompt, list) else 0
+        placeholder = "[image]" if images == 1 else f"[{images} images]" if images else ""
+        text = " ".join(part for part in (placeholder, prompt_text(prompt)) if part)
+        if not text:
+            return []
+        if identity:
+            self._said.add(identity)
+        ts = parse_ts(attachment.get("timestamp") or record.get("timestamp"))
+        return [*self._meta(record), UserMessage(ts=ts, text=text)]
+
+    def _user(self, ts: datetime | None, content: object, origin: object = None, identity: str = "") -> list[Event]:
         events: list[Event] = []
         for block in content if isinstance(content, list) else []:
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 events.extend(self._result(ts, block))
+        if isinstance(origin, dict) and origin.get("kind") == NOTIFICATION:
+            # The agent's background task ended. After a finished turn the agent carries on in a new turn
+            # nobody prompted; inside a running turn nothing changes, and calls still running keep going.
+            return events + ([TurnStarted(ts=ts, trigger=NOTIFICATION)] if self._open is False else [])
         text = prompt_text(content)
+        if identity and identity in self._said:
+            return events  # Already reported, as a queued message: the running turn and its calls go on.
+        if text and identity:
+            self._said.add(identity)
         if text or LOCAL_OUTPUT in str(content):
             # A new prompt or a stop: calls still without a result will never get one.
             self._tools.clear()
@@ -228,11 +282,14 @@ class ClaudeCursor(CodexCursor):
         failed = bool(block.get("is_error"))
         output = _result_text(block.get("content"))
         if name == "Bash":
+            # A background run that started only says it started, not how it ends.
+            started = not failed and arguments.get("run_in_background")
             return [
                 CommandRun(
                     ts=ts,
                     command=_first_line(arguments.get("command")),
-                    exit_code=1 if failed else 0,
+                    full_command=str(arguments.get("command") or ""),
+                    exit_code=None if started else 1 if failed else 0,
                     output_tail=output[-OUTPUT_TAIL:] or None,
                 )
             ]
@@ -249,9 +306,14 @@ class ClaudeCursor(CodexCursor):
     # -- assistant records: one content block each -------------------------------------------------
 
     def _assistant(self, ts: datetime | None, record: dict[str, Any], message: dict[str, Any]) -> list[Event]:
+        if record.get("isApiErrorMessage") is True:
+            # The flag alone says the request failed, whatever the model field or the text.
+            content = message.get("content")
+            text = "\n".join(str(b.get("text")) for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)) if isinstance(content, list) else ""
+            return [self._api_error(ts, record, text)]
         events: list[Event] = []
         model, effort = message.get("model"), record.get("effort")
-        if isinstance(model, str) and model and not model.startswith("<"):  # "<synthetic>" is not a model.
+        if isinstance(model, str) and model and not model.startswith("<"):  # SYNTHETIC is not a model.
             settings = (clip(model, 120), clip(effort, 80) if isinstance(effort, str) else "")
             if settings != self._settings:
                 self._settings = settings
@@ -269,11 +331,29 @@ class ClaudeCursor(CodexCursor):
                 texts.append(block["text"])
             elif kind == "tool_use":
                 events.extend(self._tool_use(ts, block))
+        if texts and model == SYNTHETIC:
+            return events + [self._synthetic_end(ts, record)]
         if texts:
             events.append(AgentMessage(ts=ts, text="\n".join(texts)))
             if message.get("stop_reason") != "tool_use":
                 events.append(TurnEnded(ts=ts, reason=TURN_COMPLETED))
         return events
+
+    @staticmethod
+    def _api_error(ts: datetime | None, record: dict[str, Any], text: str) -> TurnEnded:
+        """A failed request stops the turn: its category and the diagnostic's first line, never an answer."""
+        category = record.get("error")
+        parts = (clip(category, 80) if isinstance(category, str) else "", clip(text.strip().splitlines()[0] if text.strip() else "", 160))
+        return TurnEnded(ts=ts, reason=": ".join(part for part in parts if part) or "API error")
+
+    @staticmethod
+    def _synthetic_end(ts: datetime | None, record: dict[str, Any]) -> TurnEnded:
+        """Claude Code's own message without the error flag ends the turn, and is never the agent's answer.
+
+        Neither the model nor the stop reason says it failed, and the words are not judged: with the flag
+        set to false it is a note; without the flag the turn ends without saying how.
+        """
+        return TurnEnded(ts=ts, reason=TURN_COMPLETED if record.get("isApiErrorMessage") is False else END_NOT_RECORDED)
 
     def _tool_use(self, ts: datetime | None, block: dict[str, Any]) -> list[Event]:
         name = str(block.get("name") or "")
@@ -333,11 +413,14 @@ class ClaudeAdapter(HarnessAdapter):
     """Finds Claude Code transcripts and opens cursors on them."""
 
     name: str = Harness.CLAUDE.value
-    capabilities: Capabilities = Capabilities()
+    capabilities: Capabilities = Capabilities(command_results=True)
 
     def __init__(self, home: Path | None = None) -> None:
         self.home = home or claude_home()
         self._heads: dict[Path, tuple[bool, str | None]] = {}
+        # Per transcript: (file stamp when read, bytes read, the last of them, a message came from `sdk-cli`,
+        # a message came from anywhere else).
+        self._origins: dict[Path, tuple[tuple[int, int, int, int], int, bytes, bool, bool]] = {}
 
     def _projects(self, root: Path | None) -> Path:
         # The hub passes one root to every adapter; only a Claude home (with projects/) applies here.
@@ -364,13 +447,59 @@ class ClaudeAdapter(HarnessAdapter):
             cached = self._heads[path] = (sidechain, cwd)
         return cached
 
+    def _automated(self, path: Path) -> bool:
+        """Whether every message so far came from an automated `sdk-cli` run (skill evals, scripts).
+
+        Decided on the recorded `entrypoint` of each message, read up to the last complete line. A message
+        with no or any other entrypoint makes the chat interactive. An unchanged file (same device, inode,
+        size and mtime) is not read. A file that grew is taken as appended to, so only the new bytes are
+        read, as long as the last bytes read before are still in place; any other change (another file at
+        the path, a rewrite, a shrink) reads it again from the start. The one assumption left: a rewrite
+        that grows the file and keeps those last bytes counts as an append.
+        """
+        try:
+            stat = path.stat()
+            stamp = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+            cached = self._origins.get(path)
+            if cached is not None and cached[0] == stamp:
+                return cached[3] and not cached[4]
+            _, offset, tail, automated, interactive = cached or (stamp, 0, b"", False, False)
+            with path.open("rb") as handle:
+                if cached is not None:
+                    handle.seek(offset - len(tail))
+                    appended = cached[0][:2] == stamp[:2] and stat.st_size > cached[0][2] and handle.read(len(tail)) == tail
+                    if not appended:
+                        offset, tail, automated, interactive = 0, b"", False, False
+                if not interactive and stat.st_size > offset:
+                    handle.seek(offset)
+                    data = handle.read(stat.st_size - offset)
+                    complete = data.rfind(b"\n") + 1
+                    for line in data[:complete].split(b"\n"):
+                        try:
+                            record = json.loads(line) if line.strip() else None
+                        except ValueError:
+                            continue
+                        if not isinstance(record, dict) or record.get("type") not in ("user", "assistant"):
+                            continue
+                        if record.get("entrypoint") == "sdk-cli":
+                            automated = True
+                        else:
+                            interactive = True
+                            break
+                    offset += complete
+                    tail = data[max(0, complete - ORIGIN_TAIL_BYTES):complete] or tail
+        except OSError:
+            return False
+        self._origins[path] = (stamp, offset, tail, automated, interactive)
+        return automated and not interactive
+
     def discover(self, root: Path | None = None) -> Iterator[SessionRef]:
         projects = self._projects(root)
         if not projects.is_dir():
             return
         for path in projects.glob(SESSION_GLOB):
             sidechain, cwd = self._head(path)
-            if sidechain:
+            if sidechain or self._automated(path):
                 continue
             yield SessionRef(harness=self.name, session_id=path.stem, path=path, cwd=cwd)
 

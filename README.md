@@ -63,7 +63,9 @@ uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds,
 only in your home folder (`~/.codex`, `~/.claude`, `~/.cursor`), and never creates a file in your
 git repositories. Restart the agents so their answers carry exact recaps, checks, and decisions.
-`your-turn uninstall` removes the skills and the `~/.claude/CLAUDE.md` block again at any time.
+For Cursor, it saves the skill and prints a User Rule to paste into Customize → Rules; only that rule
+applies the handoff to every chat. `your-turn doctor` checks the installed text without changing it,
+and `your-turn uninstall` removes the skills and the `~/.claude/CLAUDE.md` block again at any time.
 
 **2. Run the inbox** whenever you want it, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
 
