@@ -23,9 +23,13 @@
     "capabilities": [
       "Instructions"
     ],
+    "composerIcon": "./assets/your-turn-light.png",
+    "composerIconDark": "./assets/your-turn-dark.png",
     "defaultPrompt": [
       "End your answers in the Your Turn handoff format."
     ],
+    "logo": "./assets/your-turn-light.png",
+    "logoDark": "./assets/your-turn-dark.png",
     "brandColor": "#4F9A8B"
   }
 }
