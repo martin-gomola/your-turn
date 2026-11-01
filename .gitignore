@@ -6,3 +6,9 @@ docs/design
 docs/verification.md
 # Added by code-review-graph
 .code-review-graph/
+# Personal agent and editor setup
+.claude/
+.cursor/
+.cursorrules
+.mcp.json
+/CLAUDE.md
