@@ -104,6 +104,33 @@ plugins off, add the rule by hand as described in
 
 </details>
 
+### Why install the handoff skill?
+
+Agents often close with a polite offer, and Your Turn reads a closing question as a request, so the
+chat lands in **Needs you** although nothing waits on you. The handoff skill replaces that ending
+with two lines Your Turn can read without guessing.
+
+Without the skill, the closing question raises a false **Needs you**:
+
+```text
+I refactored the token refresh logic and ran pytest (all 12 tests passed).
+Would you like me to update the documentation or commit the changes?
+```
+
+With the skill, the chat goes to **New results** with its outcome on one line:
+
+```text
+I refactored the token refresh logic and ran pytest (all 12 tests passed).
+You can update the docs or commit when ready.
+
+**Outcome:** Token refresh is refactored and all 12 tests pass.
+**Next step:** none
+```
+
+When the agent does need you, `Next step` says how, for example `review: the retry limit in
+auth.py` or `approve: git push`. The full list is in
+[docs/configuration.md](./docs/configuration.md#your-turn-handoff).
+
 ## Privacy and Design
 
 - 🔒 **Local only.** The server binds `127.0.0.1` (the address behind `localhost`); nothing leaves your machine.
