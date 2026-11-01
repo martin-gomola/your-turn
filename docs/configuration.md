@@ -100,7 +100,7 @@ the saved files prove that an app has loaded the handoff into a chat.
 | --- | --- |
 | Only the inbox, no handoff | Run only `serve`. Recaps fall back to the first paragraph of each answer and a guessed next step. |
 | The handoff format without installing anything | Paste [agents-snippet.md](./agents-snippet.md) into the app's global instructions, such as `~/.codex/AGENTS.md`. |
-| To develop Your Turn | Clone the repo and run `make install`. The plugin then runs from your checkout, and the server starts in the background. |
+| To develop Your Turn | Clone the repo and run `make install`. It runs `your-turn install` for each app it finds, with the Codex plugin from your checkout when the Codex CLI is installed, and starts the server in the background. |
 
 ## Handoff contract
 
@@ -126,7 +126,7 @@ Decisions that older chats logged through the `log_decision` tool still show. Th
 
 | Command | Use it when |
 | --- | --- |
-| `make install` | First setup, or to update the plugin |
+| `make install` | First setup, or to update the handoff |
 | `make up` | Start the server in the background (`PORT=...` to change from 8787) |
 | `make status` | Check whether it is running |
 | `make logs` | Follow the server log |

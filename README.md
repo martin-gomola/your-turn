@@ -98,7 +98,7 @@ Every feature has to shorten one of the three questions above; anything else sta
 ## Development
 
 ```sh
-make install   # first setup: plugin from your checkout, server in the background
+make install   # first setup: handoff for each app found (Codex plugin from your checkout), server in the background
 make test      # run the test suite
 ```
 

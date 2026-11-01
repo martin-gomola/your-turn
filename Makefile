@@ -4,18 +4,19 @@ PID_FILE := $(STATE_DIR)/server.pid
 LOG_FILE := $(STATE_DIR)/server.log
 URL := http://127.0.0.1:$(PORT)
 MARKETPLACE := your-turn
-PLUGIN := your-turn@$(MARKETPLACE)
 
 .PHONY: install up down restart status logs test screenshots
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
-	@command -v codex >/dev/null || { echo "Codex CLI is required to install the plugin"; exit 1; }
 	@uv sync --quiet
-	@codex plugin marketplace list 2>/dev/null | grep -q "^$(MARKETPLACE) " || codex plugin marketplace add "$(CURDIR)"
-	@codex plugin add $(PLUGIN)
+	@# Registered first, so `your-turn install` adds the Codex plugin from this checkout.
+	@if command -v codex >/dev/null; then \
+		codex plugin marketplace list 2>/dev/null | grep -q "^$(MARKETPLACE) " || codex plugin marketplace add "$(CURDIR)"; \
+	fi
+	@uv run --quiet your-turn install
 	@$(MAKE) --no-print-directory up
-	@echo "Installed $(PLUGIN). Restart Codex so it loads the skill."
+	@echo "Restart the agent apps so they load the handoff."
 
 up:
 	@mkdir -p "$(STATE_DIR)"
