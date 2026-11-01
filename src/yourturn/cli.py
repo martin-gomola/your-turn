@@ -1,6 +1,7 @@
 """`your-turn` (or `your-turn serve`) runs the dashboard; `your-turn install` sets up the handoff for every
 agent app found (globally, never in a project) and exits; `your-turn uninstall` removes it; `your-turn
-doctor` reports whether the installed handoff is current, without changing anything."""
+doctor` reports whether the installed handoff is current, without changing anything; `your-turn cursor-rule`
+prints the Cursor User Rule to paste into Cursor's settings."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from yourturn.install import APPS, detect, doctor, install, uninstall
+from yourturn.install import APPS, detect, doctor, install, rule_text, uninstall
 
 SERVE = "uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve"
 
@@ -40,7 +41,12 @@ def main(argv: list[str] | None = None) -> int | None:
                              default=Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")))
         command.add_argument("--cursor-home", type=Path, default=Path.home() / ".cursor",
                              help="Cursor home holding projects/*/agent-transcripts (default: ~/.cursor)")
+    commands.add_parser("cursor-rule", help="Print the Cursor User Rule to paste into Customize → Rules")
     args = parser.parse_args(argv)
+
+    if args.command == "cursor-rule":
+        print(rule_text("cursor"), end="", flush=True)
+        return 0
 
     if args.command in ("install", "uninstall", "doctor"):
         homes = {"codex": args.codex_home, "claude": args.claude_home, "cursor": args.cursor_home}

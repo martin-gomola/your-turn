@@ -4,7 +4,7 @@
 Codex gets the plugin, which holds the skill. Claude Code and Cursor get the same skill in their global
 skills folder; Claude Code also gets a short block in its global CLAUDE.md so every chat follows the
 handoff, not only those where the skill is picked. Cursor keeps its global User Rules in its own settings,
-so install prints the rule for the user to add there. The handoff is plain text, so no process runs and no
+so `your-turn cursor-rule` prints the rule for the user to add there. The handoff is plain text, so no process runs and no
 app asks for a permission. Every step is idempotent, and `uninstall` removes only what `install` added.
 `doctor` compares the installed text with the current one without writing or running anything.
 
@@ -259,9 +259,7 @@ def install_cursor(home: Path) -> None:
         print("  Skill saved: the agent uses it when it picks it. The global rule is not activated by install.", flush=True)
     else:
         print("  Skill not saved. The global rule is not activated by install.", flush=True)
-    print("  For every Agent chat, open Customize → Rules in Cursor, add a User Rule, and paste:", flush=True)
-    # Not indented: pasted with leading spaces, the rule would read as a code block.
-    print(f"\n{rule_text('cursor')}", flush=True)
+    print("  If you haven't added the Cursor User Rule, run: make cursor-rule", flush=True)
 
 
 def uninstall_cursor(home: Path) -> None:
@@ -313,7 +311,7 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
             results.append(("cursor", "User Rule", "activation unverified",
                             "Cursor keeps User Rules in its own settings, so Your Turn cannot tell whether the rule is added; "
                             "a saved skill does not make it apply to every chat. To add it, open Customize → Rules and add a "
-                            "User Rule with the text that `install` prints, also in docs/configuration.md."))
+                            "User Rule with the text that `your-turn cursor-rule` (or `make cursor-rule`) prints."))
     return results
 
 

@@ -262,3 +262,44 @@ def test_cli_install_exits_after_setup(tmp_path: Path, no_clis: Path, capsys: py
     assert (claude / "skills" / "your-turn" / "SKILL.md").is_file()
     # Run through uvx, `your-turn` is not on PATH, so the hint is the full command.
     assert capsys.readouterr().out.endswith("Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n")
+
+
+def test_install_points_to_the_cursor_rule_without_printing_it(tmp_path: Path, no_clis: Path,
+                                                               capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    install(["codex", "cursor"], homes)
+    out = capsys.readouterr().out
+    assert "Skill written" in out and "If you haven't added the Cursor User Rule, run: make cursor-rule\n" in out
+    # Not one line of the rule body, and no claim that the rule is missing: its activation cannot be read.
+    assert not any(line.strip() and line.strip() in out for line in rule_text("cursor").splitlines())
+    assert "not added" not in out and "missing" not in out
+    # Warnings stay visible.
+    assert "Codex CLI not found" in out
+
+
+def test_cli_install_failure_stays_visible(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                           capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "codex").write_text("#!/bin/sh\nexit 7\n")
+    (bin_dir / "codex").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    with pytest.raises(SystemExit) as exited:
+        main(["install", "--harness", "codex", "--codex-home", str(homes["codex"])])
+    assert exited.value.code == 1
+    assert "Plugin install failed: codex plugin marketplace add" in capsys.readouterr().err
+
+
+def test_cursor_rule_prints_only_the_rule_and_changes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                              capsys: pytest.CaptureFixture[str]) -> None:
+    homes = _homes(tmp_path)
+    codex_log, claude_log = _fake(tmp_path, "codex", monkeypatch), _fake(tmp_path, "claude", monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.chdir(tmp_path / "cursor")
+    before = _tree(tmp_path)
+    assert main(["cursor-rule"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == rule_text("cursor") and captured.err == ""
+    assert _tree(tmp_path) == before and not (tmp_path / "home").exists()
+    assert not codex_log.exists() and not claude_log.exists()

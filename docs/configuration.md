@@ -11,15 +11,16 @@ Commands, flags, the handoff install, and the handoff format. What each app reco
 | `your-turn install` | Sets up the handoff for each app it finds, then exits |
 | `your-turn uninstall` | Removes exactly what `install` added |
 | `your-turn doctor` | Checks, without changing anything, whether the installed handoff matches this version |
+| `your-turn cursor-rule` | Prints the [Cursor User Rule](#cursor-user-rule) to paste into Cursor, without changing anything |
 
 ## Flags and environment
 
 | Flag | Commands | Default | Environment |
 | --- | --- | --- | --- |
 | `--port` | `serve` | `8787` | `PORT` for `make up` |
-| `--codex-home` | all | `~/.codex` | `CODEX_HOME` |
-| `--claude-home` | all | `~/.claude` | `CLAUDE_CONFIG_DIR` |
-| `--cursor-home` | all | `~/.cursor` | none |
+| `--codex-home` | all but `cursor-rule` | `~/.codex` | `CODEX_HOME` |
+| `--claude-home` | all but `cursor-rule` | `~/.claude` | `CLAUDE_CONFIG_DIR` |
+| `--cursor-home` | all but `cursor-rule` | `~/.cursor` | none |
 | `--cursor-user-dir` | `serve` | `~/Library/Application Support/Cursor/User` on macOS, `~/.config/Cursor/User` on Linux, `AppData/Roaming/Cursor/User` on Windows | none |
 | `--harness` | `install`, `uninstall`, `doctor` | every app whose folder exists | none |
 
@@ -53,7 +54,7 @@ a `.gitignore` entry:
 | --- | --- | --- |
 | Codex | The `your-turn` plugin from the `your-turn` marketplace, which holds the handoff skill | The plugin and its marketplace |
 | Claude Code | `~/.claude/skills/your-turn/SKILL.md` and a marked `your-turn` block in `~/.claude/CLAUDE.md` | The skill file and the block; the rest of `CLAUDE.md` stays |
-| Cursor | `~/.cursor/skills/your-turn/SKILL.md`, and prints the User Rule to add yourself | The skill file |
+| Cursor | `~/.cursor/skills/your-turn/SKILL.md`; the User Rule you add yourself from `your-turn cursor-rule` | The skill file |
 
 The handoff is plain text in the agent's answer, so nothing runs in the background and no app asks
 for a permission. `install` rewrites its own skill files and block whenever their text differs from
@@ -65,8 +66,8 @@ installing.
 ### Cursor User Rule
 
 A saved skill is used only when the agent picks it. To apply the handoff in every Cursor Agent chat,
-open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below (`install` prints
-it too). Cursor keeps User Rules in its own settings, so `install` cannot add one and `doctor` reports
+open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below
+(`your-turn cursor-rule`, or `make cursor-rule` in a checkout, prints exactly this text). Cursor keeps User Rules in its own settings, so `install` cannot add one and `doctor` reports
 **activation unverified** even when the skill is current. A `.cursor/rules` folder belongs to one
 project and is not a User Rule.
 
@@ -127,6 +128,8 @@ Decisions that older chats logged through the `log_decision` tool still show. Th
 | Command | Use it when |
 | --- | --- |
 | `make install` | First setup, or to update the handoff |
+| `make doctor` | Check, without changing anything, whether the installed handoff is current |
+| `make cursor-rule` | Print the Cursor User Rule to paste into Customize → Rules |
 | `make up` | Start the server in the background (`PORT=...` to change from 8787) |
 | `make status` | Check whether it is running |
 | `make logs` | Follow the server log |
