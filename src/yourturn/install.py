@@ -4,7 +4,7 @@
 Codex gets the plugin, which holds the skill. Claude Code and Cursor get the same skill in their global
 skills folder; Claude Code also gets a short block in its global CLAUDE.md so every chat follows the
 handoff, not only those where the skill is picked. Cursor keeps its global User Rules in its own settings,
-so `your-turn cursor-rule` prints the rule for the user to add there. The handoff is plain text, so no process runs and no
+so the `cursor-rule` command prints the rule for the user to add there. The handoff is plain text, so no process runs and no
 app asks for a permission. Every step is idempotent, and `uninstall` removes only what `install` added.
 `doctor` compares the installed text with the current one without writing or running anything.
 
@@ -25,6 +25,8 @@ from pathlib import Path
 MARKETPLACE_SOURCE = "martin-gomola/your-turn"
 MARKETPLACE = "your-turn"
 PLUGIN = f"your-turn@{MARKETPLACE}"
+# The Quickstart's form: run through uvx, `your-turn` is not on PATH.
+CURSOR_RULE = "uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule"
 NAME = "your-turn"  # Skill folder in Claude Code and Cursor, and the name of the legacy MCP server.
 APPS = {"codex": "Codex", "claude": "Claude Code", "cursor": "Cursor"}
 ASK_TOOLS = {"claude": "AskUserQuestion", "cursor": "AskQuestion"}
@@ -259,7 +261,8 @@ def install_cursor(home: Path) -> None:
         print("  Skill saved: the agent uses it when it picks it. The global rule is not activated by install.", flush=True)
     else:
         print("  Skill not saved. The global rule is not activated by install.", flush=True)
-    print("  If you haven't added the Cursor User Rule, run: make cursor-rule", flush=True)
+    print(f"  If you haven't added the Cursor User Rule, run: {CURSOR_RULE}", flush=True)
+    print("  (in a clone of the repository: make cursor-rule)", flush=True)
 
 
 def uninstall_cursor(home: Path) -> None:
@@ -311,7 +314,7 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
             results.append(("cursor", "User Rule", "activation unverified",
                             "Cursor keeps User Rules in its own settings, so Your Turn cannot tell whether the rule is added; "
                             "a saved skill does not make it apply to every chat. To add it, open Customize → Rules and add a "
-                            "User Rule with the text that `your-turn cursor-rule` (or `make cursor-rule`) prints."))
+                            f"User Rule with the text that `{CURSOR_RULE}` prints (in a clone: `make cursor-rule`)."))
     return results
 
 

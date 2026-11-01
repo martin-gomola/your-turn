@@ -54,26 +54,37 @@ VS Code, and you never switch windows to see who needs you.
 You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
 or Cursor.
 
-**1. Install the handoff skill**, once:
+**1. Install the handoff**, once:
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 ```
 
-It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds,
-only in your home folder (`~/.codex`, `~/.claude`, `~/.cursor`), and never creates a file in your
-git repositories. Restart the agents so their answers carry exact recaps, checks, and decisions.
-For Cursor, it saves the skill; `your-turn cursor-rule` prints the User Rule to paste into
-Customize → Rules, and only that rule applies the handoff to every chat. `your-turn doctor` checks the installed text without changing it,
-and `your-turn uninstall` removes the skills and the `~/.claude/CLAUDE.md` block again at any time.
+It sets up the plain-text handoff (`Outcome:`, `Next step:`, `Decision:`) for each agent it finds.
+It writes only to your home folder and never creates a file in your git repositories:
 
-**2. Run the inbox** whenever you want it, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
+- **Codex**: installs the `your-turn` plugin.
+- **Claude Code**: saves the skill and adds a block to `~/.claude/CLAUDE.md`.
+- **Cursor**: saves the skill. To apply it in every chat, also do step 2.
+
+Restart the agents afterwards.
+
+**2. Cursor only: add the User Rule.** Print it, then paste it into Cursor under
+**Customize → Rules → User Rule**:
+
+```sh
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
+```
+
+**3. Run the inbox** whenever you want it, then open [http://127.0.0.1:8787](http://127.0.0.1:8787):
 
 ```sh
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
 ```
 
-Your existing chats appear right away. Skipping step 1 works too, with guessed recaps.
+Your existing chats appear right away. Skipping steps 1 and 2 works too, with guessed recaps.
+
+To check the install without changing anything, run `your-turn doctor`. To remove it, run `your-turn uninstall`.
 
 ## Privacy and Design
 

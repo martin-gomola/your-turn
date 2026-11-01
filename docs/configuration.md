@@ -54,7 +54,7 @@ a `.gitignore` entry:
 | --- | --- | --- |
 | Codex | The `your-turn` plugin from the `your-turn` marketplace, which holds the handoff skill | The plugin and its marketplace |
 | Claude Code | `~/.claude/skills/your-turn/SKILL.md` and a marked `your-turn` block in `~/.claude/CLAUDE.md` | The skill file and the block; the rest of `CLAUDE.md` stays |
-| Cursor | `~/.cursor/skills/your-turn/SKILL.md`; the User Rule you add yourself from `your-turn cursor-rule` | The skill file |
+| Cursor | `~/.cursor/skills/your-turn/SKILL.md`; the User Rule you add yourself, from `cursor-rule` | The skill file |
 
 The handoff is plain text in the agent's answer, so nothing runs in the background and no app asks
 for a permission. `install` rewrites its own skill files and block whenever their text differs from
@@ -66,9 +66,16 @@ installing.
 ### Cursor User Rule
 
 A saved skill is used only when the agent picks it. To apply the handoff in every Cursor Agent chat,
-open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below
-(`your-turn cursor-rule`, or `make cursor-rule` in a checkout, prints exactly this text). Cursor keeps User Rules in its own settings, so `install` cannot add one and `doctor` reports
-**activation unverified** even when the skill is current. A `.cursor/rules` folder belongs to one
+open **Customize → Rules** in Cursor, add a **User Rule**, and paste the text below. This prints
+exactly that text and changes nothing:
+
+```sh
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule
+```
+
+In a clone of the repository, `make cursor-rule` does the same; plain `your-turn cursor-rule` works
+when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
+add one and `doctor` reports **activation unverified** even when the skill is current. A `.cursor/rules` folder belongs to one
 project and is not a User Rule.
 
 ```markdown
