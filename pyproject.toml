@@ -1,6 +1,6 @@
 [project]
 name = "your-turn"
-version = "0.2.0"
+version = "0.3.0"
 description = "An inbox for your coding agents. See which chat is waiting on you, what each one produced, and what to do next."
 requires-python = ">=3.11"
 license = "MIT"
