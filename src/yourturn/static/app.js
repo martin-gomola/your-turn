@@ -612,6 +612,15 @@ async function copyThreadId() {
 }
 $("copy-thread-id").addEventListener("click", copyThreadId);
 
+async function copyFilePath(path, status) {
+  try {
+    await navigator.clipboard.writeText(path);
+    status.textContent = `Path copied: ${path}`;
+  } catch {
+    status.textContent = `Couldn’t copy path: ${path}. Clipboard access was denied.`;
+  }
+}
+
 $("open-codex").addEventListener("click", async (event) => {
   const button = event.currentTarget;
   const command = button.dataset.copy;
@@ -1022,15 +1031,49 @@ function renderChanges(thread, turn) {
   }));
   $("files-wrap").hidden = files.length === 0;
   rowLabel("files-summary", `${files.length} ${files.length === 1 ? "file" : "files"} changed`);
-  $("files").replaceChildren(...files.map((path) => fileItem(path, thread.cwd)));
+  $("files").replaceChildren(...renderFileTree(files, thread.cwd, $("files-copy-status")));
 }
 
-function fileItem(path, cwd) {
-  const relative = relativePath(path, cwd);
-  const item = el("li");
-  item.title = path;
-  item.append(el("code", "", relative.split("/").pop()), el("span", "file-dir", relative.split("/").slice(0, -1).join("/")));
-  return item;
+function renderFileTree(paths, cwd, status) {
+  const root = new Map();
+  for (const path of paths) {
+    let branch = root;
+    const parts = relativePath(path, cwd).split("/").filter(Boolean);
+    for (const [index, part] of parts.entries()) {
+      if (!branch.has(part)) branch.set(part, new Map());
+      branch = branch.get(part);
+      if (index === parts.length - 1) branch.filePath = path;
+    }
+  }
+
+  function renderBranch(branch) {
+    return [...branch].map(([name, children]) => {
+      const item = el("li", "file-tree-item");
+      if (children.filePath) {
+        item.classList.add("file-tree-file");
+        item.title = children.filePath;
+        const path = relativePath(children.filePath, cwd);
+        const copy = el("button", "icon-button");
+        copy.type = "button";
+        copy.title = `Copy path ${path}`;
+        copy.setAttribute("aria-label", `Copy path ${path}`);
+        copy.append(icon("i-copy"));
+        copy.addEventListener("click", () => copyFilePath(path, status));
+        item.append(el("code", "", name), copy);
+      } else {
+        const folder = el("details", "file-tree-folder");
+        folder.open = true;
+        const label = el("summary", "", name);
+        const nested = el("ul", "file-tree");
+        nested.append(...renderBranch(children));
+        folder.append(label, nested);
+        item.append(folder);
+      }
+      return item;
+    });
+  }
+
+  return renderBranch(root);
 }
 
 // The session's final set of changed files, most recently changed first; shown only when earlier
@@ -1042,7 +1085,7 @@ function renderSessionFiles(thread, turn) {
   $("session-files-wrap").hidden = !earlier;
   rowLabel("session-files-summary", "Files changed", `${lastTurn.size} ${lastTurn.size === 1 ? "file" : "files"}`);
   const paths = [...lastTurn].sort(([, a], [, b]) => b - a).map(([path]) => path);
-  $("session-files").replaceChildren(...paths.map((path) => fileItem(path, thread.cwd)));
+  $("session-files").replaceChildren(...renderFileTree(paths, thread.cwd, $("session-files-copy-status")));
 }
 
 function decisionPreview(text) {

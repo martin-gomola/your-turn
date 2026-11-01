@@ -187,6 +187,7 @@ calls in older transcripts still read as decisions.
   evidence at all. Missing evidence is a chip of its own rather than an absence.
 - What happened: the latest turn's outcome, when there is one, and a files row that expands to the
   latest turn's changed paths relative to the working directory.
+- Decisions appear above Checks; More follows both sections.
 - Checks, as grouped rows: a warning row when files changed after the last check, when edits had no
   check, or when a check has no exit code; and one row per check with its command and Passed,
   Failed (exit N), or Exit not reported. A missing exit code is never shown as passed, failed, or

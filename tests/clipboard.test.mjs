@@ -21,4 +21,19 @@ for (const denied of [false, true]) {
     assert.match(nodes['copy-thread-status'].textContent, denied ? /copy it manually/ : /copied/);
     assert.equal(copied, denied ? undefined : id);
   });
+
+  test(`copy file path: ${denied ? 'denied' : 'success'}`, async () => {
+    const path = 'src/yourturn/static/app.js';
+    const status = { textContent: '' };
+    let copied;
+    const context = vm.createContext({ navigator: { clipboard: { writeText: async value => {
+      if (denied) throw new Error('Clipboard denied');
+      copied = value;
+    } } } });
+    const handler = source.slice(source.indexOf('async function copyFilePath('), source.indexOf('$("open-codex").addEventListener'));
+    vm.runInContext(`${handler}\nthis.copyFilePath = copyFilePath;`, context);
+    await context.copyFilePath(path, status);
+    assert.equal(copied, denied ? undefined : path);
+    assert.match(status.textContent, denied ? /Clipboard access was denied/ : new RegExp(`copied: ${path.replaceAll('/', '\\/')}`));
+  });
 }

@@ -179,15 +179,8 @@ SOFTWARE.
         <details class="list-row disclosure-row">
           <summary id="files-summary">Files</summary>
           <ul class="file-list" id="files"></ul>
+          <p class="sr-only" id="files-copy-status" role="status" aria-live="polite"></p>
         </details>
-      </div>
-    </section>
-
-    <section class="group" id="checks-wrap" aria-labelledby="checks-title" hidden>
-      <h2 class="group-title" id="checks-title"><span class="tone" data-tone="new"><svg aria-hidden="true"><use href="#i-command"/></svg></span>Checks</h2>
-      <div class="list">
-        <p class="list-row warning" id="check-warning" hidden><svg aria-hidden="true"><use href="#i-alert"/></svg><span id="check-warning-text"></span></p>
-        <ul class="checks" id="checks"></ul>
       </div>
     </section>
 
@@ -202,6 +195,14 @@ SOFTWARE.
       </div>
     </section>
 
+    <section class="group" id="checks-wrap" aria-labelledby="checks-title" hidden>
+      <h2 class="group-title" id="checks-title"><span class="tone" data-tone="new"><svg aria-hidden="true"><use href="#i-command"/></svg></span>Checks</h2>
+      <div class="list">
+        <p class="list-row warning" id="check-warning" hidden><svg aria-hidden="true"><use href="#i-alert"/></svg><span id="check-warning-text"></span></p>
+        <ul class="checks" id="checks"></ul>
+      </div>
+    </section>
+
     <section class="group" id="more" aria-labelledby="more-title" hidden>
       <h2 class="group-title" id="more-title"><span class="tone" data-tone="muted"><svg aria-hidden="true"><use href="#i-turn"/></svg></span>More</h2>
       <div class="list">
@@ -212,6 +213,7 @@ SOFTWARE.
         <details class="list-row disclosure-row" id="session-files-wrap" hidden>
           <summary id="session-files-summary">Files changed</summary>
           <ul class="file-list" id="session-files"></ul>
+          <p class="sr-only" id="session-files-copy-status" role="status" aria-live="polite"></p>
         </details>
         <details class="list-row disclosure-row" id="activity-wrap">
           <summary id="activity-summary">Activity</summary>
