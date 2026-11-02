@@ -52,7 +52,7 @@ Your Turn runs on your machine. It does not take over agent processes, run a bac
 
 ## Quick start
 
-You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor.
+You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor. Without `uv`, install it first with `brew install uv` or [uv's installer](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
 uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
