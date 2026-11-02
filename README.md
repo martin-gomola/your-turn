@@ -52,10 +52,12 @@ Your Turn runs on your machine. It does not take over agent processes, run a bac
 
 ## Quick start
 
-You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor. Without `uv`, install it first with `brew install uv` or [uv's installer](https://docs.astral.sh/uv/getting-started/installation/).
+You need [`uv`](https://docs.astral.sh/uv/) and Codex, Claude Code, or Cursor. `uv` downloads Python 3.11 or newer if you do not have it. Without `uv`, install it first with `brew install uv` or [uv's installer](https://docs.astral.sh/uv/getting-started/installation/).
+
+To see which files `install` would write, run `uvx your-turn@latest doctor` first; it changes nothing. Then run:
 
 ```bash
-uvx your-turn install
+uvx your-turn@latest install
 ```
 
 `install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
@@ -63,14 +65,20 @@ uvx your-turn install
 To start the inbox later, run:
 
 ```bash
-uvx your-turn serve
+uvx your-turn@latest serve
 ```
 
-The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `uvx your-turn doctor` or `uvx your-turn uninstall`.
+The server binds to loopback only (`127.0.0.1`). To remove the handoff, run `uvx your-turn@latest uninstall`.
 
-`uvx your-turn` runs the [PyPI release](https://pypi.org/project/your-turn/), which is built from a Git tag by GitHub Actions. `uvx your-turn@latest` picks up a newer release. To pin a version, use `uvx your-turn@0.4.0`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.4.0 your-turn`.
+<details>
+<summary>Check where a release comes from, or pin one</summary>
 
-### With Nix
+`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.4.0`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.4.0 your-turn`.
+
+</details>
+
+<details>
+<summary>Run with Nix instead</summary>
 
 The repository is a flake, with dependencies pinned in `flake.lock`. This starts the inbox without changing any agent app:
 
@@ -79,6 +87,8 @@ nix run github:martin-gomola/your-turn
 ```
 
 Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.4.0`.
+
+</details>
 
 ## Privacy
 

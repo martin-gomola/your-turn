@@ -15,7 +15,7 @@ from pathlib import Path
 
 from yourturn.install import APPS, detect, doctor, install, rule_text, uninstall
 
-SERVE = "uvx your-turn serve"
+SERVE = "uvx your-turn@latest serve"
 PORT = 8787
 
 

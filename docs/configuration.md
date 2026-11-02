@@ -124,7 +124,7 @@ To print exactly this text instead, without changing anything (on macOS, `| pbco
 clipboard):
 
 ```sh
-uvx your-turn cursor-rule
+uvx your-turn@latest cursor-rule
 ```
 
 Plain `your-turn cursor-rule` works when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
