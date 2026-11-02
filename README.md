@@ -38,6 +38,7 @@ When Codex, Claude Code, and Cursor run side by side, the slow part is your atte
 
 </details>
 <br>
+
 **Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
 
 - ⏳ **Who is waiting on you?**<br>
