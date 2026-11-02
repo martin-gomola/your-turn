@@ -69,7 +69,7 @@ If an agent needs a decision, answer, review, or approval, `Next step` names it.
 
 <div align="center">
 
-<img src="docs/images/desktop.png" width="800" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status">
+<img src="docs/images/desktop.png?v=1" width="800" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status">
 
 <sub>Made-up demo chats from <code>make screenshots</code>, not real session data.</sub>
 
@@ -78,14 +78,14 @@ If an agent needs a decision, answer, review, or approval, `Next step` names it.
 <details>
 <summary>See the inbox beside a chat</summary>
 
-<img src="docs/images/in-codex.png" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
+<img src="docs/images/in-codex.png?v=1" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
 
 </details>
 
 <details>
 <summary>Watch a chat move into Needs you</summary>
 
-<img src="docs/images/demo.gif" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
+<img src="docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
 
 </details>
 
