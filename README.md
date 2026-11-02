@@ -2,171 +2,128 @@
 
 # Your Turn
 
-### Your agents are fast. You're the queue.
+<p align="center"><strong>Your agents are fast. You're the queue.</strong></p>
 
 ![Works with Codex · Claude Code · Cursor](https://img.shields.io/badge/Works%20with-Codex%20%C2%B7%20Claude%20Code%20%C2%B7%20Cursor-56645f)
-![100% Local · Read-only](https://img.shields.io/badge/100%25%20Local-Read--only-2f7a6b)
+![Local · Read-only](https://img.shields.io/badge/Local-Read--only-2f7a6b)
 
-[Quickstart](#quickstart) · [Keep it next to your chat](#keep-it-next-to-your-chat) ·
-[Privacy](#privacy-and-design) · [Docs](#docs)
+[Quick start](#quick-start) · [Why install the handoff](#why-install-the-handoff) ·
+[Privacy](#privacy) · [Docs](#docs)
 
 </div>
 
 When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat blocked on you sits in a window you are not looking at, and every answer is a long log.
 
-**Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox that reads the logs your agents already write and answers three questions at a glance:
+**Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
 
-* ⏳ **Who is waiting on you?**  
-  Questions, pending approvals, and unreviewed results, ordered strictly by how long they have waited.
+- ⏳ **Who is waiting on you?**<br>
+  Questions, pending approvals, and unreviewed results, ordered by how long they have waited.
+- ✅ **Can you trust the result without reading the log?**<br>
+  `Check failed` and `Edits unchecked` badges tied to the latest code edit.
+- ➡️ **What is the exact next step?**<br>
+  One line per chat, with one click to open or resume it in its app.
 
-* ✅ **Can you trust the result without reading the log?**  
-  `Check failed` and `Edits unchecked` badges tied deterministically to the latest code edit.
+Your Turn runs on your machine. It does not take over agent processes, run a background service, or send chat data to the cloud. It uses no cloud account or extra agent permissions.
 
-* ➡️ **What is the exact next step, and which decisions were made?**  
-  One line each, with a single click to resume or open the chat in its native app.
+## Quick start
+
+You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor.
+
+```bash
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
+```
+
+`install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
+
+To start the inbox later, run:
+
+```bash
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
+```
+
+The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `your-turn doctor` or `your-turn uninstall` with the same `uvx --from git+https://github.com/martin-gomola/your-turn` prefix.
+
+### Why install the handoff?
+
+Agents often end with a polite question such as “Would you like me to update the docs?” Your Turn can read that as a question waiting on you, even when the work is done. The handoff asks the agent to end with an `Outcome` and a `Next step`, so the inbox can show a clear result.
+
+Without the handoff:
+
+```text
+I refactored the token refresh logic and ran pytest. All 12 tests passed.
+Would you like me to update the docs or commit the changes?
+```
+
+With the handoff:
+
+```text
+I refactored the token refresh logic and ran pytest. All 12 tests passed.
+
+**Outcome:** Token refresh is refactored and all 12 tests pass.
+**Next step:** none
+```
+
+If an agent needs a decision, answer, review, or approval, `Next step` names it. See the full format in [docs/configuration.md](./docs/configuration.md#your-turn-handoff).
+
+## Your inbox
 
 <div align="center">
 
-<img src="docs/images/desktop.png" width="800" alt="Your Turn inbox with a warm header scene, status tabs, and Codex, Claude Code, and Cursor chats grouped into Needs you, Working, and New results">
+<img src="docs/images/desktop.png" width="800" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status">
 
 <sub>Made-up demo chats from <code>make screenshots</code>, not real session data.</sub>
 
 </div>
 
 <details>
-<summary>Watch the 12s triage flow (GIF)</summary>
+<summary>See the inbox beside a chat</summary>
 
-<img src="docs/images/demo.gif" width="800" alt="A working chat moves into Needs you when its question arrives, then opens beside the inbox with the question and an Open in Codex button">
+<img src="docs/images/in-codex.png" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
 
 </details>
-
-## Keep It Next to Your Chat
-
-<img src="docs/images/in-codex.png" width="800" alt="Codex window with a chat on the left and Your Turn in the in-app browser on the right, showing the chat waiting for an answer and its passing check">
-
-Your Turn runs in any browser, but it works best right beside the agent you are driving. Open
-`http://localhost:8787` in the Codex in-app browser, or in a Simple Browser panel in Cursor or
-VS Code, and you never switch windows to see who needs you.
-
-## Quickstart
-
-You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and at least one of Codex, Claude Code,
-or Cursor.
-
-**1. Install.** Run this once in a terminal:
-
-```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
-```
-
-It adds a skill or rule to each agent it finds, so replies end with `Outcome:` and `Next step:`.
-Then it starts the inbox. Your projects stay untouched.
 
 <details>
-<summary>What it changes per agent</summary>
+<summary>Watch a chat move into Needs you</summary>
 
-It writes only to the agents' own folders: `~/.codex`, `~/.claude`, `~/.cursor`, and `~/.agents`.
-
-- **Codex**: installs the `your-turn` plugin, or, without the Codex CLI, saves the skill in
-  `~/.agents/skills`, which the Codex app reads too.
-- **Claude Code**: saves the skill and adds a block to `~/.claude/CLAUDE.md`.
-- **Cursor**: saves the skill, and the rule that applies it in every chat as a local plugin.
-
-</details>
-<br>
-
-**2. Restart the apps it names** at the end of its output, so they load the handoff.
-
-**3. Open [http://localhost:8787](http://localhost:8787).** Your existing chats are already there.
-
-**Next time**, start the inbox with:
-
-```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
-```
-
-<details>
-<summary>Check, remove, or troubleshoot the install</summary>
-
-To check the install without changing anything, or to remove it:
-
-```sh
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn doctor
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn uninstall
-```
-
-`serve` also works without `install`; recaps are then guessed. If your Cursor admin turned local
-plugins off, add the rule by hand as described in
-[docs/configuration.md](./docs/configuration.md#cursor-user-rule).
+<img src="docs/images/demo.gif" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
 
 </details>
 
-### Why install the handoff skill?
+## Privacy
 
-Agents often close with a polite offer, and Your Turn reads a closing question as a request, so the
-chat lands in **Needs you** although nothing waits on you. The handoff skill replaces that ending
-with two lines Your Turn can read without guessing.
-
-Without the skill, the closing question raises a false **Needs you**:
-
-```text
-I refactored the token refresh logic and ran pytest (all 12 tests passed).
-Would you like me to update the documentation or commit the changes?
-```
-
-With the skill, the chat goes to **New results** with its outcome on one line:
-
-```text
-I refactored the token refresh logic and ran pytest (all 12 tests passed).
-You can update the docs or commit when ready.
-
-**Outcome:** Token refresh is refactored and all 12 tests pass.
-**Next step:** none
-```
-
-When the agent does need you, `Next step` says how, for example `review: the retry limit in
-auth.py` or `approve: git push`. The full list is in
-[docs/configuration.md](./docs/configuration.md#your-turn-handoff).
-
-## Privacy and Design
-
-- 🔒 **Local only.** The server binds `127.0.0.1` (the address behind `localhost`); nothing leaves your machine.
-- 👀 **Strictly read-only.** It never writes to session files or Cursor's SQLite database, and never
-  starts, answers, or approves anything. Its only file is `~/.your-turn/state.json`, which keeps
-  seen results and dismissed reminders in sync across browsers, with a browser-local backup for recovery.
-- ⚙️ **Zero config.** No account and no setup file; it finds the chats you already have and leaves
-  out sub-agents, headless runs, and abandoned chats.
-
-Every feature has to shorten one of the three questions above; anything else stays out.
+- **Local only.** The server binds to `127.0.0.1`. It does not send session data anywhere.
+- **Read-only session access.** Your Turn reads agent logs and Cursor's local chat database. It never edits them, starts or answers chats, or approves actions.
+- **Small local state file.** `~/.your-turn/state.json` stores seen results and dismissed reminders so they stay in sync across browsers. The browser keeps a local backup.
+- **No account or setup file.** Your Turn finds existing chats and leaves out sub-agents, headless runs, and abandoned chats.
 
 ## Docs
 
-| Guide | What is in it |
+| Guide | What it covers |
 | --- | --- |
-| [docs/harnesses.md](./docs/harnesses.md) | Data sources per OS, Codex vs Claude Code vs Cursor, Needs you rules, check tags, what stays out, limits |
-| [docs/configuration.md](./docs/configuration.md) | CLI flags, environment, `install` / `uninstall` per app, the handoff contract, development |
-| [DESIGN.md](./DESIGN.md) | Design contract and the UI's references |
-| [docs/agents-snippet.md](./docs/agents-snippet.md) | The handoff format to paste without installing anything |
+| [docs/harnesses.md](./docs/harnesses.md) | Data sources by OS, supported apps, inbox states, checks, and limits |
+| [docs/configuration.md](./docs/configuration.md) | CLI commands and flags, app setup, handoff format, and development |
+| [DESIGN.md](./DESIGN.md) | UI design contract and references |
+| [docs/agents-snippet.md](./docs/agents-snippet.md) | Handoff format to add to agent instructions by hand |
 
 ## Run from a clone
 
-```sh
+```bash
 git clone https://github.com/martin-gomola/your-turn.git
 cd your-turn
-make install   # set up the handoff from this checkout, start the server
+make install
 ```
 
-Then open [http://localhost:8787](http://localhost:8787). Later, from the same folder:
+`make install` sets up the handoff from this checkout and starts the inbox. Open [http://localhost:8787](http://localhost:8787). Later, from the same folder:
 
-```sh
-make up        # start the server in the background
+```bash
+make up        # start the inbox in the background
 make down      # stop it
-make doctor    # check the installed handoff without changing it
+make doctor    # check the handoff without changing it
 make test      # run the test suite
 ```
 
-All `make` targets and API routes are in [docs/configuration.md](./docs/configuration.md#development).
+See [docs/configuration.md](./docs/configuration.md#development) for all `make` targets and API routes.
 
 ## License
 
-[MIT](./LICENSE). Third-party icons and artwork notes are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+[MIT](./LICENSE). Third-party icons and artwork are listed in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

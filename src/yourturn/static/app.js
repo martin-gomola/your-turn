@@ -168,6 +168,15 @@ function icon(name) {
   return svg;
 }
 
+function harnessPill(harness, label) {
+  const pill = el("span", "harness-pill");
+  pill.dataset.harness = harness;
+  const mark = icon(`i-harness-${harness}`);
+  mark.classList.add("harness-icon");
+  pill.append(mark, document.createTextNode(label));
+  return pill;
+}
+
 // Every working glyph shares one phase, so live re-renders never restart the rotation.
 function syncSpin(use) {
   use.style.animationDelay = `-${performance.now() % WORKING_SPIN_PERIOD_MS}ms`;
@@ -381,7 +390,9 @@ function renderRow(chat) {
   body.append(description);
   if (state === "waiting" && chat.question && chat.options?.length) body.append(el("span", "row-options", chat.options.join(" · ")));
   const project = el("span", "row-project");
-  if (HARNESS_LABEL[chat.harness]) project.append(el("span", "harness-pill", HARNESS_LABEL[chat.harness]));
+  if (HARNESS_LABEL[chat.harness]) {
+    project.append(harnessPill(chat.harness, HARNESS_LABEL[chat.harness]));
+  }
   const projectIcon = icon("i-workspace");
   projectIcon.classList.add("project-icon");
   project.append(projectIcon, el("span", "project-name", projectName(chat)));
@@ -1350,7 +1361,7 @@ function renderTimeline(thread) {
 function metaItems(thread) {
   const items = [];
   if (APP_NAME[thread.harness]) {
-    const pill = el("span", "harness-pill", appName(thread));
+    const pill = harnessPill(thread.harness, appName(thread));
     pill.title = `Chat from ${appName(thread)}`;
     items.push(pill);
   }

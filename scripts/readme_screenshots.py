@@ -312,7 +312,8 @@ body { font: 13px/1.5 -apple-system, system-ui, sans-serif; color: #1d1d1f; back
 
 def demo_gif(browser, base: str, chat: Chat, path: Path) -> None:
     """Film a chat moving into Needs you when its question arrives, then opening it."""
-    page = browser.new_page(viewport={"width": 1280, "height": 800}, color_scheme="light")
+    page = browser.new_page(viewport={"width": 1280, "height": 800}, color_scheme="dark")
+    page.add_init_script("localStorage.setItem('theme', 'dark'); localStorage.setItem('compact-header', 'true')")
     page.goto(base + "/")
     page.wait_for_selector(".row")
     page.wait_for_timeout(800)
@@ -429,7 +430,8 @@ def main() -> None:
         with demo_server(chats) as (base, _):
             # Reduced motion so no capture lands mid-transition.
             desk = browser.new_page(viewport={"width": 1487, "height": 1058}, device_scale_factor=2,
-                                    color_scheme="light", reduced_motion="reduce")
+                                    color_scheme="dark", reduced_motion="reduce")
+            desk.add_init_script("localStorage.setItem('theme', 'dark'); localStorage.setItem('compact-header', 'true')")
             desk.goto(base + "/")
             desk.wait_for_timeout(1500)
             desk.screenshot(path=str(OUT / "desktop.png"))
@@ -438,7 +440,8 @@ def main() -> None:
 
             # Your Turn forbids framing, so the in-app browser pane shows a capture of it instead.
             pane = browser.new_page(viewport={"width": 420, "height": 700}, device_scale_factor=2,
-                                    color_scheme="light", reduced_motion="reduce")
+                                    color_scheme="dark", reduced_motion="reduce")
+            pane.add_init_script("localStorage.setItem('theme', 'dark'); localStorage.setItem('compact-header', 'true')")
             pane.goto(f"{base}/?thread={chats[0].id}")
             pane.wait_for_timeout(1200)
             shot = base64.b64encode(pane.screenshot()).decode()
