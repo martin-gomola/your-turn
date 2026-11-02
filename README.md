@@ -55,7 +55,7 @@ Your Turn runs on your machine. It does not take over agent processes, run a bac
 You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor. Without `uv`, install it first with `brew install uv` or [uv's installer](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
+uvx your-turn install
 ```
 
 `install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
@@ -63,10 +63,12 @@ uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
 To start the inbox later, run:
 
 ```bash
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
+uvx your-turn serve
 ```
 
-The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `your-turn doctor` or `your-turn uninstall` with the same `uvx --from git+https://github.com/martin-gomola/your-turn` prefix.
+The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `uvx your-turn doctor` or `uvx your-turn uninstall`.
+
+`uvx your-turn` runs the [PyPI release](https://pypi.org/project/your-turn/), which is built from a Git tag by GitHub Actions. `uvx your-turn@latest` picks up a newer release. To pin a version, use `uvx your-turn@0.4.0`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.4.0 your-turn`.
 
 ### With Nix
 
@@ -76,7 +78,7 @@ The repository is a flake, with dependencies pinned in `flake.lock`. This starts
 nix run github:martin-gomola/your-turn
 ```
 
-Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`.
+Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.4.0`.
 
 ## Privacy
 

@@ -206,7 +206,7 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
     out = capsys.readouterr().out
     assert "content mismatch" in out and "unreadable" in out and "rule loaded: unverified" in out
     assert "docs/configuration.md#cursor-user-rule" in out
-    assert "`uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule` prints." in out
+    assert "`uvx your-turn cursor-rule` prints." in out
     assert "make cursor-rule" not in out
     # Only our block is compared, and nothing of the user's CLAUDE.md is shown.
     assert "zebra-ledger" not in out and "edited by hand" not in out
@@ -273,7 +273,7 @@ def test_cli_install_exits_after_setup(tmp_path: Path, no_clis: Path, capsys: py
     assert (claude / "skills" / "your-turn" / "SKILL.md").is_file()
     # Run through uvx, `your-turn` is not on PATH, so the hint is the full command.
     assert capsys.readouterr().out.endswith("\n→ Restart Claude Code to load the handoff, then start the inbox with: "
-                                            "uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve "
+                                            "uvx your-turn serve "
                                             "(or `make up` in a clone)\n")
 
 
@@ -297,7 +297,7 @@ def test_cli_install_in_a_terminal_starts_the_inbox_unless_it_runs(tmp_path: Pat
         assert served == [] and out.endswith("→ Your Turn is already running at http://localhost:8787\n")
     else:
         assert served == [8787]
-        assert "→ Next time, start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve\n" in out
+        assert "→ Next time, start the inbox with: uvx your-turn serve\n" in out
         assert out.endswith("Starting Your Turn at http://localhost:8787. Press Ctrl+C to stop it.\n")
 
 
@@ -309,7 +309,7 @@ def test_cli_install_names_only_the_apps_it_set_up(tmp_path: Path, no_clis: Path
     assert "\n→ Restart Codex, Claude Code and Cursor to load the handoff, then start the inbox with: " in capsys.readouterr().out
     main(["install", "--codex-home", str(tmp_path / "none"), "--claude-home", str(tmp_path / "none"),
           "--cursor-home", str(tmp_path / "none")])
-    assert capsys.readouterr().out.endswith("\n→ Start the inbox with: uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve "
+    assert capsys.readouterr().out.endswith("\n→ Start the inbox with: uvx your-turn serve "
                                             "(or `make up` in a clone)\n")
 
 

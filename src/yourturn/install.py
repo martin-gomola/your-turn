@@ -28,7 +28,7 @@ MARKETPLACE_SOURCE = "martin-gomola/your-turn"
 MARKETPLACE = "your-turn"
 PLUGIN = f"your-turn@{MARKETPLACE}"
 # The Quickstart's form: run through uvx, `your-turn` is not on PATH.
-CURSOR_RULE = "uvx --from git+https://github.com/martin-gomola/your-turn your-turn cursor-rule"
+CURSOR_RULE = "uvx your-turn cursor-rule"
 # The same text in a Markdown block, which GitHub gives a copy button.
 CURSOR_RULE_DOCS = "https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md#cursor-user-rule"
 NAME = "your-turn"  # Skill folder in Claude Code and Cursor, and the name of the legacy MCP server.
