@@ -7,63 +7,12 @@
 ![Works with Codex · Claude Code · Cursor](https://img.shields.io/badge/Works%20with-Codex%20%C2%B7%20Claude%20Code%20%C2%B7%20Cursor-56645f)
 ![Local · Read-only](https://img.shields.io/badge/Local-Read--only-2f7a6b)
 
-[Quick start](#quick-start) · [Why install the handoff](#why-install-the-handoff) ·
-[Privacy](#privacy) · [Docs](#docs)
+[Your inbox](#your-inbox) · [Quick start](#quick-start) · [Privacy](#privacy) ·
+[Why install the handoff](#why-install-the-handoff) · [Docs](#docs)
 
 </div>
 
 When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat blocked on you sits in a window you are not looking at, and every answer is a long log.
-
-**Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
-
-- ⏳ **Who is waiting on you?**<br>
-  Questions, pending approvals, and unreviewed results, ordered by how long they have waited.
-- ✅ **Can you trust the result without reading the log?**<br>
-  `Check failed` and `Edits unchecked` badges tied to the latest code edit.
-- ➡️ **What is the exact next step?**<br>
-  One line per chat, with one click to open or resume it in its app.
-
-Your Turn runs on your machine. It does not take over agent processes, run a background service, or send chat data to the cloud. It uses no cloud account or extra agent permissions.
-
-## Quick start
-
-You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor.
-
-```bash
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
-```
-
-`install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
-
-To start the inbox later, run:
-
-```bash
-uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
-```
-
-The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `your-turn doctor` or `your-turn uninstall` with the same `uvx --from git+https://github.com/martin-gomola/your-turn` prefix.
-
-### Why install the handoff?
-
-Agents often end with a polite question such as “Would you like me to update the docs?” Your Turn can read that as a question waiting on you, even when the work is done. The handoff asks the agent to end with an `Outcome` and a `Next step`, so the inbox can show a clear result.
-
-Without the handoff:
-
-```text
-I refactored the token refresh logic and ran pytest. All 12 tests passed.
-Would you like me to update the docs or commit the changes?
-```
-
-With the handoff:
-
-```text
-I refactored the token refresh logic and ran pytest. All 12 tests passed.
-
-**Outcome:** Token refresh is refactored and all 12 tests pass.
-**Next step:** none
-```
-
-If an agent needs a decision, answer, review, or approval, `Next step` names it. See the full format in [docs/configuration.md](./docs/configuration.md#your-turn-handoff).
 
 ## Your inbox
 
@@ -88,6 +37,35 @@ If an agent needs a decision, answer, review, or approval, `Next step` names it.
 <img src="docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
 
 </details>
+<br>
+**Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
+
+- ⏳ **Who is waiting on you?**<br>
+  Questions, pending approvals, and unreviewed results, ordered by how long they have waited.<br>
+- ✅ **Can you trust the result without reading the log?**<br>
+  `Check failed` and `Edits unchecked` badges tied to the latest code edit.<br>
+- ➡️ **What is the exact next step?**<br>
+  One line per chat, with one click to open or resume it in its app.<br>
+
+Your Turn runs on your machine. It does not take over agent processes, run a background service, or send chat data to the cloud. It uses no cloud account or extra agent permissions.
+
+## Quick start
+
+You need Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and Codex, Claude Code, or Cursor.
+
+```bash
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn install
+```
+
+`install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
+
+To start the inbox later, run:
+
+```bash
+uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
+```
+
+The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `your-turn doctor` or `your-turn uninstall` with the same `uvx --from git+https://github.com/martin-gomola/your-turn` prefix.
 
 ## Privacy
 
@@ -95,6 +73,33 @@ If an agent needs a decision, answer, review, or approval, `Next step` names it.
 - **Read-only session access.** Your Turn reads agent logs and Cursor's local chat database. It never edits them, starts or answers chats, or approves actions.
 - **Small local state file.** `~/.your-turn/state.json` stores seen results and dismissed reminders so they stay in sync across browsers. The browser keeps a local backup.
 - **No account or setup file.** Your Turn finds existing chats and leaves out sub-agents, headless runs, and abandoned chats.
+
+## Why install the handoff?
+
+<details>
+<summary>See how the handoff keeps finished chats out of Needs you</summary>
+
+Agents often end with a polite question such as “Would you like me to update the docs?” Your Turn can read that as a question waiting on you, even when the work is done. The handoff asks the agent to end with an `Outcome` and a `Next step`, so the inbox can show a clear result.
+
+Without the handoff:
+
+```text
+I refactored the token refresh logic and ran pytest. All 12 tests passed.
+Would you like me to update the docs or commit the changes?
+```
+
+With the handoff:
+
+```text
+I refactored the token refresh logic and ran pytest. All 12 tests passed.
+
+**Outcome:** Token refresh is refactored and all 12 tests pass.
+**Next step:** none
+```
+
+If an agent needs a decision, answer, review, or approval, `Next step` names it. See the full format in [docs/configuration.md](./docs/configuration.md#your-turn-handoff).
+
+</details>
 
 ## Docs
 
