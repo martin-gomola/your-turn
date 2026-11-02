@@ -68,6 +68,16 @@ uvx --from git+https://github.com/martin-gomola/your-turn your-turn serve
 
 The server binds to loopback only (`127.0.0.1`). To check or remove the handoff, run `your-turn doctor` or `your-turn uninstall` with the same `uvx --from git+https://github.com/martin-gomola/your-turn` prefix.
 
+### With Nix
+
+The repository is a flake, with dependencies pinned in `flake.lock`. This starts the inbox without changing any agent app:
+
+```bash
+nix run github:martin-gomola/your-turn
+```
+
+Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`.
+
 ## Privacy
 
 - **Local only.** The server binds to `127.0.0.1`. It does not send session data anywhere.
