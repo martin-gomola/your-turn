@@ -456,7 +456,7 @@ details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
 .skip-link { position: fixed; top: -100px; left: var(--space-4); z-index: 20; padding: var(--space-3); background: var(--color-surface); }
 .skip-link:focus { top: var(--space-3); }
 /* The brand row starts at the same inset as the page's top bar (.bar), so the leaf lines up with Live and the theme toggle. */
-.sidebar { position: fixed; z-index: 5; inset: 0 0 0 auto; width: var(--sidebar-width); padding: var(--space-2) 18px var(--space-8); display: flex; flex-direction: column; background: var(--color-sidebar); border-left: 1px solid var(--color-separator); overflow-y: auto; }
+.sidebar { position: fixed; z-index: 5; inset: 0 0 0 auto; width: var(--sidebar-width); padding: var(--space-2) 10px var(--space-8); display: flex; flex-direction: column; background: var(--color-sidebar); border-left: 1px solid var(--color-separator); overflow-y: auto; }
 .brand { display: flex; align-items: center; justify-content: center; gap: var(--space-3); min-height: var(--size-control); color: var(--color-text); font-size: 28px; font-weight: var(--weight-bold); letter-spacing: -.01em; white-space: nowrap; }
 .brand-name { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); }
 .brand img { object-fit: contain; flex: none; }
@@ -476,7 +476,7 @@ a.brand { border-radius: 12px; text-decoration: none; }
 a.brand:hover { background: var(--color-surface-pressed); }
 .nav-link { display: flex; align-items: center; justify-content: center; gap: var(--space-5); width: 44px; min-height: 48px; padding: var(--space-2); border: 0; border-radius: 12px; color: var(--color-text); background: none; font: inherit; font-size: var(--text-navigation); text-decoration: none; cursor: pointer; }
 .nav-text { display: none; }
-.rail-tooltip { position: fixed; right: 88px; z-index: 20; padding: var(--space-2) var(--space-3); transform: translateY(-50%); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-separator); border-radius: var(--radius-md); box-shadow: var(--dialog-shadow); font-size: var(--text-sm); pointer-events: none; }
+.rail-tooltip { position: fixed; right: 72px; z-index: 20; padding: var(--space-2) var(--space-3); transform: translateY(-50%); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-separator); border-radius: var(--radius-md); box-shadow: var(--dialog-shadow); font-size: var(--text-sm); pointer-events: none; }
 .nav-link svg { width: 24px; height: 24px; stroke-width: 1.7; }
 .nav-link:is([aria-current="page"], [aria-expanded="true"]) { color: var(--color-nav-selected); background: color-mix(in srgb, var(--color-accent-fill) 11%, var(--color-sidebar)); }
 .nav-link:hover { background: var(--color-surface-pressed); }
