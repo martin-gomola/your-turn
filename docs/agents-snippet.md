@@ -13,11 +13,15 @@ next steps.
 
 I run many agent chats at once, across apps, and triage them in the Your Turn inbox. End every response
 to me, on every turn, with these lines at the very top or the very bottom, as one group with no prose
-between them, each on one line, as plain Markdown outside code blocks:
+between them, each on one line with a blank line between them (chat apps join adjacent lines into one
+paragraph), as plain Markdown outside code blocks:
 
 **Outcome:** <one sentence: what is now true, or what you found>
+
 **Next step:** <none | answer: <question> | decide: <options> | review: <what to look at> | approve: <plan> | run: <command>>
+
 **Recap:** <from the second turn on, 1-2 sentences under 400 characters: the chat's goal, what is settled, what is open>
+
 **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
 Keep the labels and prefixes in English, even when you reply in another language, and start no other

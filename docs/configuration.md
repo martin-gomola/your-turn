@@ -86,7 +86,8 @@ text below (GitHub shows a copy button on the block):
 ## Your Turn handoff
 
 End every response to the user, on every turn, with this block at the very top or the very bottom: one
-group of lines with no prose between them, each on one line, as plain Markdown outside code blocks.
+group of lines with no prose between them, each on one line with a blank line between them (chat apps
+join adjacent lines into one paragraph), as plain Markdown outside code blocks.
 
 - `**Outcome:**` one sentence: what is now true.
 - `**Next step:**` `none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`. When the task
@@ -105,7 +106,9 @@ Example:
 
 ```markdown
 **Outcome:** The login redirect bug is fixed and covered by a test.
+
 **Next step:** none
+
 **Recap:** Fixing login redirects; the fix and its test are in, nothing is open.
 ```
 

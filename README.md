@@ -95,6 +95,7 @@ With the handoff:
 I refactored the token refresh logic and ran pytest. All 12 tests passed.
 
 **Outcome:** Token refresh is refactored and all 12 tests pass.
+
 **Next step:** none
 ```
 

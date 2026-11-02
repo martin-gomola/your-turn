@@ -9,11 +9,14 @@ metadata:
 
 The user triages many parallel agent chats across apps in the Your Turn inbox, which parses the end of your final message on every turn.
 
-End **every** response to the user (including turns that ask a question or pause for review) with this block, placed at the very top or the very bottom of the message as one group of lines with no prose between them, each field on its own single line, as plain Markdown (not inside backticks or a code block). `Outcome` is required: without it Your Turn ignores the whole block. Keep the labels and prefixes in English, even when you reply in another language. Outside the block, no line may start with `Outcome:`, `Result:`, `Next:`, `Next step:`, `Recap:` or `Decision:`.
+End **every** response to the user (including turns that ask a question or pause for review) with this block, placed at the very top or the very bottom of the message as one group of lines with no prose between them, each field on its own single line with a blank line between fields (chat apps join adjacent lines into one paragraph), as plain Markdown (not inside backticks or a code block). `Outcome` is required: without it Your Turn ignores the whole block. Keep the labels and prefixes in English, even when you reply in another language. Outside the block, no line may start with `Outcome:`, `Result:`, `Next:`, `Next step:`, `Recap:` or `Decision:`.
 
     **Outcome:** <one sentence: what is now true, or what you found>
+
     **Next step:** <none | answer: … | decide: … | review: … | approve: … | run: …>
+
     **Recap:** <1-2 sentences, <400 chars: goal, what is settled, what remains open>
+
     **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
 Include `Recap` on every turn after the first, and `Decision` only when a non-trivial trade-off was made this turn.
@@ -55,7 +58,9 @@ Completed one-shot task:
 Fixed the off-by-one in the pager.
 
 **Outcome:** The last page now shows its final row.
+
 **Next step:** none
+
 **Recap:** Goal: correct pagination. Settled: the final row is visible. Open: nothing.
 ```
 
@@ -63,8 +68,11 @@ Later turn, ready for review, with a trade-off:
 
 ```
 **Outcome:** The importer skips malformed rows instead of aborting the file.
+
 **Next step:** review: the skipped-row log format in importer.py
+
 **Recap:** Goal: make imports tolerate bad rows. Settled: skip and log. Open: the log format.
+
 **Decision:** Skip or abort on a malformed row? -> skip and log (over abort, silent skip). One bad row should not lose a whole import.
 ```
 
@@ -72,6 +80,8 @@ Blocked on a choice:
 
 ```
 **Outcome:** Both caches cut dashboard latency below 200 ms; they differ in how stale data can get.
+
 **Next step:** decide: Redis with a 60 s TTL, or an in-process LRU per worker?
+
 **Recap:** Goal: faster dashboard. Settled: queries are the bottleneck. Open: which cache.
 ```
