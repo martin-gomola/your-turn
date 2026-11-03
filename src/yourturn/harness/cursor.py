@@ -12,8 +12,8 @@ When that database is readable, transcripts it does not index (deleted or cleane
 skipped, as are empty transcripts. Cursor may not write the transcript while a turn runs, so its
 silence is not read as a quiet or abandoned chat: an open turn stays open until `turn_ended`.
 
-Newer Cursor versions write no transcript for top-level chats and keep their messages in the cloud
-(`cursorDiskKV` holds no bubbles for them). Such a chat is served from its header alone (title,
+Cursor creates a top-level chat's transcript only when its first turn ends, and some older chats
+have none. Until then the chat is served from its header alone (title,
 folder, branch, `subtitle`, pending approval, running request) through `HeaderCursor`, as a chat
 whose content is unknown.
 """
