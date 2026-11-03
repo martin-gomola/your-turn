@@ -18,7 +18,7 @@ When Codex, Claude Code, and Cursor run side by side, the slow part is your atte
 
 <div align="center">
 
-<img src="docs/images/desktop.png?v=1" width="800" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status">
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/desktop.png?v=1" width="800" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status">
 
 <sub>Made-up demo chats from <code>make screenshots</code>, not real session data.</sub>
 
@@ -27,14 +27,14 @@ When Codex, Claude Code, and Cursor run side by side, the slow part is your atte
 <details>
 <summary>See the inbox beside a chat</summary>
 
-<img src="docs/images/in-codex.png?v=1" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/in-codex.png?v=1" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
 
 </details>
 
 <details>
 <summary>Watch a chat move into Needs you</summary>
 
-<img src="docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
 
 </details>
 <br>
@@ -73,7 +73,7 @@ The server binds to loopback only (`127.0.0.1`). To remove the handoff, run `uvx
 <details>
 <summary>Check where a release comes from, or pin one</summary>
 
-`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.5.0`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.5.0 your-turn`.
+`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.5.1`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.5.1 your-turn`.
 
 </details>
 
@@ -86,7 +86,7 @@ The repository is a flake, with dependencies pinned in `flake.lock`. This starts
 nix run github:martin-gomola/your-turn
 ```
 
-Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.5.0`.
+Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.5.1`.
 
 </details>
 
