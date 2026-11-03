@@ -4,13 +4,14 @@
 Codex gets the plugin, which holds the skill; without the Codex CLI, it gets the skill in the shared
 `~/.agents/skills` folder instead, worded for any app, which Cursor then uses too. Claude Code and Cursor get the same skill in their global
 skills folder; Claude Code also gets a short block in its global CLAUDE.md so every chat follows the
-handoff, not only those where the skill is picked. Cursor gets the same always-on rule as a local plugin
-in `~/.cursor/plugins/local`, which it loads after a reload unless an admin turned local plugins off;
-the `cursor-rule` command prints the rule to add by hand instead. The handoff is plain text, so no process
-runs and no app asks for a permission. Every step is idempotent, and `uninstall` removes only what `install` added.
+handoff, not only those where the skill is picked. Cursor gets the same always-on rule as a global rule file,
+`~/.cursor/rules/your-turn.mdc`, which Customize → Rules lists by name under User; the `cursor-rule`
+command prints the rule to add by hand instead. The handoff is plain text, so no process runs and no app
+asks for a permission. Every step is idempotent, and `uninstall` removes only what `install` added.
 `doctor` compares the installed text with the current one without writing or running anything.
 
-Earlier versions also registered a `your-turn` MCP server; both commands remove it where it is left over.
+Earlier versions also registered a `your-turn` MCP server, and later ones saved the Cursor rule as a local
+plugin in `~/.cursor/plugins/local`; both commands remove either where it is left over.
 """
 
 from __future__ import annotations
@@ -132,13 +133,18 @@ def rule_text(harness: str) -> str:
 CLAUDE_BLOCK = f"{START}\n{rule_text('claude')}{END}\n"
 
 
-def cursor_plugin_files() -> dict[str, str]:
-    """The local Cursor plugin that carries the rule into every Agent chat, by path within its folder."""
-    manifest = {"name": NAME, "description": "Your Turn handoff: the always-on rule for every Agent chat",
-                "author": {"name": "Martin Gomola"}}
-    rule = ("---\ndescription: Your Turn handoff at the end of every response\nalwaysApply: true\n---\n\n"
-            f"{rule_text('cursor')}")
-    return {".cursor-plugin/plugin.json": json.dumps(manifest, indent=2) + "\n", f"rules/{NAME}.mdc": rule}
+CURSOR_RULE_FRONT = "---\ndescription: Your Turn handoff at the end of every response\nalwaysApply: true\n---\n\n"
+
+
+def cursor_rule_file() -> str:
+    """The global Cursor rule file that carries the rule into every Agent chat."""
+    return CURSOR_RULE_FRONT + rule_text("cursor")
+
+
+# The local plugin an earlier version saved the rule in, by path within its folder.
+LEGACY_PLUGIN_FILES = (".cursor-plugin/plugin.json", f"rules/{NAME}.mdc")
+LEGACY_MANIFEST = {"name": NAME, "description": "Your Turn handoff: the always-on rule for every Agent chat",
+                   "author": {"name": "Martin Gomola"}}
 
 
 def detect(homes: dict[str, Path]) -> list[str]:
@@ -312,45 +318,38 @@ def _legacy_cursor_mcp(home: Path) -> str:
     return ", old MCP server removed"
 
 
-def _cursor_plugin(home: Path) -> Path:
-    return home / "plugins" / "local" / NAME
-
-
-def _plugin_kept(folder: Path) -> str:
-    """Why a plugin folder is left alone: Cursor skips symlinks there, and a same-named plugin may be the user's."""
-    if folder.is_symlink():
-        return f"kept (symlink, left untouched: {folder})"
-    manifest = folder / ".cursor-plugin" / "plugin.json"
-    if not folder.exists():
+def _legacy_cursor_plugin(home: Path) -> str:
+    """Remove the local plugin an earlier version saved the rule in, unless it is a symlink or the user's own."""
+    folder = home / "plugins" / "local" / NAME
+    if folder.is_symlink() or not folder.is_dir():
         return ""
     try:
-        ours = json.loads(manifest.read_text(encoding="utf-8")) == json.loads(cursor_plugin_files()[".cursor-plugin/plugin.json"])
+        ours = json.loads((folder / LEGACY_PLUGIN_FILES[0]).read_text(encoding="utf-8")) == LEGACY_MANIFEST
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        ours = False
-    return "" if ours else "kept (not written by Your Turn)"
-
-
-def _write_cursor_plugin(home: Path) -> str:
-    folder = _cursor_plugin(home)
-    if kept := _plugin_kept(folder):
-        return kept
-    results = [_write(folder / name, text) for name, text in cursor_plugin_files().items()]
-    return "written" if "written" in results else "unchanged"
-
-
-def _remove_cursor_plugin(home: Path) -> str:
-    """Remove our plugin files, and each folder only when nothing else is left in it."""
-    folder = _cursor_plugin(home)
-    if not folder.exists() and not folder.is_symlink():
-        return "not present"
-    if kept := _plugin_kept(folder):
-        return kept
-    for name in cursor_plugin_files():
+        return ""
+    if not ours:
+        return ""
+    for name in LEGACY_PLUGIN_FILES:
         (folder / name).unlink(missing_ok=True)
     for path in (folder / ".cursor-plugin", folder / "rules", folder):
         if path.is_dir() and not any(path.iterdir()):
             path.rmdir()
-    return "removed"
+    return ", old rule plugin removed"
+
+
+def _cursor_rule(home: Path) -> Path:
+    return home / "rules" / f"{NAME}.mdc"
+
+
+def _rule_kept(path: Path) -> str:
+    """Why the rule file is left alone: a symlink's target may be shared, and a same-named rule may be the user's."""
+    if path.is_symlink():
+        return f"kept (symlink, left untouched: {path})"
+    try:
+        ours = not path.exists() or path.read_text(encoding="utf-8").startswith(CURSOR_RULE_FRONT + "## Your Turn handoff\n")
+    except (OSError, UnicodeDecodeError):
+        ours = False
+    return "" if ours else "kept (not written by Your Turn)"
 
 
 def install_cursor(home: Path) -> None:
@@ -360,16 +359,23 @@ def install_cursor(home: Path) -> None:
         skill = "shared from ~/.agents/skills"
     else:
         skill = _write_skill(home, skill_text("cursor"))
-    rule = _write_cursor_plugin(home)
-    _install_result("cursor", f"Skill {skill} · rule plugin {rule}{_legacy_cursor_mcp(home)}", home)
+    path = _cursor_rule(home)
+    rule = _rule_kept(path) or _write(path, cursor_rule_file())
+    _install_result("cursor", f"Skill {skill} · rule {rule}{_legacy_cursor_plugin(home)}{_legacy_cursor_mcp(home)}", home)
     if rule not in ("written", "unchanged"):
-        print(f"  Rule plugin not saved. Add the rule as a User Rule from: {CURSOR_RULE_DOCS}", flush=True)
+        print(f"  Rule not saved. Add the rule as a User Rule from: {CURSOR_RULE_DOCS}", flush=True)
 
 
 def uninstall_cursor(home: Path) -> None:
-    skill, rule = _remove_skill(home), _remove_cursor_plugin(home)
-    print(f"Cursor: skill {skill}, rule plugin {rule}{_legacy_cursor_mcp(home)} ({home}). Remove the Your Turn User Rule"
-          " in Customize → Rules if you added one by hand.", flush=True)
+    path = _cursor_rule(home)
+    rule = "not present" if not path.exists() and not path.is_symlink() else _rule_kept(path)
+    if not rule:
+        path.unlink()
+        if not any(path.parent.iterdir()):
+            path.parent.rmdir()
+        rule = "removed"
+    print(f"Cursor: skill {_remove_skill(home)}, rule {rule}{_legacy_cursor_plugin(home)}{_legacy_cursor_mcp(home)} ({home})."
+          " Remove the Your Turn User Rule in Customize → Rules if you added one by hand.", flush=True)
 
 
 # --- doctor --------------------------------------------------------------------------------------
@@ -419,14 +425,11 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
         if harness == "claude":
             results.append(("claude", "CLAUDE.md block", _block_state(home / "CLAUDE.md"), str(home / "CLAUDE.md")))
         else:
-            folder = _cursor_plugin(home)
-            states = [_state(folder / name, text) for name, text in cursor_plugin_files().items()]
-            results.append(("cursor", "rule plugin", next((state for state in states if state != "current"), "current"),
-                            str(folder)))
+            results.append(("cursor", "rule", _state(_cursor_rule(home), cursor_rule_file()), str(_cursor_rule(home))))
             results.append(("cursor", "rule loaded", "unverified",
-                            "Cursor loads the local plugin after a reload unless an admin turned local plugins off, and "
-                            "Your Turn cannot see whether it did; Customize → Rules shows it. Without it, add a User Rule "
-                            f"with the text from {CURSOR_RULE_DOCS}, or the text that `{CURSOR_RULE}` prints."))
+                            "Cursor applies the rule file in new chats, and Your Turn cannot see whether it did; Customize → "
+                            "Rules lists it as your-turn under User. Without it, add a User Rule with the text from "
+                            f"{CURSOR_RULE_DOCS}, or the text that `{CURSOR_RULE}` prints."))
     return results
 
 

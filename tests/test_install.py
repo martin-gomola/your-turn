@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from yourturn.cli import main
-from yourturn.install import CLAUDE_BLOCK, END, START, check, install, rule_text, skill_text, uninstall
+from yourturn.install import CLAUDE_BLOCK, END, LEGACY_MANIFEST, START, check, install, rule_text, skill_text, uninstall
 
 MINE = "# My rules\n\nKeep answers short.\n"
 OTHER = {"mcpServers": {"context7": {"command": "npx", "args": ["context7"]}}}
@@ -67,9 +67,8 @@ def test_install_is_global_idempotent_and_uninstall_restores_the_files(tmp_path:
     assert (homes["claude"] / "CLAUDE.md").read_text() == f"{MINE}\n{CLAUDE_BLOCK}"
     assert "**Decision:**" in CLAUDE_BLOCK
     assert json.loads((homes["cursor"] / "mcp.json").read_text()) == OTHER  # Not touched: nothing to register.
-    plugin = homes["cursor"] / "plugins" / "local" / "your-turn"
-    assert json.loads((plugin / ".cursor-plugin" / "plugin.json").read_text())["name"] == "your-turn"
-    assert (plugin / "rules" / "your-turn.mdc").read_text() == (
+    rule = homes["cursor"] / "rules" / "your-turn.mdc"
+    assert rule.read_text() == (
         "---\ndescription: Your Turn handoff at the end of every response\nalwaysApply: true\n---\n\n" + rule_text("cursor"))
     # Nothing lands in the project, and Codex (not selected) is untouched.
     assert list(no_clis.iterdir()) == [] and list(homes["codex"].iterdir()) == []
@@ -81,7 +80,7 @@ def test_install_is_global_idempotent_and_uninstall_restores_the_files(tmp_path:
     assert (homes["claude"] / "CLAUDE.md").read_text() == MINE
     assert json.loads((homes["cursor"] / "mcp.json").read_text()) == OTHER
     assert not (homes["claude"] / "skills" / "your-turn").exists() and not (homes["cursor"] / "skills" / "your-turn").exists()
-    assert not plugin.exists()
+    assert not rule.parent.exists()
     after = _tree(tmp_path)
     uninstall(["claude", "cursor"], homes)
     assert _tree(tmp_path) == after
@@ -100,8 +99,15 @@ def test_block_is_replaced_in_place_and_files_it_created_are_removed(tmp_path: P
     memory.unlink()
     install(["claude", "cursor"], homes)
     uninstall(["claude", "cursor"], homes)
-    assert not memory.exists() and sorted(path.name for path in homes["cursor"].iterdir()) == ["plugins", "skills"]
-    assert list((homes["cursor"] / "plugins" / "local").iterdir()) == []
+    assert not memory.exists() and sorted(path.name for path in homes["cursor"].iterdir()) == ["skills"]
+
+    # Other global rules stay, and so does their folder.
+    mine = homes["cursor"] / "rules" / "mine.mdc"
+    mine.parent.mkdir()
+    mine.write_text(MINE)
+    install(["cursor"], homes)
+    uninstall(["cursor"], homes)
+    assert _tree(homes["cursor"] / "rules") == {"mine.mdc": MINE}
 
 
 def _stale(text: str) -> str:
@@ -187,15 +193,15 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
         return {(app, artifact): state for app, artifact, state, _ in check(["codex", "claude", "cursor"], homes)}
 
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "missing", ("claude", "CLAUDE.md block"): "missing",
-                        ("cursor", "skill"): "missing", ("cursor", "rule plugin"): "missing", ("cursor", "rule loaded"): "unverified"}
+                        ("cursor", "skill"): "missing", ("cursor", "rule"): "missing", ("cursor", "rule loaded"): "unverified"}
     install(["claude", "cursor"], homes)
     install_log.unlink(missing_ok=True)
     claude_log.unlink()
     secret = "zebra-ledger-42 instructions\n"
     (homes["claude"] / "CLAUDE.md").write_text(secret + (homes["claude"] / "CLAUDE.md").read_text())
-    # A saved plugin is current text, never proof that Cursor loaded it.
+    # A saved rule is current text, never proof that Cursor loaded it.
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "current", ("claude", "CLAUDE.md block"): "current",
-                        ("cursor", "skill"): "current", ("cursor", "rule plugin"): "current", ("cursor", "rule loaded"): "unverified"}
+                        ("cursor", "skill"): "current", ("cursor", "rule"): "current", ("cursor", "rule loaded"): "unverified"}
 
     (homes["cursor"] / "skills" / "your-turn" / "SKILL.md").write_bytes(b"\xff\xfe not text")
     (homes["claude"] / "CLAUDE.md").write_text(secret + f"{START}\nedited by hand\n{END}\n")
@@ -313,12 +319,12 @@ def test_cli_install_names_only_the_apps_it_set_up(tmp_path: Path, no_clis: Path
                                             "(or `make up` in a clone)\n")
 
 
-def test_install_saves_the_cursor_rule_plugin_without_printing_the_rule(tmp_path: Path, no_clis: Path,
-                                                                        capsys: pytest.CaptureFixture[str]) -> None:
+def test_install_saves_the_cursor_rule_without_printing_it(tmp_path: Path, no_clis: Path,
+                                                          capsys: pytest.CaptureFixture[str]) -> None:
     homes = _homes(tmp_path)
     install(["cursor"], homes)
     out = capsys.readouterr().out
-    assert "Skill written · rule plugin written" in out
+    assert "Skill written · rule written" in out
     # The happy path asks for nothing: no check to run, no link to follow, no rule body.
     assert "Customize" not in out and "http" not in out
     assert not any(line.strip() and line.strip() in out for line in rule_text("cursor").splitlines())
@@ -356,22 +362,38 @@ def test_codex_without_cli_gets_one_shared_skill_until_the_plugin_replaces_it(tm
 
 
 @pytest.mark.parametrize("kind", ["own", "symlink"])
-def test_cursor_plugin_the_user_owns_is_left_untouched(tmp_path: Path, no_clis: Path, capsys: pytest.CaptureFixture[str],
-                                                       kind: str) -> None:
+def test_cursor_rule_the_user_owns_is_left_untouched(tmp_path: Path, no_clis: Path, capsys: pytest.CaptureFixture[str],
+                                                     kind: str) -> None:
     homes = _homes(tmp_path)
-    folder = homes["cursor"] / "plugins" / "local" / "your-turn"
-    target = tmp_path / "elsewhere" if kind == "symlink" else folder
-    (target / ".cursor-plugin").mkdir(parents=True)
-    (target / ".cursor-plugin" / "plugin.json").write_text('{"name": "your-turn", "description": "mine"}\n')
+    path = homes["cursor"] / "rules" / "your-turn.mdc"
+    target = tmp_path / "elsewhere.mdc" if kind == "symlink" else path
+    path.parent.mkdir()
+    target.write_text("---\nalwaysApply: true\n---\n\nMy own turn-taking rule.\n")
     if kind == "symlink":
-        folder.parent.mkdir(parents=True)
-        folder.symlink_to(target, target_is_directory=True)
-    before = _tree(tmp_path / "elsewhere" if kind == "symlink" else folder)
+        path.symlink_to(target)
+    before = target.read_text()
     install(["cursor"], homes)
     uninstall(["cursor"], homes)
     out = capsys.readouterr().out
-    assert _tree(tmp_path / "elsewhere" if kind == "symlink" else folder) == before
-    assert "rule plugin kept (" in out and "Rule plugin not saved." in out
+    assert target.read_text() == before and path.exists()
+    assert "rule kept (" in out and "Rule not saved." in out
+
+
+@pytest.mark.parametrize("own", [False, True])
+def test_install_removes_the_rule_plugin_an_earlier_version_saved(tmp_path: Path, no_clis: Path,
+                                                                  capsys: pytest.CaptureFixture[str], own: bool) -> None:
+    homes = _homes(tmp_path)
+    folder = homes["cursor"] / "plugins" / "local" / "your-turn"
+    manifest = {**LEGACY_MANIFEST, "description": "mine"} if own else LEGACY_MANIFEST
+    (folder / ".cursor-plugin").mkdir(parents=True)
+    (folder / ".cursor-plugin" / "plugin.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (folder / "rules").mkdir()
+    (folder / "rules" / "your-turn.mdc").write_text("old rule\n")
+    install(["cursor"], homes)
+    out = capsys.readouterr().out
+    # The user's own plugin of the same name is kept; ours goes, with the folder that held only it.
+    assert folder.exists() is own and ("old rule plugin removed" in out) is not own
+    assert (homes["cursor"] / "plugins" / "local").exists()
 
 
 def test_cli_install_failure_stays_visible(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

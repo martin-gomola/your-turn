@@ -60,27 +60,26 @@ a `.gitignore` entry:
 | --- | --- | --- |
 | Codex | The `your-turn` plugin from the `your-turn` marketplace, which holds the handoff skill. Without the Codex CLI, the skill in `~/.agents/skills/your-turn/SKILL.md` instead, worded for any app; Cursor reads that folder too, so it then keeps no copy of its own. Once the CLI is there, `install` adds the plugin and removes that copy | The plugin and its marketplace, and the shared skill |
 | Claude Code | `~/.claude/skills/your-turn/SKILL.md` and a marked `your-turn` block in `~/.claude/CLAUDE.md` | The skill file and the block; the rest of `CLAUDE.md` stays |
-| Cursor | `~/.cursor/skills/your-turn/SKILL.md` and the [rule](#cursor-user-rule) as a local plugin in `~/.cursor/plugins/local/your-turn` | The skill file and the plugin |
+| Cursor | `~/.cursor/skills/your-turn/SKILL.md` and the [rule](#cursor-user-rule) in `~/.cursor/rules/your-turn.mdc` | The skill file and the rule file |
 
 The handoff is plain text in the agent's answer, so nothing runs in the background and no app asks
 for a permission. `install` rewrites its own skill files and block whenever their text differs from
 this version, whatever version they name; running it again then changes nothing. A `SKILL.md` or a
-`your-turn` plugin that Your Turn did not write, a symlinked one, and other files in those folders
+`your-turn.mdc` rule that Your Turn did not write, a symlinked one, and other files in those folders
 are left alone by both commands. Both
-also remove the `your-turn` MCP server that earlier versions registered. Restart the apps after
-installing.
+also remove the `your-turn` MCP server that earlier versions registered, and the Cursor rule plugin
+in `~/.cursor/plugins/local/your-turn` that later ones saved. Restart the apps after installing.
 
 ### Cursor User Rule
 
 A saved skill is used only when the agent picks it. To apply the handoff in every Cursor Agent chat,
-`install` saves the text below as an always-applied rule in a
-[local plugin](https://cursor.com/docs/plugins#test-plugins-locally),
-`~/.cursor/plugins/local/your-turn`. Cursor loads it after a restart or **Developer: Reload Window**,
-and **Customize → Rules** then lists it.
+`install` saves the text below as an always-applied global rule file, `~/.cursor/rules/your-turn.mdc`.
+**Customize → Rules** lists it by name, `your-turn`, under **User**, and Cursor applies it from the next
+new chat. If you pasted the rule as a User Rule before, delete that one so chats do not get it twice.
 
-On Enterprise plans, an admin can turn local plugins off, and they are off by default there. If the
-rule is not listed after a reload, open **Customize → Rules**, add a **User Rule**, and paste the
-text below (GitHub shows a copy button on the block):
+Cursor's documentation describes User Rules in its settings and rules in a project's `.cursor/rules`,
+not this global folder. If `your-turn` is not listed after a restart, open **Customize → Rules**, add
+a **User Rule**, and paste the text below (GitHub shows a copy button on the block):
 
 ````markdown
 ## Your Turn handoff
@@ -128,16 +127,16 @@ uvx your-turn@latest cursor-rule
 ```
 
 Plain `your-turn cursor-rule` works when `your-turn` is on your PATH. Cursor keeps User Rules in its own settings, so `install` cannot
-add one there. Whether Cursor loaded the plugin is not visible outside Cursor, so `doctor` reports
-**rule loaded: unverified** even when the plugin is current. A `.cursor/rules` folder belongs to one
-project and does not apply elsewhere.
+add one there. Whether Cursor loaded the rule file is not visible outside Cursor, so `doctor` reports
+**rule loaded: unverified** even when the file is current. A project's own `.cursor/rules` folder
+applies only in that project.
 
 ### Checking the install
 
 `your-turn doctor` compares each file with the text this version would write and reports **current**,
 **missing**, **content mismatch**, or **unreadable**; run `install` to fix the last three. For Claude
 Code it checks the skill and only the Your Turn block of `CLAUDE.md`, and shows nothing else from that
-file. For Cursor it checks the skill and both files of the rule plugin. Codex keeps the plugin in
+file. For Cursor it checks the skill and the rule file. Codex keeps the plugin in
 its own cache, so the plugin is **unverified**. Neither `doctor` nor
 the saved files prove that an app has loaded the handoff into a chat.
 
