@@ -64,3 +64,29 @@ def test_uncertain_end_is_not_a_new_result_and_only_missing_content_is_called_mi
     notes = {by_id[key]: row["tooltip"] for key, row in filed.items() if row["tooltip"]}
     assert notes["header only"].startswith("Cursor keeps no local record of this chat’s messages")
     assert notes["unflagged"] == "The last turn ended without a recorded result or reason, so whether it finished is unknown."
+
+
+def _file(rows: list[dict[str, Any]], now: float) -> dict[str, Any]:
+    run = subprocess.run(["node", str(CONSUMER)], input=json.dumps({"rows": rows, "now": now}), capture_output=True, text=True, check=True)
+    (row,) = json.loads(run.stdout)
+    return row
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
+def test_header_only_cursor_run_is_working_then_a_new_result(tmp_path: Path) -> None:
+    cursor, user_dir, codex = tmp_path / "cursor", tmp_path / "User", tmp_path / "codex"
+    (codex / "sessions").mkdir(parents=True)
+    (cursor / "projects").mkdir(parents=True)
+    sent = cu._now_ms(300)
+    header = {**cu._header("Inbox shortcut", updated=sent), "subtitle": "Edited app.js", "unfinishedRunAt": sent}
+    cu._database(user_dir, [(cu.CID, 0, 0, header)])
+    hub = SessionHub.for_codex_home(codex, scan_ttl=0, cursor_home=cursor, cursor_user_dir=user_dir)
+    now = datetime.now().timestamp() * 1000
+
+    row = _file(hub.inbox_dicts(), now)
+    assert (row["section"], row["state"], row["working"]) == ("working", "working", "5m")
+    del header["unfinishedRunAt"]
+    cu._set_header(user_dir, header)
+    row = _file(hub.inbox_dicts(), now + 1000)
+    # Cursor's summary is the result to look at, though how the run ended is not recorded.
+    assert (row["section"], row["state"], row["working"]) == ("new", "unknown", "")

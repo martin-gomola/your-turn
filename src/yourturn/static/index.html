@@ -294,7 +294,7 @@ SOFTWARE.
     <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
     <tbody>
       <tr><th scope="row">Needs you</th><td>A question or action is waiting for you.</td></tr>
-      <tr><th scope="row">Working</th><td>The agent is working.</td></tr>
+      <tr><th scope="row">Working</th><td>The agent is working, with how long its turn has run when known.</td></tr>
       <tr><th scope="row">New results</th><td>Unseen results from the last 24 hours. Opening a recap marks it seen.</td></tr>
       <tr><th scope="row">Earlier</th><td>Other chats in this inbox, including dismissed reminders. Not a full history or archive.</td></tr>
     </tbody>
@@ -303,7 +303,7 @@ SOFTWARE.
     <details><summary>Reminders and quiet chats</summary>
       <p>Dismissing a reminder hides it in every Your Turn tab, in any browser. It does not answer a question or approve an action.</p>
       <p>“Quiet” means no recent activity was recorded. A command may still be running, or the agent may be waiting for approval in its app. It is a hint, not a separate status. Cursor reports pending approvals, so a Cursor chat waiting for one is in Needs you instead. Cursor may not record activity while a turn runs, so its chats are never marked Quiet; Working shows their last recorded state.</p>
-      <p>“Status unknown” marks a Cursor chat whose messages Cursor keeps no local record of: whether it is working or finished cannot be told. Its line is Cursor’s own summary, not the agent’s answer.</p>
+      <p>“Status unknown” marks a Cursor chat whose messages Cursor keeps no local record of: whether it is working or finished cannot be told. Its line is Cursor’s own summary, not the agent’s answer. Cursor does record a running request, so such a chat shows Working while it runs, and a run Your Turn sees end lands in New results.</p>
     </details>
     <details><summary>Exact recaps</summary>
       <p>Run <code>your-turn install</code> once so Codex, Claude Code and Cursor end each answer with an Outcome, a Next step and their Decisions. Until then, a recap is the first paragraph of the agent’s last message, marked “From last message”.</p>

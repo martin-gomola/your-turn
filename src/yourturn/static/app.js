@@ -314,9 +314,16 @@ function attentionState(chat) {
   return hasAttention(chat) ? reminderDismissed(chat) ? "dismissed" : "waiting" : chat.status;
 }
 
-// An end recorded without saying how, and with nothing to show, is no finished result.
+// An end recorded without saying how, and with nothing to show, is no finished result; the app's
+// own summary of a chat it keeps no messages of is something to show.
 function hasResult(chat) {
-  return chat.status !== "working" && chat.status !== "interrupted" && !(chat.status === "unknown" && !chat.outcome);
+  return chat.status !== "working" && chat.status !== "interrupted" && !(chat.status === "unknown" && !chat.outcome && !chat.summary);
+}
+
+// How long a working chat's turn has run: "5m", "<1m", or "" when its start is unknown.
+function workingFor(since) {
+  const elapsed = ago(since || "", "");
+  return elapsed === "just now" ? "<1m" : elapsed;
 }
 
 function isNewResult(chat) {
@@ -370,7 +377,9 @@ function renderRow(chat) {
     quiet.title = quietHint(chat);
     meta.append(quiet);
   } else if (tag) {
-    const node = el("span", `tag tag--${state}`, tag);
+    const elapsed = state === "working" ? workingFor(chat.working_since) : "";
+    const node = el("span", `tag tag--${state}`, elapsed ? `${tag} ${elapsed}` : tag);
+    if (elapsed) node.dataset.workingSince = chat.working_since;
     if (state === "unknown") node.title = unknownNote(chat);
     else if (state === "working" && liveUnverified(chat)) node.title = unverifiedNote(chat);
     meta.append(node);
@@ -798,7 +807,9 @@ function renderStatus(thread, turn) {
   if (state === "working") syncSpin($("status-icon"));
   // A waiting request says how long it has waited, so a fresh ask and a stale one read differently.
   const waited = state === "waiting" ? ago(turn?.ended_at || thread.updated_at) : "";
-  $("status-title").textContent = quiet ? "Working · quiet" : waited && waited !== "just now" ? `${status.label} · ${waited}` : status.label;
+  const elapsed = state === "working" && !turn?.ended_at ? workingFor(turn?.started_at) : "";
+  $("status-title").textContent = quiet ? "Working · quiet" : waited && waited !== "just now" ? `${status.label} · ${waited}`
+    : elapsed ? `${status.label} · ${elapsed}` : status.label;
   const failed = thread.status !== "working" && Boolean(turn?.checks.some((check) => check.exit_code !== null && check.exit_code !== 0));
   // Claude keeps its terminal resume command and can also start a new Code session in Desktop.
   const resume = thread.harness === "claude" ? thread.handoff?.resume_command || "" : "";
@@ -1672,6 +1683,7 @@ setInterval(() => {
   if (document.hidden) return;
   for (const node of document.querySelectorAll("[data-ago]")) node.textContent = ago(node.dataset.ago, "short" in node.dataset ? "" : " ago");
   for (const node of document.querySelectorAll("[data-quiet-at]")) node.textContent = `Quiet ${ago(node.dataset.quietAt).replace(/ ago$/, "")}`;
+  for (const node of document.querySelectorAll("[data-working-since]")) node.textContent = `${STATUS.working.label} ${workingFor(node.dataset.workingSince)}`;
   if (threadData) renderStatus(threadData, threadData.turns[threadData.turns.length - 1]);
 }, 30_000);
 

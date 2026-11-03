@@ -14,8 +14,8 @@ silence is not read as a quiet or abandoned chat: an open turn stays open until 
 
 Newer Cursor versions write no transcript for top-level chats and keep their messages in the cloud
 (`cursorDiskKV` holds no bubbles for them). Such a chat is served from its header alone (title,
-folder, branch, `subtitle`, pending approval) through `HeaderCursor`, as a chat whose content and
-current state are unknown.
+folder, branch, `subtitle`, pending approval, running request) through `HeaderCursor`, as a chat
+whose content is unknown.
 """
 
 from __future__ import annotations
@@ -274,16 +274,20 @@ class CursorCursor(CodexCursor):
 class HeaderCursor(EventCursor):
     """A chat known only from its `composerHeaders` row.
 
-    The row records no turn start or end and no message, so the chat's content is unavailable and
-    its current state unknown; only a pending approval is explicit. `subtitle` is Cursor's own
-    summary, kept apart from any answer. The header is a state, not a log, so every change replays
-    the whole chat and bumps `truncations`, which makes the hub rebuild the chat from scratch.
+    The row records no message, so the chat's content is unavailable. Its run is explicit: a running
+    chat is working since its prompt was sent, and a run seen ending here closes that turn without
+    saying how it ended. Before that, and after a restart, its current state is unknown unless an
+    approval is pending. `subtitle` is Cursor's own summary, kept apart from any answer. The header is
+    a state, not a log, so every change replays the whole chat and bumps `truncations`, which makes
+    the hub rebuild the chat from scratch.
     """
 
     def __init__(self, ref: SessionRef, header: Callable[[], dict[str, Any]]) -> None:
         self._ref = ref
         self._header = header
         self._state: tuple[Any, ...] | None = None
+        # The latest run seen: (start, when it was seen ending or None), kept across replays.
+        self._run: tuple[datetime, datetime | None] | None = None
         self.truncations = 0
 
     @property
@@ -296,12 +300,17 @@ class HeaderCursor(EventCursor):
     def read_new(self) -> list[Event]:
         header = self._header()
         updated: datetime | None = header.get("updated")
-        state = (updated, bool(header.get("pending")), header.get("subtitle"), header.get("title"), header.get("branch"))
+        running: datetime | None = header.get("running")
+        state = (updated, bool(header.get("pending")), header.get("subtitle"), header.get("title"), header.get("branch"), running)
         if state == self._state:
             return []
         if self._state is not None:
             self.truncations += 1
         self._state = state
+        if running is not None:
+            self._run = (running, None)
+        elif self._run is not None and self._run[1] is None:
+            self._run = (self._run[0], datetime.now(timezone.utc))
         events: list[Event] = [
             Meta(
                 ts=header.get("created") or updated,
@@ -318,6 +327,10 @@ class HeaderCursor(EventCursor):
             ),
             Meta(ts=updated),  # Cursor's last update of the row: when the chat last changed, not what changed.
         ]
+        if self._run is not None:
+            events.append(TurnStarted(ts=self._run[0]))
+            if self._run[1] is not None:
+                events.append(TurnEnded(ts=self._run[1], reason=END_NOT_RECORDED))
         if state[1]:
             events.append(ApprovalPending(ts=updated, pending=True, text=APPROVAL_TEXT))
         return events
@@ -376,6 +389,8 @@ class CursorAdapter(HarnessAdapter):
                 "cwd": uri.get("fsPath") if isinstance(uri, dict) and isinstance(uri.get("fsPath"), str) else None,
                 "created": _epoch_ms(data.get("createdAt") if isinstance(data, dict) else None),
                 "updated": updated,
+                # Set when a prompt is sent and cleared when its run stops; `lastUpdatedAt` stays put meanwhile.
+                "running": _epoch_ms(data.get("unfinishedRunAt") if isinstance(data, dict) else None),
                 "pending": isinstance(data, dict) and bool(data.get("hasBlockingPendingActions")) and _recent(updated, PENDING_EXPIRY_SECONDS),
                 "subtitle": clip(data["subtitle"], 200) if isinstance(data, dict) and isinstance(data.get("subtitle"), str) else "",
                 "branch": _branch(data) if isinstance(data, dict) else None,
@@ -427,12 +442,12 @@ class CursorAdapter(HarnessAdapter):
         )
 
     def state_token(self, ref: SessionRef) -> str:
-        """Changes when Cursor's own state for the session changes (its row's update, a pending approval).
+        """Changes when Cursor's own state for the session changes (its row's update, a pending approval, a run).
 
         Time alone changes nothing here except a day-old approval expiring, which the header read already reflects.
         """
         header = self._headers.get(ref.session_id, {})
-        return f"{header.get('updated')}:{header.get('pending', False)}"
+        return f"{header.get('updated')}:{header.get('pending', False)}:{header.get('running')}"
 
     def mtime_ns(self, ref: SessionRef) -> int | None:
         """Last activity: the transcript's mtime, or Cursor's `lastUpdatedAt` for a header-only chat."""

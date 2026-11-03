@@ -11,10 +11,11 @@ vm.runInContext([
   'const NEW_WINDOW_MS = 24 * 60 * 60 * 1000;',
   slice('const APP_NAME', 'const QUIET_NOTIFY_MS'),
   slice('function chatKey(chat)', 'function isChat('),
+  slice('function ago(', 'function chatName('),
   'const shared = { seen: {}, dismissed: {} }; const seen = { get: (key) => shared.seen[key] || "" };',
   slice('function needsAttention(chat)', 'function chatSummary('),
   // Before `unknownNote`, every unknown row's tooltip was `unavailableNote`.
-  'Object.assign(this, { sectionOf, attentionState, unknownNote: typeof unknownNote === "function" ? unknownNote : unavailableNote });',
+  'Object.assign(this, { sectionOf, attentionState, workingFor, unknownNote: typeof unknownNote === "function" ? unknownNote : unavailableNote });',
 ].join('\n'), context);
 
 const result = rows.map((chat) => ({
@@ -22,5 +23,6 @@ const result = rows.map((chat) => ({
   section: context.sectionOf(chat),
   state: context.attentionState(chat),
   tooltip: context.attentionState(chat) === 'unknown' ? context.unknownNote(chat) : '',
+  working: context.workingFor(chat.working_since),
 }));
 process.stdout.write(JSON.stringify(result));

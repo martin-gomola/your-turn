@@ -18,8 +18,11 @@ each chat into a short recap. It never writes to them.
 Newer Cursor versions write no transcript for top-level chats and keep their messages in the cloud.
 Those chats come from their `state.vscdb` row alone: title, folder, branch, pending approval, last
 update, and Cursor's own one-line summary (shown labelled as Cursor's, never as the agent's answer).
-The row records no turn or message, so such a chat shows **Status unknown** unless an approval is
-pending.
+The row records no message, but it does record a running request (`unfinishedRunAt`, the time the
+prompt was sent), so such a chat shows **Working** for as long as that request runs, with its elapsed
+time. A run Your Turn sees end lands in **New results** with Cursor's summary, as **Status unknown**,
+because the row does not say whether it finished or was stopped. Otherwise, including after a
+restart of Your Turn, the chat shows **Status unknown** unless an approval is pending.
 
 ## What each app records
 
@@ -99,6 +102,6 @@ The inbox lists only chats you opened and only what you typed:
 | Cursor | Approvals are logged | Needs you with **Approve pending action in Cursor**; ignored after 24 hours without activity |
 | Cursor | Transcripts record commands, not results | No pass or fail; timeline times per turn |
 | Cursor | Activity during a turn is not known to be written | No Quiet; an open turn stays Working until its end is recorded |
-| Cursor | Chats without a transcript | **Status unknown** with title, folder, branch and Cursor's summary; Needs you only for a pending approval |
+| Cursor | Chats without a transcript | Title, folder, branch and Cursor's summary; **Working** while Cursor marks a request as running, then **Status unknown** (in New results when Your Turn saw the run end); Needs you only for a pending approval |
 | Cursor | No global instructions file; User Rules live in Cursor's settings | Every chat follows the handoff once Cursor loads the [rule plugin](./configuration.md#cursor-user-rule), which an admin can turn off and `doctor` cannot confirm; without it, only when the agent picks the skill or with the rule added as a User Rule |
 | Cursor | No chat deep link | **Open in Cursor** opens the project folder |

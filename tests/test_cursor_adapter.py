@@ -446,6 +446,42 @@ def test_chat_without_a_transcript_is_served_from_its_header(tmp_path: Path) -> 
     assert row["attention_key"] == ""
 
 
+def test_header_only_chat_with_an_unfinished_run_is_working_until_the_run_clears(tmp_path: Path) -> None:
+    home, user_dir = tmp_path / "cursor", tmp_path / "User"
+    (home / "projects").mkdir(parents=True)
+    sent = _now_ms(240)
+    # Cursor leaves `lastUpdatedAt` at the prompt while the run goes on.
+    header = {**_header("Inbox shortcut", updated=sent), "subtitle": "Edited app.js", "unfinishedRunAt": sent}
+    _database(user_dir, [(CID, 0, 0, header)])
+    codex_home = tmp_path / "codex"
+    (codex_home / "sessions").mkdir(parents=True)
+    hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
+    started = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(sent / 1000))
+
+    (row,) = hub.inbox_dicts()
+    assert (row["status"], row["needs_you"], row["content_available"], row["summary"]) == ("working", False, False, "Edited app.js")
+    assert row["working_since"].startswith(started) and row["turn_ended_at"] == ""
+    detail = hub.detail_dict(f"cursor:{CID}")
+    # The run is Cursor's record, but which turn it is is not: no numbered step is invented.
+    assert detail is not None and (detail["status"], len(detail["turns"]), detail["steps"]) == ("working", 1, [])
+    # An approval during the run still needs the user.
+    _set_header(user_dir, {**header, "hasBlockingPendingActions": True})
+    (row,) = hub.inbox_dicts()
+    assert (row["status"], row["needs_you"]) == ("waiting", True)
+
+    # The run cleared: it ended, without saying how.
+    del header["unfinishedRunAt"]
+    _set_header(user_dir, {**header, "lastUpdatedAt": _now_ms()})
+    (row,) = hub.inbox_dicts()
+    assert (row["status"], row["working_since"], row["outcome"], row["needs_you"]) == ("unknown", "", "", False)
+    ended = row["turn_ended_at"]
+    assert ended > started
+    # Later reads replay the same end.
+    _set_header(user_dir, {**header, "lastUpdatedAt": _now_ms(), "subtitle": "Edited app.js, index.html"})
+    (row,) = hub.inbox_dicts()
+    assert (row["turn_ended_at"], row["summary"]) == (ended, "Edited app.js, index.html")
+
+
 def test_approval_untouched_for_a_day_expires(tmp_path: Path) -> None:
     home, user_dir = tmp_path / "cursor", tmp_path / "User"
     _write(home, [user("Fix the bug"), assistant(text("All done.")), ENDED])

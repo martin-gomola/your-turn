@@ -196,7 +196,8 @@ class TurnFolder:
         self._last_message = None
         self.status = "working"
         self.pending_tool = ""
-        self._step(at, "turn", f"Turn {index} started" + (" by a background task" if trigger == "task-notification" else ""))
+        if self.content_available:  # A chat whose turns are unknown cannot number this one.
+            self._step(at, "turn", f"Turn {index} started" + (" by a background task" if trigger == "task-notification" else ""))
 
     def _close_turn(self, at: str, stopped: str | None, duration: str) -> None:
         """End the current turn: `stopped` is the abort reason, or None for a completed turn."""
@@ -392,7 +393,8 @@ class TurnFolder:
         turn = self.turns[-1]
         self._final_answer(turn, at, event.last_message)
         turn.ended_at, turn.status, self.pending_tool, self._ended = at, "unknown", "", True
-        self._step(at, "turn", f"Turn {turn.index} ended", END_NOT_RECORDED)
+        if self.content_available:
+            self._step(at, "turn", f"Turn {turn.index} ended", END_NOT_RECORDED)
         self.status = turn.status
 
     def _answered(self, turn: Turn) -> str | None:
@@ -525,6 +527,7 @@ class TurnFolder:
             "status": self._status(),
             "updated_at": iso(mtime_ns / 1e9) if mtime_ns is not None else self.updated_at,
             "turn_ended_at": turn.ended_at if turn else "",
+            "working_since": turn.started_at if turn and self._status() == "working" else "",
             "outcome": turn.outcome if turn else "",
             "next_kind": next_kind,
             "next_text": next_text,

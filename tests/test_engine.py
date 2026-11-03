@@ -574,7 +574,7 @@ def test_app_stream_validates_thread_and_stops(tmp_path: Path) -> None:
 OLD = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5e"
 
 INBOX_KEYS = {
-    "id", "cwd", "status", "updated_at", "turn_ended_at", "outcome", "next_kind", "next_text", "next_basis",
+    "id", "cwd", "status", "updated_at", "turn_ended_at", "working_since", "outcome", "next_kind", "next_text", "next_basis",
     "question", "options", "attention_key", "check_state", "pending_tool", "approval_policy", "needs_you", "quiet",
     "project", "title", "content_available", "summary", "capabilities", "recap", "decisions", "changed_files",
 }
