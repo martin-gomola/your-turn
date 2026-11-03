@@ -131,7 +131,13 @@ def _edited_paths(name: str, arguments: object) -> tuple[str, ...]:
 
 
 class CursorCursor(CodexCursor):
-    """Incremental reader over one Cursor agent transcript."""
+    """Incremental reader over one Cursor agent transcript.
+
+    Cursor can run a later turn without writing it to the transcript until it ends. While the header
+    says a run is going and the transcript has no open turn, that run is shown as a turn of its own;
+    a run seen ending first closes it without saying how. Once the transcript records a new prompt,
+    the chat is rebuilt from the transcript alone.
+    """
 
     def __init__(
         self,
@@ -145,6 +151,8 @@ class CursorCursor(CodexCursor):
         self._created = created
         # The adapter's latest composerHeaders row for this session (refreshed on each discover).
         self._header = header or dict
+        # The latest header run start already shown, kept across rebuilds so a run is shown once.
+        self._seen_run: datetime | None = None
         self._clear()
 
     def _clear(self) -> None:
@@ -154,6 +162,8 @@ class CursorCursor(CodexCursor):
         self._approval = False
         # Whether the last turn read is still open; None after a seek, when its start was not read.
         self._open: bool | None = False
+        # A run shown from the header alone, and whether it was seen ending.
+        self._run: tuple[datetime, bool] | None = None
 
     def reset(self) -> None:
         super().reset()
@@ -193,6 +203,12 @@ class CursorCursor(CodexCursor):
 
     def read_new(self) -> list[Event]:
         events = super().read_new()
+        if self._run is not None and any(isinstance(event, TurnStarted) for event in events):
+            start = self.skipped_bytes
+            self.reset()
+            self.seek(start)
+            self.truncations += 1
+            events = super().read_new()
         if events and isinstance(events[-1], TurnEnded):
             # The latest turn ended no later than the transcript's last write.
             try:
@@ -206,6 +222,13 @@ class CursorCursor(CodexCursor):
         if pending != self._approval:
             self._approval = pending
             events.append(ApprovalPending(ts=header.get("updated"), pending=pending, text=APPROVAL_TEXT))
+        running: datetime | None = header.get("running")
+        if self._run is not None and not self._run[1] and running != self._run[0]:
+            self._run = (self._run[0], True)
+            events.append(TurnEnded(ts=datetime.now(timezone.utc), reason=END_NOT_RECORDED))
+        if running is not None and running != self._seen_run and self._open is False:
+            self._seen_run, self._run = running, (running, False)
+            events.append(TurnStarted(ts=running))
         return events
 
     def _events(self, record: dict[str, Any]) -> list[Event]:

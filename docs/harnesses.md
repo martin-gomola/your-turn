@@ -26,6 +26,11 @@ Cursor's summary, as **Status unknown**, because the row does not say whether it
 stopped. A chat with no transcript and no running request, such as an old one, shows **Status
 unknown** unless an approval is pending.
 
+Cursor can also run a later prompt without writing it to an existing transcript until the turn ends.
+While the row marks a request as running and the transcript has no open turn, the chat shows
+**Working** from the time the prompt was sent. Once the transcript records the prompt, the chat is
+read from the transcript again; a run seen ending first shows **Status unknown** until then.
+
 ## What each app records
 
 The apps do not record the same things, so each chat shows only what its source can back up:
@@ -103,7 +108,7 @@ The inbox lists only chats you opened and only what you typed:
 | Claude Code | No chat deep link | **Copy resume command** |
 | Cursor | Approvals are logged | Needs you with **Approve pending action in Cursor**; ignored after 24 hours without activity |
 | Cursor | Transcripts record commands, not results | No pass or fail; timeline times per turn |
-| Cursor | Activity during a turn is not known to be written | No Quiet; an open turn stays Working until its end is recorded |
+| Cursor | Activity during a turn is not known to be written | No Quiet; an open turn stays Working until its end is recorded, and a running request the transcript does not show yet is Working too |
 | Cursor | No transcript until the first turn ends | Title, folder, branch and Cursor's summary; **Working** while Cursor marks a request as running, then read from the transcript once it appears, else **Status unknown**; Needs you only for a pending approval |
 | Cursor | No global instructions file; User Rules live in Cursor's settings | Every new chat follows the handoff from the [global rule file](./configuration.md#cursor-user-rule), which `doctor` cannot confirm Cursor loaded; without it, only when the agent picks the skill or with the rule added as a User Rule |
 | Cursor | No chat deep link | **Open in Cursor** opens the project folder |

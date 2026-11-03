@@ -482,6 +482,44 @@ def test_header_only_chat_with_an_unfinished_run_is_working_until_the_run_clears
     assert (row["turn_ended_at"], row["summary"]) == (ended, "Edited app.js, index.html")
 
 
+@pytest.mark.parametrize("transcript_first", [True, False])
+def test_run_missing_from_the_transcript_is_working_until_the_transcript_records_it(tmp_path: Path, transcript_first: bool) -> None:
+    home, user_dir = tmp_path / "cursor", tmp_path / "User"
+    path = _write(home, [user("Fix the bug"), assistant(text(FINAL)), ENDED])
+    sent = _now_ms(120)
+    # Cursor runs the next prompt without writing it to the transcript yet.
+    header = {**_header("Fix parser", updated=sent), "unfinishedRunAt": sent}
+    _database(user_dir, [(CID, 0, 0, header)])
+    codex_home = tmp_path / "codex"
+    (codex_home / "sessions").mkdir(parents=True)
+    hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
+
+    (row,) = hub.inbox_dicts()
+    assert (row["status"], row["needs_you"]) == ("working", False)
+    assert row["working_since"].startswith(time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(sent / 1000)))
+
+    def run_cleared() -> None:
+        _set_header(user_dir, {key: value for key, value in header.items() if key != "unfinishedRunAt"} | {"lastUpdatedAt": _now_ms()})
+
+    if not transcript_first:
+        run_cleared()
+        (row,) = hub.inbox_dicts()
+        assert (row["status"], row["working_since"]) == ("unknown", "")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("".join(json.dumps(record) + "\n" for record in [user("Add a test"), assistant(text(FINAL)), ENDED]))
+    (row,) = hub.inbox_dicts()
+    assert (row["status"], row["outcome"]) == ("done", "Fixed the bug.")
+    if transcript_first:
+        run_cleared()
+        (row,) = hub.inbox_dicts()
+        assert row["status"] == "done"
+    # The transcript replaces the run shown from the header: two turns, both finished, none invented.
+    detail = hub.detail_dict(f"cursor:{CID}")
+    assert detail is not None and [turn["status"] for turn in detail["turns"]] == ["done", "done"]
+    assert [step["title"] for step in detail["steps"] if step["kind"] == "turn"] == [
+        "Turn 1 started", "Turn 1 finished", "Turn 2 started", "Turn 2 finished"]
+
+
 def test_approval_untouched_for_a_day_expires(tmp_path: Path) -> None:
     home, user_dir = tmp_path / "cursor", tmp_path / "User"
     _write(home, [user("Fix the bug"), assistant(text("All done.")), ENDED])
