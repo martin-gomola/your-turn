@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../src/yourturn/static/app.js', import.meta.url), 'utf8');
 const context = vm.createContext({});
 vm.runInContext(source.slice(source.indexOf('const AWAY_DIGEST_MS'), source.indexOf('// End pure triage helpers.')) +
-  '\nObject.assign(this, { AWAY_DIGEST_MS, filterInbox, awayDelta, queueTarget, shortcutBlocked });', context);
+  '\nObject.assign(this, { AWAY_DIGEST_MS, filterInbox, awayDelta, queueTarget, focusAfterRemoval, shortcutBlocked });', context);
 
 test('digest requires ten minutes and only counts newly actionable chats', () => {
   const before = new Set(['old', 'resolved']);
@@ -36,6 +36,15 @@ test('queue navigation follows visible order, clamps ends and starts on the firs
   assert.equal(context.queueTarget(keys, 'waiting', -1), 'waiting');
   assert.equal(context.queueTarget(keys, 'finished', 1), 'finished');
   assert.equal(context.queueTarget([], '', 1), '');
+});
+
+test('dismissing a row moves focus to the next row, or the previous one at the end', () => {
+  const keys = ['a', 'b', 'c'];
+  assert.equal(context.focusAfterRemoval(keys, 'a'), 'b');
+  assert.equal(context.focusAfterRemoval(keys, 'b'), 'c');
+  assert.equal(context.focusAfterRemoval(keys, 'c'), 'b');
+  assert.equal(context.focusAfterRemoval(['a'], 'a'), '');
+  assert.equal(context.focusAfterRemoval(keys, 'missing'), '');
 });
 
 test('shortcuts respect text entry and modal dialogs', () => {

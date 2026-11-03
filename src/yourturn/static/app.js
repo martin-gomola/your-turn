@@ -103,6 +103,8 @@ const SECTIONS = [
   { key: "earlier", label: "Earlier" },
 ];
 
+const UNDO_MS = 8000;
+
 // Pure triage helpers, shared by the inbox interactions and their unit tests.
 const AWAY_DIGEST_MS = 10 * 60 * 1000;
 function filterInbox(chats, query) {
@@ -122,6 +124,13 @@ function queueTarget(keys, current, direction) {
   if (!keys.length) return "";
   const index = keys.indexOf(current);
   return keys[index < 0 ? 0 : Math.max(0, Math.min(keys.length - 1, index + direction))];
+}
+
+// The row to focus once `removed` leaves the list: the next one, else the previous one.
+function focusAfterRemoval(keys, removed) {
+  const rest = keys.filter((key) => key !== removed);
+  const index = keys.indexOf(removed);
+  return index < 0 ? "" : rest[Math.min(index, rest.length - 1)] || "";
 }
 
 function shortcutBlocked(target, modalOpen) {
@@ -411,7 +420,49 @@ function renderRow(chat) {
   link.dataset.section = sectionOf(chat);
   link.append(glyph, body, project, time, chevron);
   item.append(link);
+  // A sibling of the link, not inside it: a link cannot contain a button.
+  if (state === "waiting" && chat.attention_key) {
+    const dismiss = el("button", "icon-button row-dismiss");
+    dismiss.type = "button";
+    dismiss.setAttribute("aria-label", `Dismiss reminder: ${chatName(chat)}`);
+    dismiss.title = "Dismiss reminder (e)";
+    const label = el("span", "row-dismiss-label", "Dismiss");
+    label.setAttribute("aria-hidden", "true");
+    dismiss.append(icon("i-bell-off"), label);
+    dismiss.addEventListener("click", () => dismissFromInbox(chat));
+    item.append(dismiss);
+  }
   return item;
+}
+
+let undoTimer = 0;
+function dismissFromInbox(chat) {
+  const key = chatKey(chat);
+  const rows = [...document.querySelectorAll("#sections .row")].filter((row) => row.getClientRects().length);
+  const next = focusAfterRemoval(rows.map((row) => row.dataset.id), key);
+  saveShared({ dismissed: { [key]: chat.attention_key } });
+  transition(renderShared).then(() => cardFor(next)?.focus({ preventScroll: true }));
+  const undo = el("button", "button", "Undo");
+  undo.type = "button";
+  undo.addEventListener("click", () => {
+    hideUndo();
+    saveShared({ dismissed: { [key]: null } });
+    transition(renderShared).then(() => cardFor(key)?.focus({ preventScroll: true }));
+  });
+  const toast = el("div", "undo-toast-body");
+  toast.append(el("span", "", `Reminder dismissed: ${chatName(chat)}`), undo);
+  $("undo-toast").replaceChildren(toast);
+  restartUndoTimer();
+}
+
+function restartUndoTimer() {
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, UNDO_MS);
+}
+
+function hideUndo() {
+  clearTimeout(undoTimer);
+  $("undo-toast").replaceChildren();
 }
 
 // `fold` is "open" or "closed" for a section the user can collapse, "" otherwise.
@@ -1611,6 +1662,12 @@ if (!threadId) {
     target.focus();
   });
   $("away-dismiss").addEventListener("click", () => { $("away-digest").hidden = true; });
+  // The Undo offer stays while it is pointed at or focused, so it never expires under the user.
+  const undoToast = $("undo-toast");
+  undoToast.addEventListener("pointerenter", () => clearTimeout(undoTimer));
+  undoToast.addEventListener("focusin", () => clearTimeout(undoTimer));
+  undoToast.addEventListener("pointerleave", () => { if (undoToast.childNodes.length && !undoToast.contains(document.activeElement)) restartUndoTimer(); });
+  undoToast.addEventListener("focusout", (event) => { if (undoToast.childNodes.length && !undoToast.contains(event.relatedTarget)) restartUndoTimer(); });
   window.addEventListener("blur", () => {
     if (!inboxData || awaySnapshot) return;
     awaySnapshot = { at: Date.now(), keys: new Set(inboxData.filter(needsAttention).map(chatKey)) };
@@ -1640,6 +1697,14 @@ if (!threadId) {
       else location.assign(`/?thread=${encodeURIComponent(chatKey(oldest))}&status=waiting`);
       return;
     }
+    if (event.key === "e") {
+      const id = document.activeElement.closest("#sections li")?.querySelector(".row")?.dataset.id;
+      const chat = id && inboxData?.find((item) => chatKey(item) === id);
+      if (!chat || !needsAttention(chat) || !chat.attention_key) return;
+      event.preventDefault();
+      dismissFromInbox(chat);
+      return;
+    }
     const direction = ["j", "ArrowDown"].includes(event.key) ? 1 : ["k", "ArrowUp"].includes(event.key) ? -1 : 0;
     if (!direction) return;
     const rows = [...document.querySelectorAll("#sections .row")].filter((row) => row.getClientRects().length);
@@ -1647,6 +1712,61 @@ if (!threadId) {
     const row = rows.find((row) => row.dataset.id === key);
     if (row) { event.preventDefault(); row.focus(); row.scrollIntoView({ block: "nearest" }); }
   });
+  // Touch has no hover: swiping a Needs you row left reveals Dismiss; past half the row it dismisses.
+  // Vertical drags stay with the browser (touch-action: pan-y), which cancels the swipe.
+  let swipe = null;
+  let swipeEnded = -Infinity;
+  const closeSwipes = (except) => {
+    for (const item of $("sections").querySelectorAll("li[data-swiped]")) if (item !== except) delete item.dataset.swiped;
+  };
+  const endSwipe = () => {
+    if (!swipe) return;
+    delete swipe.item.dataset.swiping;
+    swipe.row.style.translate = "";
+    swipe = null;
+  };
+  $("sections").addEventListener("pointerdown", (event) => {
+    swipeEnded = -Infinity;
+    const row = event.target.closest(".row");
+    const button = row?.parentElement.querySelector(":scope > .row-dismiss");
+    if (event.pointerType !== "touch" || !button) return;
+    closeSwipes(row.parentElement);
+    const open = "swiped" in row.parentElement.dataset ? button.offsetWidth : 0;
+    swipe = { item: row.parentElement, row, button, x: event.clientX, open, dx: -open, moved: false };
+  });
+  $("sections").addEventListener("pointermove", (event) => {
+    if (!swipe) return;
+    const delta = event.clientX - swipe.x;
+    if (!swipe.moved && Math.abs(delta) < 8) return;
+    swipe.moved = true;
+    swipe.dx = Math.min(0, delta - swipe.open);
+    swipe.item.dataset.swiping = "";
+    swipe.row.style.translate = `${swipe.dx}px 0`;
+  });
+  $("sections").addEventListener("pointerup", () => {
+    if (!swipe) return;
+    const { item, row, button, dx, moved } = swipe;
+    endSwipe();
+    if (!moved) return;
+    swipeEnded = performance.now();
+    if (-dx > row.offsetWidth / 2) button.click();
+    else if (-dx > button.offsetWidth / 2) item.dataset.swiped = "";
+    else delete item.dataset.swiped;
+  });
+  $("sections").addEventListener("pointercancel", endSwipe);
+  // A swipe is not a tap, and a tap on an open row closes it instead of opening the chat.
+  $("sections").addEventListener("click", (event) => {
+    if (event.target.closest(".row-dismiss")) return;
+    const item = event.target.closest(".row")?.parentElement;
+    const justSwiped = performance.now() - swipeEnded < 400;
+    if (!justSwiped && !(item && "swiped" in item.dataset)) {
+      closeSwipes();
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (!justSwiped) delete item.dataset.swiped;
+  }, true);
   $("sections").addEventListener("click", (event) => {
     const link = event.target.closest(".row");
     if (!link || !wideDetail.matches || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

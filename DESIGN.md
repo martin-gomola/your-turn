@@ -117,6 +117,13 @@ calls in older transcripts still read as decisions.
   just to imitate a gear/flask/bug glyph in a generated mockup. Semantic status/action icons are honest.
 - Opening a finished result updates seen state and all filter counts immediately, including cross-tab
   storage updates. It does not complete a recorded user action.
+- A Needs you row can dismiss its reminder in place, for a request already handled in the agent app:
+  the struck-through bell, the status card's dismiss action, takes the place of the age and chevron
+  on hover or keyboard focus; `e` dismisses the focused row. Touch screens have no hover, so the row
+  covers a labeled Dismiss action until it is swiped left; a swipe past half the row dismisses at
+  once, a tap on an open row closes it, and vertical drags keep scrolling. The chat moves to Earlier as Reminder dismissed, with the same row transition as live
+  updates, focus moves to the next row, and an Undo toast rises in and stays for 8 seconds, or while
+  it is pointed at or focused. A new request brings the chat back.
 - Filtered chat links keep their return scope; the chat page's back link returns to it.
 
 ## Wide detail pane

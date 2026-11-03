@@ -587,6 +587,35 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
 .row-chevron { color: var(--color-text); width: 20px; height: 20px; }
 .row:hover, .row:active { background: var(--color-surface-pressed); }
 .row:focus-visible { outline-offset: -2px; }
+/* Needs you rows offer Dismiss in place of age and chevron: on hover or keyboard focus, always on touch. */
+#sections .list > li:has(> .row-dismiss) { position: relative; }
+.row-dismiss { position: absolute; inset-inline-end: var(--space-3); top: 50%; translate: 0 -50%; }
+.row-dismiss:hover, .row-dismiss:focus-visible { background: color-mix(in srgb, var(--color-text) 10%, transparent); color: var(--color-text); }
+@media (hover: hover) {
+  /* Keyboard focus only: a clicked row keeps focus while its chat is open, and that must not pin Dismiss. */
+  #sections li:not(:hover, :has(:focus-visible)) > .row-dismiss { opacity: 0; pointer-events: none; }
+  #sections li:is(:hover, :has(:focus-visible)) > .row:has(~ .row-dismiss) :is(.row-time, .row-chevron) { visibility: hidden; }
+}
+.row-dismiss-label { display: none; }
+/* Touch: the row covers Dismiss until it is swiped left (or the button gets keyboard focus). */
+@media (hover: none) {
+  #sections li:has(> .row-dismiss) { --swipe-action: 96px; overflow: hidden; }
+  #sections .row:has(~ .row-dismiss) { position: relative; z-index: 1; background-color: var(--color-bg); touch-action: pan-y; }
+  #sections li:is([data-swiped], :has(> .row-dismiss:focus-visible)) > .row { translate: calc(-1 * var(--swipe-action)) 0; }
+  #sections li > .row-dismiss { inset-block: 0; inset-inline-end: 0; top: 0; translate: none; display: grid; align-content: center; justify-items: center; gap: var(--space-1);
+    width: var(--swipe-action); height: auto; border-radius: 0; background: color-mix(in srgb, var(--color-text) 16%, var(--color-bg)); color: var(--color-text); }
+  .row-dismiss-label { display: block; font-size: var(--text-label); font-weight: var(--weight-medium); }
+}
+@media (hover: none) and (prefers-reduced-motion: no-preference) {
+  #sections li:not([data-swiping]) > .row:has(~ .row-dismiss) { transition: translate var(--motion-enter) var(--ease-standard); }
+}
+.undo-toast { position: fixed; inset-inline: 0; bottom: var(--space-5); z-index: 20; display: flex; justify-content: center; padding-inline: var(--space-3); pointer-events: none; }
+.undo-toast:empty { display: none; }
+.undo-toast-body { display: flex; align-items: center; gap: var(--space-3); max-width: 100%; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-radius: var(--radius-lg); background: var(--color-text); color: var(--color-bg); box-shadow: var(--dialog-shadow); font-size: var(--text-sm); pointer-events: auto; }
+@media (prefers-reduced-motion: no-preference) { .undo-toast-body { animation: rise var(--motion-enter) var(--ease-standard); } }
+.undo-toast-body > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo-toast-body .button { flex: none; background: none; box-shadow: none; color: inherit; }
+.undo-toast-body .button:hover, .undo-toast-body .button:focus-visible { background: color-mix(in srgb, var(--color-bg) 16%, transparent); }
 .row[aria-current="true"] { border-radius: 0; background: color-mix(in srgb, var(--row-tone) 14%, var(--color-surface)); }
 .row[aria-current="true"] .row-title { font-weight: var(--weight-medium); }
 .show-all { display: inline-flex; align-items: center; min-height: var(--size-control); padding: 0 var(--inset-control); color: var(--color-accent); font-size: 16px; text-decoration: none; white-space: nowrap; }
@@ -768,6 +797,7 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   .row-project { grid-column: 2; grid-row: 2; font-size: 13px; }
   .row-time { grid-column: 3 / 5; grid-row: 2; justify-self: end; font-size: 13px; text-align: right; }
   .row-chevron { grid-column: 4; grid-row: 1; }
+  @media (hover: hover) { .row-dismiss { top: var(--space-1); translate: none; } }
   .show-all { font-size: 13px; padding-inline: var(--space-2); }
   .connection { padding-inline: var(--space-1); }
 }
