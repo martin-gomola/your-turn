@@ -1695,6 +1695,13 @@ if (threadId) {
   $("back-label").textContent = inboxStatus ? INBOX_FILTERS[inboxStatus].label : "Inbox";
   $("inbox-title").hidden = true;
   $("thread-heading").hidden = false;
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || document.querySelector("dialog[open]") ||
+        document.body.dataset.navigation === "open" || document.body.dataset.aside) return;
+    // Escape's default action stops loading, which cancels this navigation and closes the live streams.
+    event.preventDefault();
+    location.assign($("back").href);
+  });
   connect(`/api/stream?thread=${encodeURIComponent(threadId)}`, "thread", renderThread);
   // The favicon and notifications cover every chat, not just this one; the live label follows this chat's stream.
   new EventSource("/api/stream").addEventListener("inbox", (message) => {
