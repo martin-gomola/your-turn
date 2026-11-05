@@ -291,6 +291,7 @@ const inboxStatus = Object.hasOwn(INBOX_FILTERS, statusParam) ? statusParam : ""
 const inboxReturn = inboxStatus ? `&status=${inboxStatus}` : "";
 $("nav-inbox").dataset.category = inboxStatus || "all";
 document.body.dataset.view = threadId ? "thread" : deckView ? "deck" : "inbox";
+if (threadId && deckView) document.body.dataset.origin = "deck";
 if (threadId) $("nav-inbox").removeAttribute("aria-current");
 const wideDetail = matchMedia("(min-width: 1280px)");
 const calm = matchMedia("(prefers-reduced-motion: reduce)");

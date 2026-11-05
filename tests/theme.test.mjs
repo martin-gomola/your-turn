@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 const source = readFileSync(new URL('../src/yourturn/static/theme.js', import.meta.url), 'utf8');
 
-function browser({ stored = null, dark = false, blocked = false, compact = false } = {}) {
+function browser({ stored = null, dark = false, blocked = false, compact = false, search = '' } = {}) {
   const storage = new Map(stored ? [['theme', stored]] : []);
   if (compact) storage.set('compact-header', 'true');
   const events = new Map();
@@ -14,7 +14,8 @@ function browser({ stored = null, dark = false, blocked = false, compact = false
   let changes = 0;
   const window = {};
   vm.runInNewContext(source, {
-    window, Event,
+    window, Event, URLSearchParams,
+    location: { search },
     matchMedia: () => system,
     localStorage: {
       getItem(key) { if (blocked) throw Error('blocked'); return storage.get(key) ?? null; },
@@ -64,6 +65,12 @@ test('cross-tab updates and cleared storage re-resolve the theme', () => {
   b.storage.clear(); b.events.get('storage')({ key: null });
   assert.equal(b.api.preference(), 'system');
   assert.equal(b.root.dataset.theme, 'dark');
+});
+
+test('a chat opened from Deck resolves dark over a saved light appearance', () => {
+  assert.equal(browser({ stored: 'light', search: '?thread=codex%3Aabc&view=deck' }).root.dataset.theme, 'dark');
+  assert.equal(browser({ stored: 'light', search: '?view=deck' }).root.dataset.theme, 'light');
+  assert.equal(browser({ stored: 'light', search: '?thread=codex%3Aabc' }).root.dataset.theme, 'light');
 });
 
 test('unavailable storage still permits a page-local theme choice', () => {

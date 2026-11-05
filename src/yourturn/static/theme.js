@@ -18,9 +18,12 @@ try {
     }
   };
   let preference = stored();
+  // A chat opened from Deck keeps Deck's dark surface whatever the saved appearance.
+  const query = new URLSearchParams(location.search);
+  const deckChat = query.has("thread") && query.get("view") === "deck";
   const apply = () => {
     const theme = preference;
-    const dark = theme === "dark" || (theme !== "light" && system.matches);
+    const dark = deckChat || theme === "dark" || (theme !== "light" && system.matches);
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#151515" : "#fcfbfa");
     document.dispatchEvent(new Event("themechange"));

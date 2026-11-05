@@ -289,6 +289,16 @@ Inbox/chat scale in `tokens.css`.
   for connection and uses a neutral static glyph. Reduced motion removes the pulse.
 - There is no Open chat label or Files block in the hero. App navigation and Live
   remain outside the deck content. Pointer, touch and keyboard share this flow.
+- A chat opened from Deck (`/?thread=<key>&view=deck`, marked `body[data-origin="deck"]`)
+  is the Deck HUD: the same chat page and content in Deck's flat palette (#0d0f12 surface,
+  #ffffff text, #b4b8bf secondary, #41464d 1px strokes, 2px corners, no shadows or gradients).
+  It resolves dark before first paint whatever the saved appearance, and hides the theme toggle.
+  The evidence strip becomes the ticker under the title: status chips first (white label after a
+  role-colored dot), then monospaced tabular counters (files, decisions), then the metadata;
+  it wraps rather than scrolls on narrow widths. The status card leads with a 28px title and a
+  1px status-colored frame; the chat's main action is filled white with dark text. Section
+  titles become uppercase labels and history stays in the existing folded disclosure rows.
+  Spacing uses only the shared 4px-step tokens; the plain chat page and Deck are unchanged.
 
 ## Wide detail pane
 
