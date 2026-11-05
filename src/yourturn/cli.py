@@ -7,7 +7,10 @@ prints the Cursor User Rule to paste into Cursor's settings."""
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
+import re
+import secrets
 import subprocess
 import sys
 import urllib.request
@@ -22,6 +25,49 @@ PORT = 8787
 def _url(port: int) -> str:
     """The address to show: the server binds only 127.0.0.1, which `localhost` reaches and is easier to type."""
     return f"http://localhost:{port}"
+
+
+TOKEN_PATH = Path.home() / ".your-turn" / "phone-token"
+HOTSPOT = ipaddress.ip_network("172.20.10.0/28")  # iPhone Personal Hotspot, also over USB
+
+
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+TAILSCALE = ("tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale")
+
+
+def _tailscale_address() -> list[str]:
+    """This Mac's Tailscale IPv4, asked of Tailscale itself: other VPNs (Twingate) use 100.64/10 too."""
+    for binary in TAILSCALE:
+        try:
+            out = subprocess.run([binary, "ip", "-4"], capture_output=True, text=True, timeout=5).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", out[0]) and ipaddress.ip_address(out[0]) in TAILNET:
+            return [out[0]]
+    return []
+
+
+def _lan_addresses() -> list[str]:
+    """Private IPv4 addresses of this Mac, the iPhone hotspot (USB cable) first; skips VPN (100.64/10) and link-local."""
+    try:
+        out = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = {ipaddress.ip_address(a) for a in re.findall(r"inet (\d+\.\d+\.\d+\.\d+)", out)}
+    lan = [a for a in found if a.is_private and not a.is_loopback and not a.is_link_local]
+    return [str(a) for a in sorted(lan, key=lambda a: (a not in HOTSPOT, a))]
+
+
+def _phone_token() -> str:
+    """One token kept across restarts, so the phone's home-screen icon keeps working."""
+    try:
+        return TOKEN_PATH.read_text().strip()
+    except FileNotFoundError:
+        token = secrets.token_urlsafe(24)
+        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        TOKEN_PATH.touch(mode=0o600)
+        TOKEN_PATH.write_text(token)
+        return token
 
 
 def _interactive() -> bool:
@@ -51,6 +97,8 @@ def main(argv: list[str] | None = None) -> int | None:
         command = commands.add_parser(name, help=help_text)
         if name == "serve":
             command.add_argument("--port", type=int, default=PORT)
+            command.add_argument("--phone", action="store_true",
+                                 help="Also serve on this Mac's Wi-Fi or USB-hotspot address, behind a token in a QR code")
             command.add_argument("--cursor-user-dir", type=Path, default=None,
                                  help="Cursor user data folder holding globalStorage/state.vscdb (default: per OS)")
         else:
@@ -94,7 +142,7 @@ def main(argv: list[str] | None = None) -> int | None:
             print(f"→ Your Turn is already running at {_url(PORT)}", flush=True)
             return
         print(f"→ Next time, start the inbox with: {SERVE}", flush=True)
-        args.port, args.cursor_user_dir = PORT, None
+        args.port, args.cursor_user_dir, args.phone = PORT, None, False
 
     import uvicorn
 
@@ -107,11 +155,33 @@ def main(argv: list[str] | None = None) -> int | None:
     except (OSError, ValueError) as error:
         parser.error(f"Cannot read Your Turn config: {error}")
 
+    host, token, lan = "127.0.0.1", None, ()
+    if args.phone:
+        # Tailscale first: it reaches the phone on any network, office Wi-Fi isolation included.
+        lan = tuple(_tailscale_address() + _lan_addresses())
+        if not lan:
+            parser.error("No Tailscale, Wi-Fi or USB-hotspot address found. Connect Tailscale, join a network, "
+                         "or turn on Personal Hotspot on the iPhone and connect it by cable.")
+        import segno
+
+        host, token = "0.0.0.0", _phone_token()
+        phone_url = f"http://{lan[0]}:{args.port}/?t={token}"
+        segno.make(phone_url, error="l").terminal(compact=True)
+        print(f"Scan with the iPhone camera, then Share → Add to Home Screen: {phone_url}", flush=True)
+        if len(lan) > 1:
+            print(f"Other addresses of this Mac: {', '.join(lan[1:])}", flush=True)
+        if ipaddress.ip_address(lan[0]) in TAILNET:
+            print("This is the Tailscale address: the iPhone needs the Tailscale app, signed in to the same account.",
+                  flush=True)
+        elif ipaddress.ip_address(lan[0]) not in HOTSPOT:
+            print("This is the Wi-Fi address: the iPhone must be on the same Wi-Fi. Over the USB cable instead, "
+                  "turn on Personal Hotspot on the iPhone, then run this again.", flush=True)
     print(f"Starting Your Turn at {_url(args.port)}. Press Ctrl+C to stop it.", flush=True)
     try:
         uvicorn.run(create_app(args.codex_home, history_days=history_days, claude_home=args.claude_home,
-                               cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir),
-                    host="127.0.0.1", port=args.port, log_level="warning")
+                               cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir,
+                               phone_token=token, lan_hosts=lan),
+                    host=host, port=args.port, log_level="warning")
     except SystemExit as error:
         if error.code not in (None, 0):
             print(

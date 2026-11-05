@@ -289,6 +289,31 @@ def test_hub_and_api_serve_cursor_sessions(tmp_path: Path) -> None:
     assert [entry["key"] for entry in client.get("/api/inbox").json()] == [f"cursor:{CID}"]
 
 
+def _set_context(user_dir: Path, rows: dict[str, bytes]) -> None:
+    """Cursor's `composerData:<id>` rows, stored as BLOBs like Cursor does."""
+    with sqlite3.connect(user_dir / "globalStorage" / "state.vscdb") as connection:
+        connection.execute("CREATE TABLE IF NOT EXISTS cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)")
+        connection.executemany("INSERT INTO cursorDiskKV VALUES (?, ?)", [(f"composerData:{cid}", value) for cid, value in rows.items()])
+    connection.close()
+
+
+def test_context_gauge_comes_from_composer_data(tmp_path: Path) -> None:
+    home, user_dir = _home(tmp_path)
+    codex_home = tmp_path / "codex"
+    (codex_home / "sessions").mkdir(parents=True)
+    hub = SessionHub.for_codex_home(codex_home, scan_ttl=0, cursor_home=home, cursor_user_dir=user_dir)
+    (row,) = hub.inbox_dicts()
+    assert (row["context_used"], row["context_window"]) == (0, 0)
+
+    _set_context(user_dir, {CID: json.dumps({"contextTokensUsed": 109510, "contextTokenLimit": 300000}).encode(), ARCHIVED: b"{not json"})
+    (row,) = hub.inbox_dicts()
+    assert (row["context_used"], row["context_window"], row["usage_minutes"]) == (109510, 300000, [])
+
+    _set_context(user_dir, {CID: json.dumps({"contextTokensUsed": 150000, "contextTokenLimit": 300000}).encode()})
+    (row,) = hub.inbox_dicts()
+    assert (row["context_used"], row["context_window"]) == (150000, 300000)
+
+
 # --- pending approvals (composerHeaders.hasBlockingPendingActions) -------------------------------
 
 

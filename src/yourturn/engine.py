@@ -123,9 +123,13 @@ class TurnFolder:
         self.summary = ""
         self.context_used = 0
         self.context_window = 0
+        self.rate_limits: list[dict[str, Any]] = []
+        self.rate_limits_at = ""
         self.token_usage: dict[str, int] = {}
         self.last_token_usage: dict[str, int] = {}
         self.token_usage_at = ""
+        self.usage_minutes: deque[list[Any]] = deque(maxlen=2880)
+        self.message_minutes: deque[str] = deque(maxlen=301)
         self.model = ""
         self.reasoning_effort = ""
         self.model_provider = ""
@@ -196,6 +200,8 @@ class TurnFolder:
         self._last_message = None
         self.status = "working"
         self.pending_tool = ""
+        self.activity = ""
+        self.activity_summary = ""
         if self.content_available:  # A chat whose turns are unknown cannot number this one.
             self._step(at, "turn", f"Turn {index} started" + (" by a background task" if trigger == "task-notification" else ""))
 
@@ -308,6 +314,10 @@ class TurnFolder:
         self.version += 1
         ts = event.ts
         at = format_ts(ts)
+        if at and isinstance(event, (UserMessage, AgentMessage)):
+            minute = at[:16] + ":00Z"
+            if not self.message_minutes or minute != self.message_minutes[-1]:
+                self.message_minutes.append(minute)
         if ts is not None and (self._updated_ts is None or ts >= self._updated_ts):
             self._updated_ts, self.updated_at = ts, at
         if isinstance(event, Meta):
@@ -494,6 +504,16 @@ class TurnFolder:
             }
         )
         if total:
+            current = total.get("total_tokens", 0)
+            previous = self.token_usage.get("total_tokens")
+            # A tail's first cumulative total includes old history; count only its reported request.
+            delta = max(0, current - previous) if previous is not None and current >= previous else (event.last or {}).get("total_tokens", 0)
+            if at and delta:
+                minute = at[:16] + ":00Z"
+                if self.usage_minutes and self.usage_minutes[-1][0] == minute:
+                    self.usage_minutes[-1][1] += delta
+                else:
+                    self.usage_minutes.append([minute, delta])
             self.token_usage, self.token_usage_at = total, at
         if event.last:
             self.last_token_usage = dict(event.last)
@@ -501,6 +521,8 @@ class TurnFolder:
                 self.context_used = event.last["total_tokens"]
         if event.window is not None:
             self.context_window = event.window
+        if event.limits is not None:
+            self.rate_limits, self.rate_limits_at = list(event.limits), at
 
     def _tool(self, at: str, event: ToolCall) -> None:
         turn = self._turn(at)
@@ -543,6 +565,13 @@ class TurnFolder:
             "recap": next((t.recap for t in reversed(self.turns) if t.recap), ""),
             "decisions": [asdict(d) for d in self.decisions],
             "changed_files": list(dict.fromkeys(path for t in self.turns for path in t.files)),
+            "context_used": self.context_used,
+            "context_window": self.context_window,
+            "git_branch": self.git_branch,
+            "rate_limits": list(self.rate_limits),
+            "rate_limits_at": self.rate_limits_at,
+            "usage_minutes": list(self.usage_minutes),
+            "message_minutes": list(self.message_minutes),
         }
         row["needs_you"] = needs_you(row)
         return row
@@ -770,6 +799,12 @@ class SessionHub:
             pending = folder.pending_tool
             data["activity_summary"] = (command_caption(pending[6:]) if pending.startswith("Bash: ")
                                         else clip(pending or folder.activity_summary or folder.activity, 120))
+            turn = folder.turns[-1] if folder.turns else None
+            data["activity_log"] = [
+                {"at": step.at, "kind": step.kind, "title": step.title}
+                for step in folder.steps
+                if turn and step.turn == turn.index and step.kind in {"command", "edit", "tool", "thinking", "agent"}
+            ][-3:]
         if detail:
             data["history_truncated"] = bool(tracked.cursor and tracked.cursor.skipped_bytes)
         return data

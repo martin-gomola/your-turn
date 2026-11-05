@@ -113,6 +113,8 @@ def test_later_check_clears_the_stale_flag_and_formatted_answer_sets_next_step(c
         ("Set up previews.\n\nOnce merged, review apps deploy automatically.", ("Set up previews.", "unknown", "", False)),
         ("Fixed it.\n\nRun: `make test`", ("Fixed it.", "run", "Run: make test", False)),
         ("Wrote the deploy script.\n\n```sh\nif ok; then run ./deploy; fi\n```", ("Wrote the deploy script.", "unknown", "", False)),
+        ("**Recap:** Based on the README.\n\n**Outcome — Project Brief**\n\n- **Name:** Data Catalog\n\n**Next:** Use this brief.",
+         ("Name: Data Catalog", "do", "Use this brief.", False)),
     ],
 )
 def test_parse_answer(text: str, expected: tuple[str, str, str, bool]) -> None:
@@ -226,6 +228,22 @@ def test_reports_latest_usage_snapshot_without_double_counting(codex_home: Path)
     assert state.token_usage == {"input_tokens": 200, "cached_input_tokens": 150, "cache_write_input_tokens": 0, "output_tokens": 60, "reasoning_output_tokens": 20, "total_tokens": 260}
     assert state.token_usage_at == "2026-10-27T10:07:00Z"
     assert state.context_used == 0 and state.last_token_usage == {"total_tokens": 0}
+
+
+def test_keeps_latest_account_quota_windows_and_skips_model_scoped_ones(codex_home: Path) -> None:
+    sessions = SessionHub.for_codex_home(codex_home)
+    path = sessions.folder(THREAD).ref.path
+    window = {"used_percent": 18.5, "window_minutes": 300, "resets_at": 1_800_000_000}
+    append(
+        path,
+        event("2026-10-27T10:06:00Z", {"type": "token_count", "info": {}, "rate_limits": {
+            "limit_name": None, "primary": window, "secondary": {"used_percent": True, "window_minutes": 10080}}}),
+        event("2026-10-27T10:07:00Z", {"type": "token_count", "info": {}, "rate_limits": {
+            "limit_name": "GPT-Spark", "primary": {"used_percent": 99, "window_minutes": 300}}}),
+    )
+    state = sessions.folder(THREAD)
+    assert state.rate_limits == [{"used_percent": 18.5, "window_minutes": 300, "resets_at": "2027-01-15T08:00:00Z"}]
+    assert state.rate_limits_at == "2026-10-27T10:06:00Z"
 
 
 def test_usage_and_session_metadata_ignore_malformed_values() -> None:

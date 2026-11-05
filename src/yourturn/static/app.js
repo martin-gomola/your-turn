@@ -136,15 +136,161 @@ function focusAfterRemoval(keys, removed) {
 function shortcutBlocked(target, modalOpen) {
   return modalOpen || Boolean(target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
 }
+
+// How full a chat's context was at its last request, or null when the app reports no window size.
+// ponytail: fixed 50%/80% bands for every model; tune per model if they mislead.
+function contextFill(used, size) {
+  if (!Number.isSafeInteger(used) || !Number.isSafeInteger(size) || used <= 0 || size <= 0) return null;
+  const percent = Math.min(100, Math.round(used / size * 100));
+  return { percent, level: percent >= 80 ? "heavy" : percent >= 50 ? "filling" : "ok" };
+}
+
+// The context window to measure against. Claude Code records none, but its windows are 200K or 1M,
+// so usage past 200K can only be a 1M window; below that the size stays unknown (0).
+function contextSize(chat) {
+  return chat.context_window > 0 ? chat.context_window : 0;
+}
+
+// Deck order changes only when something meaningful does: the inbox sorts by latest write, which on
+// a glanceable screen would swap working keys every time an agent writes. Working keys keep the order
+// they started in and new results the order they arrived in, so a newcomer joins the end and no key
+// moves for a routine update. Needs you keeps longest wait first, which already appends newcomers.
+function deckOrder(groups) {
+  const by = (field) => (a, b) => (a[field] || "").localeCompare(b[field] || "");
+  return new Map([...groups].map(([key, chats]) =>
+    [key, key === "working" ? [...chats].sort(by("working_since")) : key === "new" ? [...chats].sort(by("turn_ended_at")) : chats]));
+}
+
+// Usage limits are per account, so the chat that reported last speaks for all; an ended window is dropped.
+function latestQuota(chats, now = Date.now()) {
+  const newest = chats.reduce((best, chat) => (chat.rate_limits_at || "") > (best?.rate_limits_at || "") ? chat : best, null);
+  return (newest?.rate_limits || []).filter((window) => !window.resets_at || new Date(window.resets_at).getTime() > now);
+}
+
+function windowLabel(minutes) {
+  if (minutes === 10080) return "Week";
+  return minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+}
+
+// Time left until `iso`, rounded to what a glance needs: "<1m", "12m", "4h", "6d"; "" once passed.
+function untilShort(iso, now = Date.now()) {
+  const minutes = (new Date(iso).getTime() - now) / 60000;
+  if (!(minutes > 0)) return "";
+  if (minutes < 1) return "<1m";
+  return minutes < 60 ? `${Math.round(minutes)}m` : minutes < 1440 ? `${Math.round(minutes / 60)}h` : `${Math.round(minutes / 1440)}d`;
+}
+function untilClock(iso, now = Date.now()) {
+  const seconds = Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor(seconds % 86400 / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  const remainder = seconds % 60;
+  const clock = [hours, minutes, remainder].map((value) => String(value).padStart(2, "0")).join(":");
+  return days ? `${days}d ${clock}` : clock;
+}
+function deckElapsed(since, now = Date.now()) {
+  const started = new Date(since).getTime();
+  if (!Number.isFinite(started)) return "";
+  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor(seconds % 86400 / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${seconds}s`;
+}
+
+function deckTelemetry(chats, working, waits, now = Date.now()) {
+  const recent = (at, duration) => { const time = Date.parse(at); return time <= now && time > now - duration; };
+  const claude = chats.filter((chat) => chat.harness === "claude");
+  const messages = claude.flatMap((chat) => chat.message_minutes || []).filter((at) => recent(at, 5 * 3600000));
+  const reset = messages.length ? new Date(Math.min(...messages.map(Date.parse)) + 5 * 3600000).toISOString() : "";
+  const quota = latestQuota(chats.filter((chat) => chat.harness === "codex"), now).sort((a, b) => a.window_minutes - b.window_minutes)[0];
+  const active = working.filter((chat) => chat.harness === "codex").length;
+  const samples = chats.flatMap((chat) => chat.usage_minutes || []);
+  const burn = working.flatMap((chat) => chat.usage_minutes || []).filter(([at]) => recent(at, 15 * 60000)).reduce((sum, [, tokens]) => sum + tokens, 0);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const tokens = samples.filter(([at]) => Date.parse(at) >= today.getTime() && Date.parse(at) <= now).reduce((sum, [, count]) => sum + count, 0);
+  const fills = chats.map((chat) => contextFill(chat.context_used, contextSize(chat))).filter(Boolean);
+  const peak = fills.length ? Math.max(...fills.map((fill) => fill.percent)) : null;
+  const earliest = waits.map(Date.parse).filter((at) => Number.isFinite(at) && at <= now);
+  const note = "Local logs only; truncated histories and unsupported agents may omit usage.";
+  return [
+    { id: "claude", label: "CLAUDE RESET", value: reset ? untilClock(reset, now) : claude.length ? "READY" : "—", tone: "amber", note: "Estimated from the earliest recorded Claude message in the last 5h, rounded to the minute; not an account quota reset." },
+    { id: "codex", label: "CODEX", value: `${active} ACTIVE${quota ? ` / ${Math.max(0, Math.round(100 - quota.used_percent))}%` : ""}`, tone: "green", note: quota ? `Latest recorded ${windowLabel(quota.window_minutes)} account quota remaining.` : "Working Codex chats; quota not reported." },
+    { id: "burn", label: "BURN", value: samples.length ? `${(burn / 15000).toFixed(1)}k/min` : "—", tone: "amber", note: `Recorded tokens over 15 minutes in currently working chats. ${note}` },
+    { id: "peak", label: "PEAK CTX", value: peak === null ? "—" : `${peak}%`, tone: peak >= 90 ? "red" : peak >= 75 ? "amber" : "green", note: "Highest context utilization among chats with a known window." },
+    { id: "wait", label: "MAX WAIT", value: earliest.length ? deckElapsed(new Date(Math.min(...earliest)).toISOString(), now) : "—", tone: "amber", note: "Longest wait among Needs you chats." },
+    { id: "today", label: "TODAY", value: samples.length ? `${(tokens / 1000000).toFixed(1)}M TOK` : "—", tone: "green", note: `Recorded tokens since local midnight. ${note}` },
+  ];
+}
+
+// Apportion six cells, keeping at least one for each active status so rare work stays visible.
+function deckMagazine(counts, filter = "") {
+  const kinds = ["waiting", "working", "new"];
+  if (filter) return Array.from({ length: 6 }, (_, index) => index < Math.min(6, counts[filter] || 0) ? filter : "");
+  const total = kinds.reduce((sum, kind) => sum + counts[kind], 0);
+  if (!total) return Array(6).fill("");
+  const shares = kinds.map((kind, index) => ({ kind, index, quota: counts[kind] / total * 6 }));
+  const cells = shares.flatMap(({ kind, quota }) => Array(Math.floor(quota)).fill(kind));
+  const remainder = [...shares].sort((a, b) => (b.quota % 1) - (a.quota % 1) || a.index - b.index);
+  for (let i = 0; cells.length < 6; i++) cells.push(remainder[i].kind);
+  for (const share of shares) {
+    if (counts[share.kind] && !cells.includes(share.kind)) {
+      const donor = shares.filter(({ kind }) => cells.filter((cell) => cell === kind).length > 1)
+        .sort((a, b) => (cells.filter((cell) => cell === b.kind).length - b.quota) - (cells.filter((cell) => cell === a.kind).length - a.quota))[0];
+      cells[cells.indexOf(donor.kind)] = share.kind;
+    }
+  }
+  return kinds.flatMap((kind) => cells.filter((cell) => cell === kind));
+}
+
+function deckSwipe(dx, dy, width, hero = false, velocity = 0) {
+  const travel = hero && Math.abs(dx) >= 12 && Math.sign(velocity) === Math.sign(dx) ? dx + velocity * 120 : dx;
+  if (Math.abs(travel) < Math.max(40, Math.min(80, width * .16)) || Math.abs(dx) < Math.abs(dy) * 1.4) return "";
+  return hero ? dx < 0 ? "next" : "previous" : dx < 0 ? "review" : "focus";
+}
+
+function deckUrgent(waits, now = Date.now()) {
+  return waits.some((at) => { const elapsed = now - Date.parse(at); return elapsed > 15 * 60000; });
+}
+
+function deckTerminalState(chat, connected = true) {
+  const reportedLive = chat.capabilities?.live_activity === true;
+  const live = connected && reportedLive && !chat.quiet;
+  const records = reportedLive ? (chat.activity_log || []).slice(-3) : [];
+  const pending = reportedLive && chat.pending_tool;
+  const events = pending ? [...records.slice(-2), { at: "", kind: pending.startsWith("Bash: ") ? "command" : "tool", title: pending.replace(/^Bash: /, ""), pending: true }] : records;
+  const label = !connected ? "OFFLINE" : !reportedLive ? "LAST KNOWN STATE" : chat.quiet ? "QUIET" : pending ? "CALL PENDING" : "RUNNING...";
+  const fallback = reportedLive && chat.activity_summary ? chat.activity_summary : "Awaiting agent completion checkpoint…";
+  return { label, live, events, fallback };
+}
+
+function deckHandoffText(chat, kind) {
+  const outcome = chat.outcome?.trim() || (kind === "new" ? "Completion checkpoint not recorded yet." : "Awaiting agent completion checkpoint…");
+  const next = chat.question?.trim() || (chat.next_kind !== "none" && chat.next_text?.trim())
+    || (chat.next_kind === "none" ? "No further action requested." : "Open this chat to review the handoff.");
+  return { outcome, next, pending: !chat.outcome?.trim() };
+}
+
+function deckCanReview(chat, kind) {
+  return chat.status !== "working" && (kind === "new" || kind === "waiting" && Boolean(chat.attention_key));
+}
+
+function deckFallback(counts) {
+  return counts.waiting || counts.working || counts.new ? "active" : counts.earlier ? "earlier" : "standby";
+}
 // End pure triage helpers.
 const params = new URLSearchParams(location.search);
 const threadId = params.get("thread") || "";
 const returnOpenId = params.get("returnOpen") || "";
+const deckView = params.get("view") === "deck" || location.pathname === "/deck";
 const statusParam = params.get("status");
 const inboxStatus = Object.hasOwn(INBOX_FILTERS, statusParam) ? statusParam : "";
 const inboxReturn = inboxStatus ? `&status=${inboxStatus}` : "";
 $("nav-inbox").dataset.category = inboxStatus || "all";
-document.body.dataset.view = threadId ? "thread" : "inbox";
+document.body.dataset.view = threadId ? "thread" : deckView ? "deck" : "inbox";
 if (threadId) $("nav-inbox").removeAttribute("aria-current");
 const wideDetail = matchMedia("(min-width: 1280px)");
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
@@ -290,6 +436,8 @@ function migrateLocalMarks(chats) {
 function setConnection(state, text) {
   $("connection").dataset.state = state;
   $("connection-text").textContent = text;
+  document.body.dataset.connection = state;
+  if (deckView && !threadId && deckData) renderDeck(deckData);
 }
 
 function connect(url, event, render) {
@@ -464,6 +612,13 @@ function hideUndo() {
   clearTimeout(undoTimer);
   $("undo-toast").replaceChildren();
 }
+
+// Keep Undo available while it is being read or operated, in either inbox layout.
+const undoToast = $("undo-toast");
+undoToast.addEventListener("pointerenter", () => clearTimeout(undoTimer));
+undoToast.addEventListener("focusin", () => clearTimeout(undoTimer));
+undoToast.addEventListener("pointerleave", () => { if (undoToast.childNodes.length && !undoToast.contains(document.activeElement)) restartUndoTimer(); });
+undoToast.addEventListener("focusout", (event) => { if (undoToast.childNodes.length && !undoToast.contains(event.relatedTarget)) restartUndoTimer(); });
 
 // `fold` is "open" or "closed" for a section the user can collapse, "" otherwise.
 function renderSection({ key, label }, chats, fold = "") {
@@ -1011,6 +1166,28 @@ $("settings-notify").addEventListener("click", async () => {
   syncSettingsNotifications();
 });
 
+// Full screen ends on every page load, so /fullscreen holds it and runs the app in a frame.
+const inFullscreenShell = (() => {
+  try { return window.parent !== window && window.parent.location.pathname === "/fullscreen"; } catch { return false; }
+})();
+if (inFullscreenShell || document.fullscreenEnabled) {
+  $("fullscreen-setting").hidden = false;
+  $("fullscreen-status").textContent = inFullscreenShell ? "On: links and pages stay full screen." : "Off in this tab.";
+  $("settings-fullscreen").textContent = inFullscreenShell ? "Leave full-screen mode" : "Open full-screen mode";
+  $("settings-fullscreen").addEventListener("click", () => {
+    const here = location.pathname + location.search;
+    if (inFullscreenShell) window.top.location.assign(here);
+    else location.assign(`/fullscreen?to=${encodeURIComponent(here)}`);
+  });
+}
+if (inFullscreenShell) {
+  // The frame allows only this origin, so links that leave the app replace the full-screen page.
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href]");
+    if (link && link.origin !== location.origin) link.target = "_top";
+  }, { capture: true });
+}
+
 const drawer = matchMedia("(max-width: 959px)");
 const railTooltip = $("rail-tooltip");
 for (const control of document.querySelectorAll(".rail-action")) {
@@ -1096,6 +1273,7 @@ if (!threadId) for (const theme of ["light", "dark"]) {
 function renderShared() {
   if (threadData) renderThread(threadData);
   if (inboxData) renderInbox(inboxData);
+  if (deckData) renderDeck(deckData);
   if (attentionData) { syncNavigation(attentionData); setFavicon(attentionData.some(needsAttention)); }
 }
 
@@ -1592,7 +1770,826 @@ function closePanel() {
   showPanel("").then(() => (cardFor(id) || document.querySelector('.segments [aria-current="page"]'))?.focus());
 }
 
-if (!threadId) {
+// Deck: selected handoff and telemetry above compact, selectable status rows.
+let deckData = null;
+let deckSelected = "";
+let deckFilter = "";
+let deckDirection = 0;
+let deckMomentum = 0;
+let deckEarlierLimit = SECTION_LIMIT;
+let deckLayout = readPreference("your-turn.deck.layout") === "focus" ? "focus" : "multi";
+const deckDismissals = new Map();
+const deckGroupOpen = new Map();
+let deckGesture = null;
+let deckSwipeUntil = 0;
+const DECK_NAMES = { waiting: "NEEDS YOU", working: "WORKING", new: "READY" };
+const DECK_AGENTS = { claude: "Claude", codex: "Codex", cursor: "Cursor" };
+const deckSlots = [readPreference("your-turn.deck.slot1") || "claude", readPreference("your-turn.deck.slot2") || "codex"];
+const DECK_REVIEW_KEY = "your-turn.deck.reviewed";
+let deckReviewed = deckView && !threadId ? readDeckReviews() : new Map();
+
+function readDeckReviews() {
+  try {
+    const entries = JSON.parse(readPreference(DECK_REVIEW_KEY) || "[]");
+    return new Map(Array.isArray(entries) ? entries.filter((entry) => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && (typeof entry[1] === "string" || entry[1] === null)) : []);
+  } catch { return new Map(); }
+}
+
+function deckReviewStamp(chat) {
+  const key = chatKey(chat);
+  if (deckReviewed.has(key)) return deckReviewed.get(key);
+  // Older Deck versions used the reminder map; only Deck interprets those markers.
+  const legacy = shared.dismissed[key];
+  return typeof legacy === "string" && legacy.startsWith("reviewed:") ? legacy.slice(9) : null;
+}
+
+function setDeckReview(key, value) {
+  deckReviewed = new Map([...deckReviewed, ...readDeckReviews()]);
+  deckReviewed.set(key, value);
+  try { localStorage.setItem(DECK_REVIEW_KEY, JSON.stringify([...deckReviewed])); } catch { /* Keep this page's review state. */ }
+}
+
+function deckSectionOf(chat) {
+  const kind = sectionOf(chat);
+  return kind === "new" && deckReviewStamp(chat) === chat.turn_ended_at ? "earlier" : kind;
+}
+
+function deckGroups(chats) {
+  const groups = deckOrder(groupChats(chats));
+  const reviewed = groups.get("new").filter((chat) => deckReviewStamp(chat) === chat.turn_ended_at);
+  if (reviewed.length) {
+    const keys = new Set(reviewed.map(chatKey));
+    groups.set("new", groups.get("new").filter((chat) => !keys.has(chatKey(chat))));
+    groups.set("earlier", [...groups.get("earlier"), ...reviewed].sort((a, b) => b.updated_at.localeCompare(a.updated_at)));
+  }
+  return groups;
+}
+
+if (deckView && !threadId) window.addEventListener("storage", (event) => {
+  if (event.key !== DECK_REVIEW_KEY && event.key !== null) return;
+  deckReviewed = readDeckReviews();
+  if (deckData) renderDeck(deckData);
+});
+
+function deckEntries(groups) {
+  return ["waiting", "working", "new"].filter((kind) => !deckFilter || kind === deckFilter)
+    .flatMap((kind) => groups.get(kind).map((chat) => ({ chat, kind })));
+}
+
+function deckCarouselQueue(groups) {
+  const kind = deckFilter || ["waiting", "working", "new"].find((key) => groups.get(key).some((chat) => chatKey(chat) === deckSelected)) || "waiting";
+  return groups.get(kind);
+}
+
+function selectDeckChat(key, direction = 0) {
+  deckSelected = key;
+  deckDirection = direction;
+  if (deckData) renderDeck(deckData);
+}
+
+function cycleDeckChat(step, velocity = 0) {
+  if (!deckData) return;
+  const queue = deckCarouselQueue(deckGroups(deckData));
+  if (queue.length < 2) { renderDeck(deckData); return; }
+  const index = queue.findIndex((chat) => chatKey(chat) === deckSelected);
+  deckMomentum = Math.min(2, Math.abs(velocity));
+  selectDeckChat(chatKey(queue[(index + step + queue.length) % queue.length]), step);
+}
+
+function focusDeckKind(kind) {
+  deckFilter = deckFilter === kind ? "" : kind;
+  const groups = deckGroups(deckData);
+  if (deckFilter) deckGroupOpen.set(deckFilter, true);
+  deckSelected = deckEntries(groups)[0] ? chatKey(deckEntries(groups)[0].chat) : "";
+  renderDeck(deckData);
+}
+
+function renderDeckFleet(groups) {
+  const fleet = $("deck-fleet");
+  if (!fleet.children.length) {
+    const all = el("button", "deck-fleet-all");
+    all.type = "button";
+    all.dataset.clearFilter = "";
+    all.title = "All chats · Clear status filter";
+    all.setAttribute("aria-label", "Show all chats and clear status filter");
+    all.append(icon("i-fleet"));
+    const lights = el("span", "deck-lights");
+    lights.setAttribute("aria-hidden", "true");
+    lights.append(...Array.from({ length: 6 }, (_, index) => {
+      const light = el("span");
+      light.dataset.kind = "";
+      light.style.setProperty("--index", String(index));
+      return light;
+    }));
+    fleet.append(all, lights, ...Object.keys(DECK_NAMES).map((kind) => {
+      const button = el("button", "deck-fleet-readout");
+      button.type = "button";
+      button.dataset.kind = kind;
+      button.append(el("strong"), el("span", "", DECK_NAMES[kind]));
+      return button;
+    }));
+  }
+  const counts = Object.fromEntries(Object.keys(DECK_NAMES).map((kind) => [kind, groups.get(kind).length]));
+  const cells = deckMagazine(counts, deckFilter);
+  const lights = fleet.querySelector(".deck-lights");
+  const revUp = fleet.dataset.filter !== deckFilter && !calm.matches;
+  if (revUp) {
+    lights.classList.remove("deck-lights-rev");
+    // Restart the keyframe sweep even when the new filter uses the same cell colors.
+    void lights.offsetWidth;
+  }
+  [...lights.children].forEach((light, index) => {
+    light.dataset.kind = cells[index];
+  });
+  if (revUp) lights.classList.add("deck-lights-rev");
+  fleet.querySelector(".deck-fleet-all").setAttribute("aria-pressed", String(!deckFilter));
+  for (const button of fleet.querySelectorAll("button[data-kind]")) {
+    const kind = button.dataset.kind;
+    button.firstChild.textContent = counts[kind];
+    button.setAttribute("aria-pressed", String(deckFilter === kind));
+    button.setAttribute("aria-label", `${DECK_NAMES[kind]}: ${counts[kind]}. ${deckFilter === kind ? "Show all chats" : "Focus this group"}.`);
+  }
+  fleet.dataset.filter = deckFilter;
+}
+
+$("deck-fleet").addEventListener("click", (event) => {
+  if (event.target.closest("[data-clear-filter]") && deckData) {
+    deckFilter = "";
+    renderDeck(deckData);
+    return;
+  }
+  const button = event.target.closest("button[data-kind]");
+  if (button && deckData) focusDeckKind(button.dataset.kind);
+});
+$("deck-layout").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-layout]");
+  if (!button) return;
+  deckLayout = button.dataset.layout;
+  try { localStorage.setItem("your-turn.deck.layout", deckLayout); } catch { /* Page-local layout still works. */ }
+  if (deckData) renderDeck(deckData);
+});
+$("deck-carousel").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-step]");
+  if (button) cycleDeckChat(Number(button.dataset.step));
+});
+
+function deckReviewButton(chat, kind, className) {
+  if (!deckCanReview(chat, kind)) return null;
+  const button = el("button", className, kind === "new" ? "Mark reviewed" : "Dismiss");
+  button.type = "button";
+  button.dataset.review = chatKey(chat);
+  button.setAttribute("aria-label", `${kind === "new" ? "Mark reviewed" : "Dismiss reminder for"} ${chatName(chat)}`);
+  button.title = kind === "new" ? "Move this result to Earlier" : "Hide this reminder; the request stays open in its agent";
+  return button;
+}
+
+function reviewDeckChat(key) {
+  if (!deckView || threadId) return;
+  const chat = deckData?.find((item) => chatKey(item) === key);
+  if (!chat || deckDismissals.has(key)) return;
+  const kind = deckSectionOf(chat);
+  if (!deckCanReview(chat, kind)) { renderDeck(deckData); return; }
+  const previous = kind === "new" ? deckReviewStamp(chat) : shared.dismissed[key] || null;
+  if (kind === "new") setDeckReview(key, chat.turn_ended_at);
+  else saveShared({ dismissed: { [key]: chat.attention_key } });
+  const row = [...$("deck-groups").querySelectorAll("[data-select]")].find((node) => node.dataset.select === key);
+  const focused = row?.parentElement.contains(document.activeElement) || [...$("deck-feature").children].some((card) => card.dataset.key === key && card.contains(document.activeElement));
+  let undone = false;
+  const finish = () => {
+    if (undone) return;
+    deckDismissals.delete(key);
+    renderShared();
+    if (focused) ([...$("deck-groups").querySelectorAll(".deck-row")].find((node) => node.getClientRects().length) || $("deck-fleet").querySelector("button"))?.focus({ preventScroll: true });
+  };
+  if (row && !calm.matches) {
+    const item = row.parentElement;
+    const animation = item.animate([{ height: `${item.offsetHeight}px`, opacity: 1 }, { height: "0px", opacity: 0 }], { duration: 180, easing: "ease-out" });
+    deckDismissals.set(key, animation);
+    animation.finished.then(finish, finish);
+  } else finish();
+  const undo = el("button", "button", "Undo");
+  undo.type = "button";
+  undo.addEventListener("click", () => {
+    hideUndo();
+    undone = true;
+    deckDismissals.get(key)?.cancel();
+    deckDismissals.delete(key);
+    if (kind === "new") setDeckReview(key, previous);
+    else saveShared({ dismissed: { [key]: previous } });
+    deckSelected = key;
+    deckFilter = "";
+    renderShared();
+    $("deck-groups").querySelector(`[data-select="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  });
+  const toast = el("div", "undo-toast-body");
+  toast.append(el("span", "", `${kind === "new" ? "Reviewed" : "Reminder dismissed"}: ${chatName(chat)}`), undo);
+  $("undo-toast").replaceChildren(toast);
+  restartUndoTimer();
+}
+
+function renderDeckTelemetry() {
+  if (!deckData) return;
+  const groups = deckGroups(deckData);
+  document.body.dataset.deckUrgent = String(deckUrgent(groups.get("waiting").map(waitingSince)));
+  const metrics = deckTelemetry(deckData, deckData.filter((chat) => chat.status === "working"), groups.get("waiting").map(waitingSince));
+  for (const button of $("deck-slots").children) {
+    const metric = metrics.find((item) => item.id === deckSlots[Number(button.dataset.slot) - 1]) || metrics[Number(button.dataset.slot) - 1];
+    button.dataset.metric = metric.id;
+    button.dataset.tone = metric.tone;
+    button.title = `${metric.note} Click to switch metric.`;
+    button.setAttribute("aria-label", `${metric.label} ${metric.value}. Switch telemetry metric.`);
+    const reading = el("span", "deck-telemetry-reading");
+    const cycle = el("span", "deck-cycle", "↻");
+    cycle.setAttribute("aria-hidden", "true");
+    reading.append(el("strong", "", metric.value), cycle);
+    button.replaceChildren(el("span", "", metric.label), reading);
+  }
+}
+
+$("deck-slots").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-slot]");
+  if (!button || !deckData) return;
+  const modes = ["claude", "codex", "burn", "peak", "wait", "today"];
+  const slot = Number(button.dataset.slot);
+  deckSlots[slot - 1] = modes[(modes.indexOf(button.dataset.metric) + 1) % modes.length];
+  try { localStorage.setItem(`your-turn.deck.slot${slot}`, deckSlots[slot - 1]); } catch { /* Keep this page's selection. */ }
+  renderDeckTelemetry();
+});
+
+function deckSince(chat, kind) {
+  return kind === "working" ? chat.working_since : kind === "waiting" ? waitingSince(chat)
+    : chat.turn_ended_at || chat.updated_at;
+}
+
+function deckAgent(chat) {
+  return el("span", "deck-agent", DECK_AGENTS[chat.harness] || appName(chat));
+}
+
+function deckRepo(chat) {
+  const repo = el("span", "deck-repo");
+  repo.title = chat.cwd || projectName(chat);
+  repo.append(icon("i-workspace"), el("span", "", projectName(chat)));
+  return repo;
+}
+
+function updateDeckTimer(node) {
+  const duration = deckElapsed(node.dataset.lcd) || "—";
+  node.setAttribute("aria-label", `Elapsed time: ${duration}`);
+  node.replaceChildren(...duration.split(" ").map((part) => {
+    const unit = el("span", "", part);
+    unit.setAttribute("aria-hidden", "true");
+    return unit;
+  }));
+}
+
+function deckTimer(since, className = "deck-timer") {
+  const timer = el("span", className);
+  timer.setAttribute("role", "timer");
+  timer.setAttribute("aria-live", "off");
+  if (since) timer.dataset.lcd = since;
+  updateDeckTimer(timer);
+  return timer;
+}
+
+function deckMini(chat, kind) {
+  const item = el("li");
+  const button = el("button", "deck-mini");
+  button.type = "button";
+  button.dataset.select = chatKey(chat);
+  button.dataset.kind = kind;
+  button.setAttribute("aria-label", `Focus ${chatName(chat)}, ${appName(chat)}, ${projectName(chat)}`);
+  const head = el("span", "deck-mini-head");
+  const title = el("span", "deck-mini-title", chatName(chat));
+  title.title = chatName(chat);
+  head.append(icon(SECTION_ICONS[kind]), title);
+  const meta = el("span", "deck-mini-meta");
+  meta.append(deckAgent(chat), deckRepo(chat), deckTimer(deckSince(chat, kind), "deck-mini-time"));
+  const fill = contextFill(chat.context_used, contextSize(chat));
+  const readout = el("span", "deck-mini-readout");
+  const context = el("span", "deck-mini-context", fill ? `CTX ${fill.percent}%` : "CTX unknown");
+  context.title = fill ? `${tokenCount(chat.context_used, true)} / ${tokenCount(contextSize(chat), true)}` : "Context window not reported";
+  const gauge = el("span", `deck-mini-gauge${fill ? "" : " deck-mini-standby"}`);
+  gauge.setAttribute("aria-hidden", "true");
+  gauge.dataset.tone = fill?.percent >= 90 ? "red" : fill?.percent >= 75 ? "amber" : "green";
+  for (let i = 0; i < 10; i++) {
+    const block = el("span");
+    block.style.setProperty("--fill", `${fill ? Math.max(0, Math.min(100, (fill.percent - i * 10) * 10)) : 0}%`);
+    gauge.append(block);
+  }
+  readout.append(gauge, context);
+  button.append(head, meta, readout);
+  item.append(button);
+  return item;
+}
+
+function renderDeckMatrix(groups, selected) {
+  const matrix = $("deck-matrix");
+  const grid = $("deck-mini-grid");
+  const kind = deckFilter || (groups.get("waiting").length ? "waiting" : selected?.kind || "waiting");
+  const chats = groups.get(kind).filter((chat) => chatKey(chat) !== deckSelected);
+  matrix.hidden = !selected || !chats.length;
+  $("deck-stage").dataset.queueEmpty = String(matrix.hidden);
+  $("deck-matrix-title").textContent = `${DECK_NAMES[kind]} QUEUE · ${chats.length}`;
+  const focused = grid.contains(document.activeElement) && document.activeElement.dataset.select;
+  const cards = chats.map((chat) => deckMini(chat, kind));
+  const signature = cards.map((card) => card.outerHTML).join("");
+  if (grid.dataset.sig !== signature) {
+    const scroll = grid.scrollTop;
+    grid.dataset.sig = signature;
+    grid.replaceChildren(...cards);
+    grid.scrollTop = scroll;
+    if (focused) (grid.querySelector(`[data-select="${CSS.escape(focused)}"]`) || $("deck-feature").querySelector("a"))?.focus({ preventScroll: true });
+  }
+}
+
+$("deck-mini-grid").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-select]");
+  if (!button) return;
+  selectDeckChat(button.dataset.select);
+  $("deck-feature").querySelector("a")?.focus({ preventScroll: true });
+});
+
+function deckTerminal(chat) {
+  const state = deckTerminalState(chat, $("connection").dataset.state === "live");
+  const terminal = el("div", "deck-terminal");
+  terminal.dataset.live = String(state.live);
+  terminal.dataset.stream = JSON.stringify(state.events.length ? state.events : [state.fallback]);
+  const header = el("div", "deck-terminal-header");
+  const status = el("span", "deck-terminal-state");
+  const dot = el("span", "deck-terminal-dot");
+  dot.setAttribute("aria-hidden", "true");
+  status.append(dot, document.createTextNode(state.label));
+  header.append(status, el("span", "deck-terminal-source", "RECORDED LOG"));
+  terminal.append(header);
+  const body = el("div", "deck-terminal-body");
+  terminal.append(body);
+  if (state.events.length) {
+    const log = el("ol", "deck-terminal-log");
+    log.setAttribute("aria-label", "Latest recorded activity");
+    state.events.forEach((event, index) => {
+      const row = el("li");
+      row.title = event.title;
+      const time = el("span", "deck-terminal-time", event.pending ? "PENDING" : clock(event.at) || "LOG");
+      const text = el("code", "deck-terminal-text", `${event.kind === "command" ? "$" : "›"} ${event.title}`);
+      if (index === state.events.length - 1) {
+        const cursor = el("span", "deck-terminal-cursor", "_");
+        cursor.setAttribute("aria-hidden", "true");
+        text.append(cursor);
+      }
+      row.append(time, text);
+      log.append(row);
+    });
+    body.append(log);
+  } else {
+    body.append(el("p", "deck-terminal-idle", state.fallback));
+  }
+  return terminal;
+}
+
+const DECK_STALL_MS = 5 * 60_000;
+
+function deckGoal(recap) {
+  return (recap || "").match(/(?:^|\s)Goal:\s*(.+?)(?=\s+(?:Settled|Open|Done|Next|Status):|$)/s)?.[1].trim() || "";
+}
+
+function updateDeckPulse(node) {
+  const age = Date.now() - Date.parse(node.dataset.pulseLast);
+  const pulse = node.closest(".deck-pulse");
+  const stalled = pulse.dataset.quiet === "true" || age > DECK_STALL_MS;
+  pulse.dataset.stalled = String(stalled);
+  const since = deckElapsed(node.dataset.pulseLast) || "—";
+  node.textContent = stalled ? `NO ACTIVITY ${since}` : `LAST STEP ${since}`;
+}
+
+// Goal, 30 minutes of token activity, and changed files fill the readout beside a working terminal.
+function deckVitals(chat) {
+  const vitals = el("div", "deck-vitals");
+  const goal = deckGoal(chat.recap);
+  if (goal) {
+    const row = el("p", "deck-goal");
+    row.title = goal;
+    row.append(el("span", "deck-vital-label", "GOAL"), document.createTextNode(goal));
+    vitals.append(row);
+  }
+  const minutes = Array(30).fill(0);
+  const now = Math.floor(Date.now() / 60_000);
+  for (const [at, tokens] of chat.usage_minutes || []) {
+    const slot = 29 - (now - Math.floor(Date.parse(at) / 60_000));
+    if (slot >= 0 && slot < 30) minutes[slot] += tokens;
+  }
+  const peak = Math.max(...minutes);
+  const pulse = el("div", "deck-pulse");
+  pulse.dataset.quiet = String(Boolean(chat.quiet));
+  const head = el("p", "deck-pulse-head");
+  const last = el("span", "deck-pulse-last");
+  last.dataset.pulseLast = chat.activity_log?.at(-1)?.at || chat.updated_at;
+  head.append(el("span", "deck-vital-label", "PULSE · 30M"), last);
+  const chart = el("div", "deck-pulse-chart");
+  chart.setAttribute("aria-hidden", "true");
+  for (const tokens of minutes) {
+    const bar = el("span", "deck-pulse-bar");
+    if (tokens) bar.style.setProperty("--h", `${Math.max(12, Math.round(Math.sqrt(tokens / peak) * 100))}%`);
+    chart.append(bar);
+  }
+  pulse.append(head, chart);
+  vitals.append(pulse);
+  updateDeckPulse(last);
+  const files = [...new Set(chat.changed_files || [])];
+  if (files.length) {
+    const row = el("p", "deck-files");
+    row.title = files.join("\n");
+    row.append(el("span", "deck-vital-label", `${files.length} ${files.length === 1 ? "FILE" : "FILES"}`),
+      el("code", "", files.slice(-2).map((path) => path.split("/").pop()).join(" · ")));
+    vitals.append(row);
+  }
+  return vitals;
+}
+
+function deckHero(chat, kind) {
+  const hero = el("a", "deck-hero");
+  hero.href = `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
+  hero.setAttribute("aria-label", `Open ${chatName(chat)}`);
+  hero.dataset.key = chatKey(chat);
+  hero.dataset.kind = kind;
+  const left = el("div", "deck-hero-left");
+  const identity = el("div", "deck-identity");
+  const badge = el("span", "deck-icon");
+  badge.append(icon(SECTION_ICONS[kind]));
+  const heading = el("div", "deck-heading");
+  const title = el("h2", "deck-title", chatName(chat));
+  title.title = chatName(chat);
+  heading.append(title);
+  const meta = el("div", "deck-meta");
+  meta.append(deckAgent(chat), deckRepo(chat));
+  heading.append(meta);
+  identity.append(badge, heading);
+  left.append(identity);
+  const handoff = el("div", "deck-handoff");
+  const line = (label, value) => {
+    const row = el("p");
+    row.dataset.label = label.toLowerCase();
+    row.title = `${label}: ${value}`;
+    row.append(el("strong", "", `${label}: `), document.createTextNode(value));
+    return row;
+  };
+  if (kind === "working") {
+    handoff.append(deckTerminal(chat));
+  } else {
+    const text = deckHandoffText(chat, kind);
+    handoff.append(line("Outcome", text.outcome), line("Next", text.next));
+  }
+  left.append(handoff);
+  const right = el("div", "deck-readout");
+  const since = deckSince(chat, kind);
+  const timer = deckTimer(since);
+  const status = el("span", "deck-status", kind === "waiting" ? "BLOCKED" : DECK_NAMES[kind]);
+  status.dataset.kind = kind;
+  right.append(timer, status);
+  const size = contextSize(chat);
+  const fill = contextFill(chat.context_used, size);
+  const context = el("div", "deck-context");
+  const header = el("p", "deck-context-header");
+  if (fill) {
+    context.dataset.tone = fill.percent >= 90 ? "red" : fill.percent >= 75 ? "amber" : "green";
+    header.append(document.createTextNode(`CTX ${tokenCount(chat.context_used, true)} / ${tokenCount(size, true)} · `),
+      el("span", "deck-percent", `${fill.percent}%`));
+    const gauge = el("div", "deck-gauge");
+    gauge.setAttribute("role", "meter");
+    gauge.setAttribute("aria-label", "Context window");
+    gauge.setAttribute("aria-valuemin", "0");
+    gauge.setAttribute("aria-valuemax", "100");
+    gauge.setAttribute("aria-valuenow", String(fill.percent));
+    for (let i = 0; i < 10; i++) {
+      const block = el("span", "deck-gauge-block");
+      block.style.setProperty("--fill", `${Math.max(0, Math.min(100, (fill.percent - i * 10) * 10))}%`);
+      block.append(el("span", "deck-gauge-fill"));
+      gauge.append(block);
+    }
+    for (const threshold of [75, 90]) {
+      const tick = el("span", "deck-gauge-tick", `${threshold}%`);
+      tick.dataset.threshold = String(threshold);
+      tick.style.setProperty("--at", `${threshold}%`);
+      tick.setAttribute("aria-hidden", "true");
+      gauge.append(tick);
+    }
+    context.append(header, gauge);
+  } else {
+    header.textContent = chat.context_used > 0 ? `CTX ${tokenCount(chat.context_used, true)} · window unknown` : "CTX not reported";
+    header.title = "Context window not reported";
+    const gauge = el("div", "deck-gauge deck-gauge-standby");
+    gauge.setAttribute("aria-hidden", "true");
+    gauge.append(...Array.from({ length: 10 }, () => el("span", "deck-gauge-block")));
+    context.append(header, gauge, el("span", "deck-standby", "STANDBY · awaiting context telemetry"));
+  }
+  right.append(context);
+  if (kind === "working") right.append(deckVitals(chat));
+  hero.append(left, right);
+  return hero;
+}
+
+function deckRow(chat, kind) {
+  const item = el("li");
+  item.dataset.kind = kind;
+  const historical = kind === "earlier";
+  const row = el(historical ? "a" : "button", "deck-row");
+  if (historical) {
+    row.href = `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
+    row.dataset.history = chatKey(chat);
+  } else {
+    row.type = "button";
+    row.dataset.select = chatKey(chat);
+    row.setAttribute("aria-pressed", String(chatKey(chat) === deckSelected));
+  }
+  row.dataset.kind = kind;
+  row.setAttribute("aria-label", `${historical ? "Open historical chat" : "Select"} ${chatName(chat)}, ${DECK_AGENTS[chat.harness] || appName(chat)}, ${projectName(chat)}`);
+  const marker = el("span", "deck-row-marker", historical ? "" : kind === "new" ? "✓" : "●");
+  if (historical) marker.append(icon("i-turn"));
+  marker.setAttribute("aria-hidden", "true");
+  const title = el("span", "deck-row-title", chatName(chat));
+  title.title = chatName(chat);
+  const meta = el("span", "deck-row-meta");
+  const since = deckSince(chat, kind);
+  const age = el("span", "deck-age", since ? ago(since, "") : "—");
+  if (since) { age.dataset.ago = since; age.dataset.short = ""; }
+  const chevron = icon("i-chevron");
+  chevron.classList.add("deck-row-chevron");
+  meta.append(deckAgent(chat), deckRepo(chat), age, chevron);
+  row.append(marker, title, meta);
+  item.append(row);
+  const review = deckReviewButton(chat, kind, "deck-row-review");
+  if (review) item.append(review);
+  return item;
+}
+
+function renderDeck(chats) {
+  deckData = chats;
+  if (deckGesture || deckDismissals.size) return;
+  const groups = deckGroups(chats);
+  const kinds = ["waiting", "working", "new"];
+  const fallback = deckFallback(Object.fromEntries([...groups].map(([kind, list]) => [kind, list.length])));
+  renderDeckFleet(groups);
+  $("deck-view").dataset.layout = deckLayout;
+  for (const button of $("deck-layout").children) button.setAttribute("aria-pressed", String(button.dataset.layout === deckLayout));
+  renderDeckTelemetry();
+  const active = deckEntries(groups);
+  const selected = active.find(({ chat }) => chatKey(chat) === deckSelected) || active[0];
+  const feature = $("deck-feature");
+  const carousel = $("deck-carousel");
+  const focusedCarouselStep = carousel.contains(document.activeElement) ? document.activeElement.dataset.step : null;
+  if (selected) {
+    const selectionChanged = feature.dataset.selected !== chatKey(selected.chat);
+    const presentationChanged = selectionChanged || feature.firstElementChild?.dataset.kind !== selected.kind;
+    const previousBlocks = new Map([...feature.querySelectorAll(".deck-hero")].map((hero) => [hero.dataset.key, [...hero.querySelectorAll(".deck-gauge-block")]]));
+    const previousTerminals = new Map([...feature.querySelectorAll(".deck-hero")].map((hero) => [hero.dataset.key, hero.querySelector(".deck-terminal")]));
+    const previousCharts = new Map([...feature.querySelectorAll(".deck-hero")].map((hero) => [hero.dataset.key, hero.querySelector(".deck-pulse-chart")]));
+    const focusedKey = document.activeElement.closest(".deck-card")?.dataset.key;
+    const focusedReview = document.activeElement.hasAttribute("data-review");
+    deckSelected = chatKey(selected.chat);
+    const cards = [selected].map(({ chat, kind }) => {
+      const card = el("article", "deck-card");
+      card.dataset.key = chatKey(chat);
+      card.dataset.kind = kind;
+      card.dataset.selected = String(chatKey(chat) === deckSelected);
+      card.dataset.checkpoint = String(kind === "working" || !chat.outcome?.trim());
+      card.append(deckHero(chat, kind));
+      const footer = el("div", "deck-card-footer");
+      const review = deckReviewButton(chat, kind, "deck-card-review");
+      if (review) footer.append(review);
+      // Claude chats resume from a terminal command, which the thread view offers to copy.
+      const agentLink = chat.harness === "cursor" ? chat.handoff?.open_uri || ""
+        : chat.harness === "claude" ? "" : `codex://threads/${encodeURIComponent(chat.id)}`;
+      const open = el("a", "deck-card-open", agentLink ? `Open in ${appName(chat)}` : "Open chat");
+      open.href = agentLink || `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
+      open.append(icon(agentLink ? "i-external" : "i-chevron"));
+      footer.append(open);
+      card.append(footer);
+      return card;
+    });
+    const signature = cards.map((card) => card.outerHTML).join("");
+    if (feature.dataset.sig !== signature) {
+      feature.dataset.sig = signature;
+      // Keep ongoing cell reveals alive when live updates replace the surrounding card.
+      for (const card of cards) {
+        const previous = previousBlocks.get(card.dataset.key);
+        const terminal = card.querySelector(".deck-terminal");
+        const previousTerminal = previousTerminals.get(card.dataset.key);
+        if (terminal && terminal.outerHTML === previousTerminal?.outerHTML) terminal.replaceWith(previousTerminal);
+        const chart = card.querySelector(".deck-pulse-chart");
+        const previousChart = previousCharts.get(card.dataset.key);
+        if (chart && chart.outerHTML === previousChart?.outerHTML) chart.replaceWith(previousChart);
+        card.querySelectorAll(".deck-gauge-block").forEach((block, index) => {
+          if (!calm.matches && previous?.[index]?.outerHTML === block.outerHTML) block.replaceWith(previous[index]);
+        });
+      }
+      if (feature.contains(carousel)) $("deck-stage").append(carousel);
+      feature.replaceChildren(...cards);
+      feature.dataset.selected = deckSelected;
+      if (!calm.matches) {
+        for (const hero of feature.querySelectorAll(".deck-hero")) {
+          if (presentationChanged) hero.animate([{ opacity: .25, transform: "translateY(4px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 220, easing: "cubic-bezier(.22,1,.36,1)" });
+          const terminal = hero.querySelector(".deck-terminal");
+          if (terminal && terminal.dataset.live === "true" && terminal.dataset.stream !== previousTerminals.get(hero.dataset.key)?.dataset.stream) {
+            terminal.querySelector("li:last-child, .deck-terminal-idle")?.animate([{ opacity: .2, transform: "translateY(4px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 180, easing: "cubic-bezier(.22,1,.36,1)" });
+          }
+          const previous = previousBlocks.get(hero.dataset.key);
+          hero.querySelectorAll(".deck-gauge:not(.deck-gauge-standby) .deck-gauge-block").forEach((block, index) => {
+            const from = selectionChanged ? "0%" : previous?.[index]?.style.getPropertyValue("--fill") || "0%";
+            const to = block.style.getPropertyValue("--fill");
+            if (from !== to && to !== "0%") block.querySelector(".deck-gauge-fill").animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350, delay: index * 140, easing: "ease", fill: "backwards" });
+          });
+        }
+        if (deckDirection) cards[0].animate([{ transform: `translateX(${deckDirection * (24 + deckMomentum * 8)}px)`, opacity: .5 }, { transform: "translateX(0)", opacity: 1 }], { duration: 280 - deckMomentum * 40, easing: "cubic-bezier(.22,1,.36,1)" });
+      }
+      if (focusedKey && focusedCarouselStep === null) {
+        const card = cards.find((item) => item.dataset.key === focusedKey);
+        (card?.querySelector(focusedReview ? "button" : "a") || cards[0].querySelector("a")).focus({ preventScroll: true });
+      }
+    }
+  } else {
+    if (feature.contains(carousel)) $("deck-stage").append(carousel);
+    feature.replaceChildren();
+    delete feature.dataset.sig;
+    delete feature.dataset.selected;
+  }
+  deckDirection = 0;
+  deckMomentum = 0;
+  feature.hidden = !selected;
+  if (selected) {
+    const footer = feature.querySelector(".deck-card-footer");
+    if (carousel.parentElement !== footer) footer.prepend(carousel);
+    if (focusedCarouselStep !== null) carousel.querySelector(`[data-step="${focusedCarouselStep}"]`)?.focus({ preventScroll: true });
+  } else if (focusedCarouselStep !== null) $("deck-fleet").querySelector(".deck-fleet-all")?.focus({ preventScroll: true });
+  $("deck-stage").hidden = !selected;
+  renderDeckMatrix(groups, selected);
+  const queue = deckCarouselQueue(groups);
+  $("deck-carousel").hidden = !selected;
+  const position = `${Math.max(0, queue.findIndex((chat) => chatKey(chat) === deckSelected)) + 1} / ${queue.length}`;
+  const positionKind = selected ? ` · ${DECK_NAMES[selected.kind]}` : "";
+  if ($("deck-position").textContent !== position + positionKind) $("deck-position").replaceChildren(el("span", "", position), el("span", "deck-position-kind", positionKind));
+  $("deck-carousel").setAttribute("aria-label", `${selected ? DECK_NAMES[selected.kind] : "Chat"} carousel`);
+  for (const button of $("deck-carousel").querySelectorAll("button")) button.disabled = queue.length < 2;
+  if (focusedCarouselStep !== null && selected && queue.length < 2) feature.querySelector("a")?.focus({ preventScroll: true });
+  const root = $("deck-groups");
+  const focused = root.contains(document.activeElement) && document.activeElement?.dataset.select;
+  const focusedHistory = root.contains(document.activeElement) && document.activeElement?.dataset.history;
+  const focusedReview = root.contains(document.activeElement) && document.activeElement?.dataset.review;
+  const focusedMore = root.contains(document.activeElement) && document.activeElement?.hasAttribute("data-more-earlier");
+  const focusedGroup = document.activeElement?.closest("details")?.dataset.kind;
+  const swiped = root.querySelector("li[data-swiped] .deck-row")?.dataset.select;
+  root.hidden = fallback === "standby";
+  root.replaceChildren(...(fallback === "earlier" ? [...kinds, "earlier"] : kinds).map((kind) => {
+    const group = el("details", "deck-group");
+    group.dataset.kind = kind;
+    group.open = groups.get(kind).length > 0 && (kind === "earlier" || !deckFilter || kind === deckFilter) && (deckGroupOpen.get(kind) ?? true);
+    group.dataset.muted = String(Boolean(deckFilter) && kind !== deckFilter && kind !== "earlier");
+    const summary = el("summary", "deck-group-heading");
+    const badge = el("span", "deck-icon");
+    badge.append(icon(SECTION_ICONS[kind]));
+    const chevron = icon("i-chevron");
+    chevron.classList.add("deck-collapse");
+    summary.append(badge, el("span", "deck-group-name", DECK_NAMES[kind] || "EARLIER"),
+      el("span", "deck-group-count", String(groups.get(kind).length)), chevron);
+    summary.addEventListener("click", (event) => {
+      if (kind !== "earlier" && deckFilter && deckFilter !== kind) { event.preventDefault(); focusDeckKind(kind); }
+      else deckGroupOpen.set(kind, !group.open);
+    });
+    const list = el("ol", "deck-rows");
+    const rows = kind === "earlier" ? groups.get(kind).slice(0, deckEarlierLimit) : groups.get(kind);
+    list.append(...rows.map((chat) => deckRow(chat, kind)));
+    if (deckFilter === kind && !groups.get(kind).length) {
+      group.open = true;
+      list.append(el("li", "deck-filter-empty", `No ${DECK_NAMES[kind].toLowerCase()} chats. Select this fleet filter again to show all.`));
+    }
+    group.append(summary, list);
+    if (kind === "earlier" && rows.length < groups.get(kind).length) {
+      const more = el("button", "deck-history-more", "Load more earlier chats");
+      more.type = "button";
+      more.dataset.moreEarlier = "";
+      group.append(more);
+    }
+    return group;
+  }));
+  let restoreTarget;
+  if (focused) restoreTarget = root.querySelector(`[data-select="${CSS.escape(focused)}"], [data-history="${CSS.escape(focused)}"]`);
+  else if (focusedHistory) restoreTarget = root.querySelector(`[data-history="${CSS.escape(focusedHistory)}"], [data-select="${CSS.escape(focusedHistory)}"]`);
+  else if (focusedReview) restoreTarget = root.querySelector(`[data-review="${CSS.escape(focusedReview)}"]`);
+  else if (focusedMore) restoreTarget = root.querySelector("[data-more-earlier]");
+  else if (focusedGroup) restoreTarget = root.querySelector(`[data-kind="${focusedGroup}"] > summary`);
+  if (focused || focusedHistory || focusedReview || focusedMore || focusedGroup) {
+    (restoreTarget?.getClientRects().length ? restoreTarget : $("deck-fleet").querySelector(".deck-fleet-all"))?.focus({ preventScroll: true });
+  }
+  if (swiped) root.querySelector(`[data-select="${CSS.escape(swiped)}"]`)?.parentElement.setAttribute("data-swiped", "");
+  const standby = $("deck-empty");
+  standby.hidden = fallback !== "standby";
+  const connected = $("connection").dataset.state === "live";
+  standby.dataset.connected = String(connected);
+  const headline = connected ? "FLEET STANDBY · ALL SYSTEMS CLEAR" : "FLEET STANDBY · WAITING FOR CONNECTION";
+  const description = connected ? "No blocking tasks. All parallel agent streams are synchronized." : "Local telemetry is reconnecting. The last known queue is empty.";
+  if ($("deck-standby-title").textContent !== headline) $("deck-standby-title").textContent = headline;
+  if ($("deck-standby-description").textContent !== description) $("deck-standby-description").textContent = description;
+  const earlier = groups.get("earlier").length;
+  $("deck-earlier-link").hidden = earlier === 0 || fallback === "earlier";
+  $("deck-earlier-link").textContent = `${earlier} earlier ${earlier === 1 ? "chat" : "chats"} in the inbox`;
+  const needs = groups.get("waiting").length;
+  document.title = needs ? `(${needs}) Your Turn` : "Your Turn";
+  setFavicon(needs > 0);
+}
+
+$("deck-groups").addEventListener("click", (event) => {
+  if (event.target.closest("[data-more-earlier]")) {
+    const next = deckEarlierLimit;
+    deckEarlierLimit += SECTION_LIMIT;
+    renderDeck(deckData);
+    document.querySelectorAll('.deck-group[data-kind="earlier"] [data-history]')[next]?.focus();
+    return;
+  }
+  const review = event.target.closest("[data-review]");
+  if (review) { reviewDeckChat(review.dataset.review); return; }
+  const row = event.target.closest(".deck-row");
+  if (!row || !deckData || row.dataset.history) return;
+  selectDeckChat(row.dataset.select);
+  $("deck-feature").scrollIntoView({ block: "nearest", behavior: "instant" });
+});
+
+$("deck-feature").addEventListener("click", (event) => {
+  const review = event.target.closest("[data-review]");
+  if (review) reviewDeckChat(review.dataset.review);
+});
+
+// Hero swipes navigate; queue swipes act. Vertical drags keep native page scrolling.
+for (const root of [$("deck-feature"), $("deck-groups")]) {
+  root.addEventListener("pointerdown", (event) => {
+    deckSwipeUntil = 0;
+    const node = event.target.closest(".deck-row, .deck-hero");
+    if (!node || node.dataset.history || !["touch", "pen"].includes(event.pointerType) || event.isPrimary === false) return;
+    deckGesture = { node, key: node.dataset.select || node.dataset.key, id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false, hero: node.classList.contains("deck-hero"), lastX: event.clientX, lastAt: performance.now(), velocity: 0 };
+  });
+  root.addEventListener("pointermove", (event) => {
+    const swipe = deckGesture;
+    if (!swipe || swipe.id !== event.pointerId) return;
+    const now = performance.now();
+    swipe.velocity = (event.clientX - swipe.lastX) / Math.max(1, now - swipe.lastAt);
+    swipe.lastX = event.clientX;
+    swipe.lastAt = now;
+    swipe.dx = event.clientX - swipe.x;
+    swipe.dy = event.clientY - swipe.y;
+    if (!swipe.moved && Math.abs(swipe.dy) > Math.abs(swipe.dx) && Math.abs(swipe.dy) > 8) { deckGesture = null; renderDeck(deckData); return; }
+    if (Math.abs(swipe.dx) < 8 && !swipe.moved) return;
+    swipe.moved = true;
+    swipe.node.setPointerCapture(event.pointerId);
+    const protectedRow = !swipe.hero && swipe.dx < 0 && !swipe.node.parentElement.querySelector("[data-review]");
+    swipe.node.style.translate = `${protectedRow ? Math.max(-8, swipe.dx * .1) : Math.max(-120, Math.min(60, swipe.dx * (swipe.hero ? .25 : 1)))}px 0`;
+    swipe.node.dataset.dragging = "true";
+  });
+  const end = (event) => {
+    const swipe = deckGesture;
+    if (!swipe || swipe.id !== event.pointerId) return;
+    deckGesture = null;
+    swipe.node.style.translate = "";
+    delete swipe.node.dataset.dragging;
+    if (swipe.node.hasPointerCapture(event.pointerId)) swipe.node.releasePointerCapture(event.pointerId);
+    // Keep the tapped DOM node alive until its click selects/opens the chat.
+    if (!swipe.moved) { if (event.type === "pointercancel") renderDeck(deckData); return; }
+    if (swipe.moved) deckSwipeUntil = performance.now() + 450;
+    const velocity = performance.now() - swipe.lastAt < 100 ? swipe.velocity : 0;
+    const action = event.type === "pointercancel" ? "" : deckSwipe(swipe.dx, swipe.dy, swipe.node.offsetWidth, swipe.hero, velocity);
+    if (action === "next" || action === "previous") { deckSelected = swipe.key; cycleDeckChat(action === "next" ? 1 : -1, velocity); }
+    else if (action === "focus") { selectDeckChat(swipe.key); $("deck-feature").scrollIntoView({ block: "nearest", behavior: "instant" }); }
+    else if (action === "review" && swipe.node.parentElement.querySelector("[data-review]")) {
+      if (-swipe.dx > swipe.node.offsetWidth / 2) reviewDeckChat(swipe.key);
+      else { swipe.node.parentElement.dataset.swiped = ""; renderDeck(deckData); }
+    } else { delete swipe.node.parentElement.dataset.swiped; renderDeck(deckData); }
+  };
+  root.addEventListener("pointerup", end);
+  root.addEventListener("pointercancel", end);
+  root.addEventListener("click", (event) => {
+    if (performance.now() < deckSwipeUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+    const row = event.target.closest(".deck-row");
+    if (row && "swiped" in row.parentElement.dataset) {
+      event.preventDefault(); event.stopImmediatePropagation(); delete row.parentElement.dataset.swiped;
+    }
+  }, true);
+}
+
+if (deckView && !threadId) document.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
+      shortcutBlocked(event.target, Boolean(document.body.dataset.aside)) || document.body.dataset.navigation === "open") return;
+  const step = ["j", "J", "ArrowRight"].includes(event.key) ? 1 : ["k", "K", "ArrowLeft"].includes(event.key) ? -1 : 0;
+  if (step) { event.preventDefault(); cycleDeckChat(step); }
+  if (event.key === "e") {
+    const key = document.activeElement.closest(".deck-card")?.dataset.key || document.activeElement.dataset.select;
+    if (key) { event.preventDefault(); reviewDeckChat(key); }
+  }
+});
+
+function liveDeck(chats) {
+  stateSync.retain(chats.map(chatKey));
+  migrateLocalMarks(chats);
+  notifyChanges(chats);
+  renderDeck(chats);
+}
+
+if (!threadId && !deckView) {
   const headerToggle = $("header-toggle");
   headerToggle.hidden = false;
   function syncHeaderToggle() {
@@ -1662,12 +2659,6 @@ if (!threadId) {
     target.focus();
   });
   $("away-dismiss").addEventListener("click", () => { $("away-digest").hidden = true; });
-  // The Undo offer stays while it is pointed at or focused, so it never expires under the user.
-  const undoToast = $("undo-toast");
-  undoToast.addEventListener("pointerenter", () => clearTimeout(undoTimer));
-  undoToast.addEventListener("focusin", () => clearTimeout(undoTimer));
-  undoToast.addEventListener("pointerleave", () => { if (undoToast.childNodes.length && !undoToast.contains(document.activeElement)) restartUndoTimer(); });
-  undoToast.addEventListener("focusout", (event) => { if (undoToast.childNodes.length && !undoToast.contains(event.relatedTarget)) restartUndoTimer(); });
   window.addEventListener("blur", () => {
     if (!inboxData || awaySnapshot) return;
     awaySnapshot = { at: Date.now(), keys: new Set(inboxData.filter(needsAttention).map(chatKey)) };
@@ -1798,7 +2789,7 @@ for (const chip of document.querySelectorAll(".chip")) {
 let attentionData = null;
 setInterval(() => {
   stateSync.flush();
-  const chats = inboxData || attentionData;
+  const chats = inboxData || attentionData || deckData;
   if (chats) notifyChanges(chats);
   if (document.hidden) return;
   for (const node of document.querySelectorAll("[data-ago]")) node.textContent = ago(node.dataset.ago, "short" in node.dataset ? "" : " ago");
@@ -1806,6 +2797,15 @@ setInterval(() => {
   for (const node of document.querySelectorAll("[data-working-since]")) node.textContent = `${STATUS.working.label} ${workingFor(node.dataset.workingSince)}`;
   if (threadData) renderStatus(threadData, threadData.turns[threadData.turns.length - 1]);
 }, 30_000);
+setInterval(() => {
+  if (document.hidden || !deckView) return;
+  renderDeckTelemetry();
+  for (const node of document.querySelectorAll("[data-lcd]")) updateDeckTimer(node);
+  for (const node of document.querySelectorAll("[data-pulse-last]")) updateDeckPulse(node);
+  for (const node of document.querySelectorAll("[data-until]")) {
+    node.textContent = untilShort(node.dataset.until) ? `RESET ${untilClock(node.dataset.until)}` : "";
+  }
+}, 1_000);
 
 
 if (threadId) {
@@ -1813,6 +2813,7 @@ if (threadId) {
   $("back").hidden = false;
   $("back").href = inboxUrl(inboxStatus, returnOpenId);
   $("back-label").textContent = inboxStatus ? INBOX_FILTERS[inboxStatus].label : "Inbox";
+  if (deckView) { $("back").href = "/deck"; $("back-label").textContent = "Deck"; }
   $("inbox-title").hidden = true;
   $("thread-heading").hidden = false;
   document.addEventListener("keydown", (event) => {
@@ -1831,6 +2832,16 @@ if (threadId) {
     notifyChanges(attentionData);
     setFavicon(attentionData.some(needsAttention));
   });
+} else if (deckView) {
+  $("deck-view").hidden = false;
+  document.querySelector(".deck-cockpit").prepend(document.querySelector(".bar"));
+  $("nav-inbox").removeAttribute("aria-current");
+  // The rail icon toggles the layout: on the deck it turns the deck off.
+  $("nav-deck").setAttribute("aria-current", "page");
+  $("nav-deck").href = "/";
+  $("nav-deck").dataset.tooltip = "Turn off deck";
+  $("nav-deck").setAttribute("aria-label", "Turn off deck");
+  connect("/api/stream", "inbox", liveDeck);
 } else {
   $("inbox-view").hidden = false;
   $("panel-head").hidden = false;

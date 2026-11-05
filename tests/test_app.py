@@ -115,6 +115,13 @@ def test_serves_page_with_policy_and_only_loopback(codex_home: Path) -> None:
     assert page.status_code == 200 and "script-src 'self'" in page.headers["content-security-policy"]
     assert app.get("/assets/app.js").headers["content-type"].startswith("text/javascript")
     assert app.get("/assets/icon-alert.svg").headers["content-type"].startswith("image/svg+xml")
+    assert app.get("/assets/manifest.webmanifest").json()["display"] == "standalone"
+    assert "manifest-src 'self'" in page.headers["content-security-policy"]
+    # The full-screen page frames the app; other sites still cannot.
+    assert "frame-ancestors 'self'" in page.headers["content-security-policy"]
+    shell = app.get("/fullscreen")
+    assert shell.status_code == 200 and '<iframe id="app"' in shell.text
+    assert all(app.get(path).status_code == 200 for path in re.findall(r'(?:src|href)="(/assets/[^"]+)"', shell.text))
     referenced = re.findall(r'(?:src|href)="(/assets/[^"]+)"', page.text)
     assert referenced and all(app.get(path).status_code == 200 for path in referenced)
     assert app.get("/assets/secrets.txt").status_code == 404
@@ -168,7 +175,8 @@ def test_page_footer_uses_application_version(codex_home: Path) -> None:
     from yourturn import __version__
 
     html = client(codex_home).get("/").text
-    assert f'<footer class="footer"><span>v{__version__}</span>' in html
+    footer = html[html.index('<footer class="footer">'):html.index("</footer>")]
+    assert f"<span>v{__version__}</span>" in footer
     assert "{{APP_VERSION}}" not in html
 
 
@@ -212,3 +220,19 @@ def test_inbox_and_thread_serve_claude_next_to_codex(codex_home: Path, tmp_path:
     with app.stream("GET", f"/api/stream?thread=claude:{CLAUDE}") as stream:
         body = "".join(stream.iter_text())
     assert body.split("\n\n", 1)[1].startswith("event: thread\n") and f'"key": "claude:{CLAUDE}"' in body
+
+
+def test_phone_mode_needs_the_token_once_then_its_cookie(codex_home: Path, tmp_path: Path) -> None:
+    # TestClient's peer is "testclient", not loopback, so it stands in for the iPhone.
+    app = create_app(codex_home, state_path=tmp_path / "state.json", phone_token="secret", lan_hosts=("172.20.10.2",))
+    phone = TestClient(app, base_url="http://172.20.10.2")
+    assert phone.get("/api/inbox").status_code == 403
+    assert phone.get("/").status_code == 403
+    assert phone.get("/assets/app-icon-light-512.png").status_code == 200
+    assert phone.get("/?t=wrong").status_code == 403
+    visit = phone.get("/?t=secret")
+    # Lax, not Strict: Chrome sends no Strict cookie when the installed Android app opens from the home screen.
+    assert visit.status_code == 200 and "samesite=lax" in visit.headers["set-cookie"].lower()
+    assert phone.get("/api/inbox").status_code == 200  # the cookie from the QR visit
+    assert phone.post("/api/state", json={}, headers={"origin": "http://172.20.10.2:8787"}).status_code == 204
+    assert TestClient(phone.app, base_url="http://evil.example").get("/?t=secret").status_code == 400

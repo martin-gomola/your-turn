@@ -126,6 +126,170 @@ calls in older transcripts still read as decisions.
   it is pointed at or focused. A new request brings the chat back.
 - Filtered chat links keep their return scope; the chat page's back link returns to it.
 
+## Deck
+
+The supplied selected-card and compact-list reference is the Deck layout authority.
+Deck is a dark read-only monitoring surface at `/deck` (also `/?view=deck`), centered
+at a maximum width of 1440px, with 32px desktop gutters and available width on
+phones and tablets. The one-card focus layout is capped at 820px.
+
+Deck's canonical spacing owner is `body[data-view="deck"]` in `app.css`:
+`--space-1:4px`, `--space-2:8px`, `--space-3:12px`, `--space-4:16px`,
+`--space-5:24px`, `--space-6:32px`. All Deck padding, margins and gaps consume these
+tokens (or token calculations); zero and automatic layout values remain valid.
+The deterministic spacing test rejects raw spacing dimensions in Deck rules.
+Border strokes, typography, control/glyph dimensions and animation timing keep their
+own roles. These six values are scoped to Deck rather than replacing the shared
+Inbox/chat scale in `tokens.css`.
+
+- A proportional six-cell magazine represents Needs you, Working and Ready, reserving
+  at least one cell for each nonempty status so rare Working sessions remain visible.
+  Fleet count buttons toggle a status focus, expand its group, select its first card,
+  and switch the magazine to that status, lighting exactly its count up to six cells
+  and leaving unused cells dark gray. All/Fleet mode retains proportional category shares.
+  Startup and filter changes run the CSS `revUp` keyframe with 350ms illumination
+  and `calc(var(--index) * 45ms)` delays, plus a subtle core glow. Routine updates
+  do not restart the sweep. Reduced motion
+  applies the final state immediately. Clicking the active button returns to All;
+  an icon-only fleet button at the start of the bar clears filters, using the same
+  chamfered honeycomb silhouette as the LEDs and a three-cell honeycomb glyph,
+  while retaining the selected chat. It has a neutral selected state, an accessible
+  name and tooltip without a visible All label; phones have a 44px target.
+  zero-count focus shows an empty message and unlit cells, never an unrelated hero.
+  All three group headings remain visible, with other groups folded during focus.
+  The brand row below
+  holds two keyboard-accessible telemetry cycle buttons; each metric choice persists locally.
+  Modes are estimated Claude reset, Codex activity/quota remaining, recorded token velocity,
+  peak known context, longest wait and recorded tokens today (browser-local midnight).
+  Tooltips explain source limitations: Claude reset estimates the earliest message in the
+  last five hours, not the account quota; token readings cover retained local logs only.
+  Both header tiers use the same full-width container edges as the cockpit grid.
+  Live/navigation sit inside Tier 1's reserved trailing inset, rather than shortening
+  that tier with an external margin. This alignment holds in Focus and Bento layouts.
+- Desktop (>=1200px) defaults to a 60/40 Bento Cockpit: the selected full hero on
+  the left, a bounded scrollable two-column matrix of mini-telemetry cards on the right.
+  The matrix shows the remaining Needs you queue, excluding the selected chat. A
+  status filter scopes it to that category; if no chats need the user it follows
+  the selected category. Each compact three-row mini-card shows title; agent, repo and
+  elapsed time; then the known/standby context gauge. The repo hides on cards narrower
+  than 210px. Cards keep their compact content height (two rows fit the shortest hero)
+  and never stretch to a taller hero; scrolling snaps by whole row. Selecting one swaps it into the hero and moves keyboard
+  focus there. Matrix scroll and focus survive live updates. An empty matrix yields
+  its space to the hero. A saved toggle offers Bento Cockpit or 1-Card Focus.
+  Smaller views show one carousel card. No extra selected-chat label is needed.
+  The footer's open action goes to the agent: "Open in Codex" opens that thread,
+  "Open in Cursor" opens its project; Claude chats keep "Open chat" to the thread view,
+  which offers the resume command. The hero body still opens the thread view.
+  Carousel controls sit in the card's integrated footer beside its review action,
+  wrapping as a control group on the narrowest phones. The same controls and keyboard
+  focus survive live replacements and empty-to-populated transitions. Major container
+  gaps are 32px, hero perimeter padding is uniformly 24px, and each status section
+  starts with 24px of top margin, including the first and collapsed sections.
+- Fleet buttons scale subtly on hover and press, with category-colored active borders.
+  A decorative, noninteractive ambient top-edge glow appears whenever a Needs you
+  wait exceeds 15 minutes. It follows the entire attention queue, independent of
+  the active filter, and refreshes as time passes without requiring a new log event.
+- Hero: selected border, icon tile, handoff labels, action and focus accents share the
+  chat's category: amber Needs you/question icon, purple Working/rotating progress icon,
+  emerald Ready/check icon. The shared `--deck-tone` role also owns section accents.
+  Context utilization keeps its independent green/amber/red thresholds.
+  Rounded 2px selected border, 24px perimeter padding, 55/45 columns with an exact
+  32px gap and a 1px divider centered in that gutter. Stacked narrow views use the
+  same gap with a horizontal divider. Left: 48px rounded category icon, one-line 24px title, full agent-name pill
+  (Claude, Codex, Cursor), folder and repository, then explicit Outcome and Next lines.
+  Outcome and Next are one-line 16px summaries with ellipsis and full text on hover or
+  in the linked chat. Missing outcomes use a completion-checkpoint status, never a
+  previous turn's recap. Next distinguishes an explicitly empty action from an unknown handoff.
+  Outcome labels use the category accent; Next uses neutral high-contrast text.
+  Right: 36px tabular elapsed timer
+  in the normal sans font with separate time units, a .22em flex gap and an accessible
+  single-space duration label, avoiding doubled monospace spacing,
+  uppercase status pill (red BLOCKED for Needs you, purple WORKING, green READY), and CTX.
+  Working cards replace handoff prose with a purple monospace terminal (#080A0F,
+  8px radius, standard 16px internal padding) containing up to three recorded current-turn steps
+  and any outstanding call. Shell rows show the recorded display command unchanged,
+  never a shortened check caption or invented output. Long commands wrap; phones show
+  the latest two events. Historical commands are explicitly headed RECORDED LOG;
+  a pending call is not proof of process execution or approval.
+  RUNNING refers to the reported open agent turn. Quiet, offline and unsupported-live
+  sources display QUIET, OFFLINE or LAST KNOWN STATE without streaming motion.
+  Missing activity shows “Awaiting agent completion checkpoint…”; new turns clear
+  old activity captions and exclude earlier-turn events.
+  Live terminals have a soft CRT scanline, purple status pulse, blinking underscore,
+  and a short fade for new source events. Unchanged terminal nodes retain their
+  animation phase through live card replacements; routine timer updates do not replay text.
+  Working-to-Needs you/Ready transitions fade into Outcome/Next even for the same chat ID.
+  Working/missing-outcome cards show a subtle indeterminate checkpoint line along
+  the bottom edge. Offline, quiet, unsupported-live and reduced-motion views keep it static.
+  Category transitions update all of these roles even when the selected chat key stays the same.
+- Known context shows used/window and percentage, exactly ten rounded 14px segments
+  separated by the 4px spacing token, with prominent amber 75% and red 90% ticks and labels.
+  Context colors use green below 75%, amber from 75%, red from 90%.
+  Unknown windows show the reported usage plus ten muted hatched standby segments;
+  standby is not a meter and never implies a known utilization.
+- Needs you, Working and Ready are collapsible groups with a rounded status icon,
+  uppercase title, circular count and trailing chevron. Ready displays the existing
+  New results group; underlying seen and attention semantics are preserved.
+  All three headers remain visible; empty groups start collapsed.
+- Each desktop row is a uniform 52px horizontal line with a 52px minimum and
+  `padding:0 var(--space-4)`: status dot (or Ready check), bold task title,
+  full agent-name pill, aligned repository, compact relative age and right chevron.
+  Long titles and repositories truncate within their columns. Review/dismiss is a
+  separate accessible action, revealed on hover/focus or a left swipe. Needs you
+  dismisses a reminder and Ready marks a result reviewed. Raw source status Working
+  prohibits review/dismiss entirely, even if a pending question puts it in Needs you.
+  Buttons are absent and the route-scoped Deck action handler rejects shortcuts,
+  swipes, direct calls and stale-button races. This is exclusively a Deck UI policy:
+  shared Inbox classifiers, backend state rules and Inbox dismiss handlers retain
+  their original behaviour. Legacy `cleared:` markers have no classifier semantics.
+  Other row metadata stays limited to agent, repo and age.
+- A row selects the hero; the hero opens the chat. Selection is visibly marked and
+  keyboard accessible, using an 8% status tint and an amber ring instead of a double
+  dot/left-rail collision. Row markers and 32px section icons share the same center axis.
+  Every section has 24px top separation in both collapsed and open states;
+  rows start 8px below their heading. Collapse state and focused controls survive
+  live refreshes. Below 1024px the entire Deck is strictly one column in portrait and
+  landscape, the secondary matrix is hidden, the hero's telemetry stacks below its
+  identity/handoff, and row metadata moves below its title. Compact headers combine
+  fleet and telemetry. Narrow rows keep the same 52px minimum and 16px horizontal
+  padding, using a uniform 80px two-line layout with 12px gaps. Desktop metadata and
+  its children share a centered flex axis. Page scrolling stays native; there is no short-landscape split.
+- Swiping a hero horizontally or using Previous/Next, J/K or Left/Right cycles its
+  current status queue (Needs you by default). A right row swipe focuses that card;
+  a left row swipe reveals Dismiss/Mark reviewed, and a full swipe applies it. Visible
+  buttons supply keyboard and pointer equivalents. Dismiss uses the existing reminder
+  attention key. Completed-card review uses the browser-local `your-turn.deck.reviewed`
+  overlay so its Undo never regresses shared seen state or overwrites Inbox reminder
+  state. Deck tabs sync that overlay through storage events. Legacy `reviewed:` values
+  are interpreted only by Deck and never by shared Inbox classification; existing
+  shared markers are preserved. Opening a chat still uses normal shared seen state.
+  These Deck actions move the chat to Earlier within Deck,
+  provide Undo and never complete a request in its agent. New requests reappear.
+- The selected hero fades/slides 4px using cubic-bezier(.22,1,.36,1); carousel swipes
+  project recent horizontal velocity to recognize quick flicks and adjust settling motion.
+  Vertical intent and cancelled gestures never act. Known CTX
+  context fills retain their slower 140ms segment stagger and 350ms fade.
+  Each colored cell appears as a whole at its final width rather than wiping across
+  the cell. Unchanged cells retain their reveal animation through live card updates.
+  Working indicators and Live breathe subtly.
+  Reduced motion removes these effects, and routine updates do not replay selection motion.
+- Needs you keeps longest-wait-first order. Working and Ready preserve stable deck
+  ordering. Earlier remains available through the footer's counted inbox link.
+- When all three active groups are empty, a matching collapsible Earlier section
+  replaces the bare calm message and shows recent history already supplied by the
+  server's configured local-log history window. It starts expanded, shows ten rows,
+  and loads ten more at a time. Three empty active headers remain folded above it.
+  History rows link directly to their chat with Deck return context and have no
+  dismiss/review/swipe actions. Collapse and expansion survive live updates; active
+  work returning replaces the fallback with the normal active queue.
+- When the entire recent inbox is empty, hide the grouped list and show Fleet Standby:
+  a soft green pulse glyph, “FLEET STANDBY · ALL SYSTEMS CLEAR”, and the monospace
+  subtext “No blocking tasks. All parallel agent streams are synchronized.”
+  The connected feed owns that copy; disconnected state instead says it is waiting
+  for connection and uses a neutral static glyph. Reduced motion removes the pulse.
+- There is no Open chat label or Files block in the hero. App navigation and Live
+  remain outside the deck content. Pointer, touch and keyboard share this flow.
+
 ## Wide detail pane
 
 - At 1280px and above, an ordinary row click opens a bookmarkable `/?open=<id>` detail pane;

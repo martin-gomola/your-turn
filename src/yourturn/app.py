@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from collections.abc import AsyncIterator, Callable
 from importlib.resources import files
 from pathlib import Path
@@ -24,10 +25,10 @@ LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
 POLL_SECONDS = 1.0
 HEARTBEAT_SECONDS = 15.0
 PAGE_POLICY = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; manifest-src 'self'; "
+    "frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 )
-ASSET_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".ico": "image/x-icon"}
+ASSET_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json"}
 
 
 def _static(name: str) -> str:
@@ -38,9 +39,12 @@ def create_app(
     codex_home: Path, poll_seconds: float = POLL_SECONDS, should_stop: Callable[[], bool] = lambda: False,
     history_days: int = DEFAULT_HISTORY_DAYS, claude_home: Path | None = None,
     cursor_home: Path | None = None, cursor_user_dir: Path | None = None, state_path: Path | None = None,
+    phone_token: str | None = None, lan_hosts: tuple[str, ...] = (),
 ) -> FastAPI:
+    """`phone_token` with `lan_hosts`: also answer on those LAN addresses, but only to a client that shows the token."""
     app = FastAPI(title="Your Turn", docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=LOOPBACK_HOSTS)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*LOOPBACK_HOSTS, *lan_hosts])
+    origins = {"127.0.0.1", "localhost", "::1", *lan_hosts}
     hub = SessionHub.for_codex_home(codex_home, claude_home=claude_home, cursor_home=cursor_home, cursor_user_dir=cursor_user_dir)
     state = InboxState(state_path) if state_path else InboxState()
 
@@ -52,6 +56,23 @@ def create_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    if phone_token:
+        @app.middleware("http")
+        async def phone_gate(request: Request, call_next: Any) -> Response:
+            """Loopback and `/assets/` pass; a LAN client needs the token from the QR (`?t=`) once, then its cookie.
+
+            `/assets/` holds only shipped files, and Chrome's installer fetches the manifest icons without the cookie.
+            """
+            if request.client and request.client.host in ("127.0.0.1", "::1") or request.url.path.startswith("/assets/"):
+                return await call_next(request)
+            offered = request.query_params.get("t")
+            if not secrets.compare_digest(offered or request.cookies.get("yt", ""), phone_token):
+                return Response("Scan the QR code that `your-turn serve --phone` prints.", status_code=403)
+            response: Response = await call_next(request)
+            if offered:
+                response.set_cookie("yt", phone_token, max_age=400 * 86400, httponly=True, samesite="lax")
+            return response
 
     served = {Harness(adapter.name) for adapter in hub.adapters}
 
@@ -71,9 +92,14 @@ def create_app(
             raise HTTPException(status_code=400, detail="thread must be a session key or Codex thread id")
         return key
 
+    @app.get("/deck", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         return _static("index.html").replace("{{APP_VERSION}}", __version__).replace("{{HISTORY_DAYS}}", str(history_days))
+
+    @app.get("/fullscreen", response_class=HTMLResponse)
+    def fullscreen() -> str:
+        return _static("fullscreen.html")
 
     @app.get("/assets/{name}")
     def asset(name: str) -> Response:
@@ -99,7 +125,7 @@ def create_app(
         # JSON from this page only: a cross-site form cannot send JSON, and a cross-site fetch carries its Origin.
         origin = request.headers.get("origin")
         if not request.headers.get("content-type", "").startswith("application/json") or (
-                origin and urlsplit(origin).hostname not in {"127.0.0.1", "localhost", "::1"}):
+                origin and urlsplit(origin).hostname not in origins):
             raise HTTPException(status_code=403)
         try:
             body = await request.json()

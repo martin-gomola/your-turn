@@ -5,7 +5,11 @@ description = "An inbox for your coding agents. See which chat is waiting on you
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["fastapi>=0.110", "uvicorn>=0.29"]
+dependencies = [
+    "fastapi>=0.110",
+    "segno>=1.6.6",
+    "uvicorn>=0.29",
+]
 
 [project.urls]
 Homepage = "https://github.com/martin-gomola/your-turn"

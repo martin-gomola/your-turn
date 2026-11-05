@@ -57,6 +57,9 @@ ASK_TOOL = "AskUserQuestion"
 WANTED = (b'"user"', b'"assistant"', b'"summary"', b'"custom-title"', b'"queued_command"')
 NOTIFICATION = "task-notification"  # `origin.kind` of the record Claude Code adds when a background task ends.
 SYNTHETIC = "<synthetic>"  # The `model` of a message Claude Code writes itself: an API error, or a note.
+# Transcripts record no context window. Opus 5 runs with 1M; other models get 200K until a prompt outgrows it.
+STANDARD_WINDOW, LONG_WINDOW = 200_000, 1_000_000
+LONG_CONTEXT_MODEL = re.compile(r"claude-opus-5\b")
 HEAD_LINES = 50
 ORIGIN_TAIL_BYTES = 256  # The last bytes read for a transcript's origin, checked before reading only what was appended.
 INTERRUPTED = "[Request interrupted by user"
@@ -135,6 +138,7 @@ class ClaudeCursor(CodexCursor):
         self._said: set[str] = set()
         # ponytail: totals restart at the read start, so a tail read under-counts; a full read is exact.
         self._totals = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        self._window = STANDARD_WINDOW
 
     def reset(self) -> None:
         super().reset()
@@ -396,6 +400,8 @@ class ClaudeCursor(CodexCursor):
         for key, value in last.items():
             self._totals[key] += value
         totals = dict(self._totals)
+        if prompt > STANDARD_WINDOW or LONG_CONTEXT_MODEL.search(str(message.get("model") or "")):
+            self._window = LONG_WINDOW
         return [
             Usage(
                 ts=ts,
@@ -405,6 +411,7 @@ class ClaudeCursor(CodexCursor):
                 total_tokens=totals["total_tokens"],
                 total=totals,
                 last=last,
+                window=self._window,
             )
         ]
 

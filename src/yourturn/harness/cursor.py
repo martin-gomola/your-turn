@@ -8,7 +8,8 @@ commands have no exit code and every event is stamped with its turn's prompt tim
 Title, workspace folder, archived and sub-agent flags, and whether the composer is blocked on an
 approval (`hasBlockingPendingActions`) come from the `composerHeaders` table of
 Cursor's `globalStorage/state.vscdb`, opened with `mode=ro` (never written, WAL included).
-When that database is readable, transcripts it does not index (deleted or cleaned-up chats) are
+The context gauge (tokens used and the limit) comes from each chat's `composerData:<id>` row in the
+same database's `cursorDiskKV` table. When that database is readable, transcripts it does not index (deleted or cleaned-up chats) are
 skipped, as are empty transcripts. Cursor may not write the transcript while a turn runs, so its
 silence is not read as a quiet or abandoned chat: an open turn stays open until `turn_ended`.
 
@@ -47,6 +48,7 @@ from yourturn.harness.base import (
     ToolCall,
     TurnEnded,
     TurnStarted,
+    Usage,
     UserMessage,
 )
 from yourturn.harness.codex import ASK_USER_TOOL, DECISION_TOOL, SUBAGENT_TOOL, TURN_COMPLETED, CodexCursor, _command
@@ -123,6 +125,12 @@ def _recent(moment: datetime | None, seconds: float) -> bool:
     return moment is not None and time.time() - moment.timestamp() < seconds
 
 
+def _context_usage(header: dict[str, Any]) -> Usage:
+    """Cursor's context gauge as usage: no token totals, only the context used and the window."""
+    used, limit = header["context"]
+    return Usage(ts=header.get("updated"), total={}, last={"total_tokens": used}, window=limit)
+
+
 def _edited_paths(name: str, arguments: object) -> tuple[str, ...]:
     if name == "ApplyPatch":
         return tuple(PATCH_FILE.findall(arguments if isinstance(arguments, str) else ""))
@@ -160,6 +168,7 @@ class CursorCursor(CodexCursor):
         self._ts: datetime | None = None
         self._asked: list[str] = []
         self._approval = False
+        self._context: tuple[int, int] | None = None
         # Whether the last turn read is still open; None after a seek, when its start was not read.
         self._open: bool | None = False
         # A run shown from the header alone, and whether it was seen ending.
@@ -222,6 +231,10 @@ class CursorCursor(CodexCursor):
         if pending != self._approval:
             self._approval = pending
             events.append(ApprovalPending(ts=header.get("updated"), pending=pending, text=APPROVAL_TEXT))
+        context = header.get("context")
+        if context is not None and context != self._context:
+            self._context = context
+            events.append(_context_usage(header))
         running: datetime | None = header.get("running")
         if self._run is not None and not self._run[1] and running != self._run[0]:
             self._run = (self._run[0], True)
@@ -324,7 +337,7 @@ class HeaderCursor(EventCursor):
         header = self._header()
         updated: datetime | None = header.get("updated")
         running: datetime | None = header.get("running")
-        state = (updated, bool(header.get("pending")), header.get("subtitle"), header.get("title"), header.get("branch"), running)
+        state = (updated, bool(header.get("pending")), header.get("subtitle"), header.get("title"), header.get("branch"), running, header.get("context"))
         if state == self._state:
             return []
         if self._state is not None:
@@ -356,6 +369,8 @@ class HeaderCursor(EventCursor):
                 events.append(TurnEnded(ts=self._run[1], reason=END_NOT_RECORDED))
         if state[1]:
             events.append(ApprovalPending(ts=updated, pending=True, text=APPROVAL_TEXT))
+        if header.get("context") is not None:
+            events.append(_context_usage(header))
         return events
 
 
@@ -368,6 +383,23 @@ def _branch(data: dict[str, Any]) -> str | None:
     ]
     latest = max(branches, key=lambda branch: branch.get("lastInteractionAt") or 0, default=None)
     return clip(latest["branchName"], 160) if latest else None
+
+
+def _read_contexts(connection: sqlite3.Connection) -> dict[str, tuple[int, int]]:
+    """composerId -> (context tokens used, context token limit) from each chat's `composerData` ({} if absent)."""
+    try:
+        rows = connection.execute(
+            "SELECT substr(key, 14), json_extract(data, '$.contextTokensUsed'), json_extract(data, '$.contextTokenLimit') "
+            "FROM (SELECT key, CAST(value AS TEXT) AS data FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;') "
+            "WHERE json_valid(data)"
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    return {
+        str(composer_id): (used, limit)
+        for composer_id, used, limit in rows
+        if type(used) is int and type(limit) is int and used >= 0 and limit > 0
+    }
 
 
 class CursorAdapter(HarnessAdapter):
@@ -397,6 +429,7 @@ class CursorAdapter(HarnessAdapter):
             # Read-only URI: Cursor owns this database and its WAL; we never write or checkpoint it.
             with sqlite3.connect(f"file:{quote(str(database))}?mode=ro", uri=True, timeout=1.0) as connection:
                 rows = connection.execute("SELECT composerId, isArchived, isSubagent, value FROM composerHeaders").fetchall()
+                contexts = _read_contexts(connection)
         except sqlite3.Error:
             return {}
         for composer_id, archived, subagent, value in rows:
@@ -419,6 +452,7 @@ class CursorAdapter(HarnessAdapter):
                 "branch": _branch(data) if isinstance(data, dict) else None,
                 "archived": bool(archived),
                 "subagent": bool(subagent),
+                "context": contexts.get(str(composer_id)),
             }
         return headers
 
@@ -470,7 +504,7 @@ class CursorAdapter(HarnessAdapter):
         Time alone changes nothing here except a day-old approval expiring, which the header read already reflects.
         """
         header = self._headers.get(ref.session_id, {})
-        return f"{header.get('updated')}:{header.get('pending', False)}:{header.get('running')}"
+        return f"{header.get('updated')}:{header.get('pending', False)}:{header.get('running')}:{header.get('context')}"
 
     def mtime_ns(self, ref: SessionRef) -> int | None:
         """Last activity: the transcript's mtime, or Cursor's `lastUpdatedAt` for a header-only chat."""

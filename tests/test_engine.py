@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from yourturn.app import create_app
 from yourturn.engine import SessionHub, TurnFolder
-from yourturn.harness.base import END_NOT_RECORDED, AgentMessage, CommandRun, FilesEdited, TurnEnded, TurnStarted
+from yourturn.harness.base import END_NOT_RECORDED, AgentMessage, CommandRun, FilesEdited, TurnEnded, TurnStarted, Usage
 from yourturn.harness.codex import DECISION_TOOL, CodexAdapter, record_to_events
 from yourturn.heuristics import QUIET_SECONDS
 from yourturn.model import SessionKey, SessionRef
@@ -22,6 +22,21 @@ from yourturn.model import SessionKey, SessionRef
 SID = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b"
 SID_B = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5c"
 UNKNOWN = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5d"
+
+
+def test_telemetry_counts_deltas_without_recounting_cumulative_history():
+    from datetime import datetime, timezone
+
+    folder = TurnFolder(SessionRef(harness="codex", session_id=SID))
+    at = datetime(2026, 11, 4, 12, 0, 10, tzinfo=timezone.utc)
+    folder.fold(Usage(ts=at, total={"total_tokens": 10000}, last={"total_tokens": 100}))
+    folder.fold(Usage(ts=at, total={"total_tokens": 10250}, last={"total_tokens": 250}))
+    folder.fold(Usage(ts=at, total={"total_tokens": 10250}))
+    folder.fold(Usage(ts=at, total={"total_tokens": 50}, last={"total_tokens": 50}))
+    assert folder.inbox_fields()["usage_minutes"] == [["2026-11-04T12:00:00Z", 400]]
+    folder.fold(AgentMessage(ts=at, text="Done"))
+    folder.fold(AgentMessage(ts=at, text="More"))
+    assert folder.inbox_fields()["message_minutes"] == ["2026-11-04T12:00:00Z"]
 
 
 def _ts(second: int) -> str:
@@ -577,6 +592,7 @@ INBOX_KEYS = {
     "id", "cwd", "status", "updated_at", "turn_ended_at", "working_since", "outcome", "next_kind", "next_text", "next_basis",
     "question", "options", "attention_key", "check_state", "pending_tool", "approval_policy", "needs_you", "quiet",
     "project", "title", "content_available", "summary", "capabilities", "recap", "decisions", "changed_files",
+    "context_used", "context_window", "git_branch", "rate_limits", "rate_limits_at", "usage_minutes", "message_minutes",
 }
 DETAIL_KEYS = {
     "id", "title", "cwd", "project", "parent_id", "subagent", "started_at", "updated_at", "status",
@@ -659,7 +675,7 @@ def test_inbox_dict_keys_and_values(tmp_path: Path) -> None:
 
     assert [row["id"] for row in rows] == [SID, SID_B], "newest file first; out-of-window chats are skipped"
     for row in rows:
-        activity_keys = {"activity_summary"} if row["status"] == "working" else set()
+        activity_keys = {"activity_summary", "activity_log"} if row["status"] == "working" else set()
         assert set(row) == INBOX_KEYS | EXTRA_KEYS | activity_keys
         assert (row["harness"], row["key"]) == ("codex", f"codex:{row['id']}")
         assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", row["updated_at"])
@@ -670,7 +686,27 @@ def test_inbox_dict_keys_and_values(tmp_path: Path) -> None:
     assert (rich["question"], rich["options"]) == ("Ship now?", ["Yes", "No"])
     assert (rich["turn_ended_at"], rich["next_kind"], rich["outcome"], rich["attention_key"]) == (_ts(15), "unknown", "", "")
     assert rich["quiet"] is False
+    assert (rich["context_used"], rich["context_window"], rich["git_branch"]) == (60, 1000, "main")
     assert (quiet["status"], quiet["quiet"], quiet["title"]) == ("working", True, "")
+
+
+def test_working_activity_stream_is_current_turn_only_and_preserves_recorded_commands(tmp_path: Path) -> None:
+    records = [_meta(SID), _event(1,{"type":"task_started","turn_id":"t1"}),
+               _item(2,{"type":"CommandExecution","command":"old-command","exit_code":0}),
+               _event(3,{"type":"task_complete","turn_id":"t1"}),
+               _event(4,{"type":"task_started","turn_id":"t2"})]
+    path = _write(tmp_path,SID,records)
+    hub = SessionHub.for_codex_home(tmp_path,scan_ttl=0)
+    row = hub.inbox_dicts()[0]
+    assert row["activity_summary"] == ""
+    assert row["activity_log"] == []
+    commands = ["git diff --check", "sed -n 1,20p src/app.py", "pytest tests/ -k test_deck", "node --test tests/triage.test.mjs"]
+    with path.open("a") as output:
+        for index,command in enumerate(commands,5):
+            output.write(json.dumps(_item(index,{"type":"CommandExecution","command":command,"exit_code":0}))+"\n")
+    log = hub.inbox_dicts()[0]["activity_log"]
+    assert [event["title"] for event in log] == commands[-3:]
+    assert all(event["kind"] == "command" and event["at"] for event in log)
 
 
 def test_detail_dict_keys_and_values(tmp_path: Path) -> None:
