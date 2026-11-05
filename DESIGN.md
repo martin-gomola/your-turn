@@ -128,6 +128,52 @@ calls in older transcripts still read as decisions.
 
 ## Deck
 
+### Telemetry HUD revision (2026-11-05)
+
+The current HUD supersedes the older Deck composition below: a flat navigation row
+holds the title and persistent icon-only Single-Gauge / Multi-Telemetry selector.
+Fleet status sits beneath it. The selected title has a horizontal recorded-evidence
+strip (check state, changed file count, completed decision count). Activity receives
+four fifths of the desktop hero width; gauges use the remaining fifth. Recorded
+decisions and turn history use a collapsed disclosure. Surfaces have crisp 1px
+borders without bevels or terminal scanlines. Existing source and freshness labels
+remain authoritative; recorded activity never implies access to private reasoning.
+At phone widths, maintain 16px gutters, three equal status columns, collapsed queues,
+and fixed bottom actions with 44px targets and reserved document space. All spacing
+continues to consume the scoped Deck tokens.
+From 1200px in Multi-Telemetry, the hero takes about 70% of the stage and a
+single-column queue dock the rest. The dock lists every other queued chat (Needs you,
+Working, Ready; only the focused status under a fleet filter) as mini-cards with a 3px
+status strip. Docked, the page is a three-zone grid that fits the window with no page
+scroll (below 640px tall it falls back to scrolling): the telemetry strip on top, the
+active card at about 70% and a permanent single-column queue at about 30%. Nothing
+collapses there: the queue is the dock, so the status lists below are not rendered, and
+the card shows its latest three decisions inline (`+N earlier in the chat`) instead of a
+history drawer. A Working card's recorded log grows to fill the card and scrolls inside
+its own box, so streaming never moves the page. Phone widths keep their tap-to-open queues.
+Cards, the dock and the fleet strip use F1 HUD frames: top-right and bottom-left corners
+chamfered 8px, drawn as a 1px `rgb(255 255 255 / .15)` even-odd ring on `::before`
+(a clip-path also cuts a CSS border), toned with the status color when selected. Under
+600px the card drops its clip-path so the fixed action bar is not clipped. The active
+module carries 1px L-bracket reticles outside its two square corners. Metric values
+(timers, percents, counts, telemetry) use the monospace face.
+Free space holds recorded telemetry, never decoration. One bar instrument draws every trace,
+neutral by default: LAPS (each turn's time, purple for the best, the live lap a flowing purple
+stripe), CTX / LAP (context at each turn's end, amber/red past 75%/90%, with the average growth
+per lap) and, off the Working card, the chat's TOKENS · 60M. Other cards stack the traces under
+the handoff; a Working card splits 3:2 so the log keeps ~60% and the traces, a taller pulse and
+the lap readout sit beside it. The context barometer is a full-width strip along the card's bottom
+edge (used | gauge | left; on phones the gauge drops under the readings).
+Motion marks only what is live (the current lap, a sweep across a live chart); reduced
+motion and an offline connection stop it. The Working log shows up to 12 recorded steps.
+The readout column also carries a SETUP line (model, reasoning effort, cached share of the
+session's input) and TOOLS (built-in and MCP): up to six tools ranked by calls, server muted;
+a tool called in the last minute of a live run turns purple and flows.
+The hero follows urgency, Needs you first, until the user picks a chat; a picked chat
+that is not Needs you offers an amber "N waiting →" jump. Color marks only a signal:
+telemetry and context bars stay neutral until a wait exists or a 75%/90% threshold is
+crossed. The carousel hides when there is one chat to show.
+
 The supplied selected-card and compact-list reference is the Deck layout authority.
 Deck is a dark read-only monitoring surface at `/deck` (also `/?view=deck`), centered
 at a maximum width of 1440px, with 32px desktop gutters and available width on
@@ -146,7 +192,8 @@ Inbox/chat scale in `tokens.css`.
   at least one cell for each nonempty status so rare Working sessions remain visible.
   Fleet count buttons toggle a status focus, expand its group, select its first card,
   and switch the magazine to that status, lighting exactly its count up to six cells
-  and leaving unused cells dark gray. All/Fleet mode retains proportional category shares.
+  and leaving unused cells dark gray. All/Fleet mode lights one cell per chat up to six
+  chats, then switches to proportional category shares.
   Startup and filter changes run the CSS `revUp` keyframe with 350ms illumination
   and `calc(var(--index) * 45ms)` delays, plus a subtle core glow. Routine updates
   do not restart the sweep. Reduced motion
@@ -177,6 +224,13 @@ Inbox/chat scale in `tokens.css`.
   focus there. Matrix scroll and focus survive live updates. An empty matrix yields
   its space to the hero. A saved toggle offers Bento Cockpit or 1-Card Focus.
   Smaller views show one carousel card. No extra selected-chat label is needed.
+  A lap readout treats each turn as an F1 lap: `LAP n`, its time (omitted while running,
+  the big timer already shows it) and the delta against this chat's average finished turn
+  (amber slower, green faster). Three sector cells split the turn's
+  time between steps into THINK (reasoning, messages), RUN (commands, tools, sub-agents)
+  and EDIT; waits on the user are excluded. A finished lap colors each sector's bottom bar
+  purple for this chat's best, green at or under its average, amber above; a running lap
+  stays neutral. Sources without per-step times (Cursor) show no lap readout.
   The footer's open action goes to the agent: "Open in Codex" opens that thread,
   "Open in Cursor" opens its project; Claude chats keep "Open chat" to the thread view,
   which offers the resume command. The hero body still opens the thread view.
@@ -222,10 +276,12 @@ Inbox/chat scale in `tokens.css`.
   Working/missing-outcome cards show a subtle indeterminate checkpoint line along
   the bottom edge. Offline, quiet, unsupported-live and reduced-motion views keep it static.
   Category transitions update all of these roles even when the selected chat key stays the same.
-- Known context shows used/window and percentage, exactly ten rounded 14px segments
-  separated by the 4px spacing token, with prominent amber 75% and red 90% ticks and labels.
-  Context colors use green below 75%, amber from 75%, red from 90%.
-  Unknown windows show the reported usage plus ten muted hatched standby segments;
+- Known context is a bullet-graph barometer: percentage and used/window on the left, twenty
+  5% segments (4px spacing token) in the middle, and `NK LEFT` plus `≈N TURNS` (context left
+  over the average growth per finished turn, red at 3 or fewer) on the right. 75% and 90% land
+  on segment edges, so the 75-90% and 90-100% track zones are tinted amber and red instead of
+  ticks, and only the part of the neutral bar inside a zone takes that color.
+  Unknown windows show the reported usage plus muted hatched standby segments;
   standby is not a meter and never implies a known utilization.
 - Needs you, Working and Ready are collapsible groups with a rounded status icon,
   uppercase title, circular count and trailing chevron. Ready displays the existing
@@ -297,8 +353,17 @@ Inbox/chat scale in `tokens.css`.
   role-colored dot), then monospaced tabular counters (files, decisions), then the metadata;
   it wraps rather than scrolls on narrow widths. The status card leads with a 28px title and a
   1px status-colored frame; the chat's main action is filled white with dark text. Section
-  titles become uppercase labels and history stays in the existing folded disclosure rows.
-  Spacing uses only the shared 4px-step tokens; the plain chat page and Deck are unchanged.
+  titles become uppercase labels. Cards, lists and the status card wear the Deck's F1 bezel
+  (8px top-right and bottom-left chamfers drawn as a 1px `rgb(255 255 255 / .15)` ring; the
+  status card's ring takes its status tone). Chips, metadata, decision meta, labels and
+  timestamps use the monospace face; the open and copy actions are at least 44px tall with
+  1px strokes and token padding. From 1200px the chat is a no-scroll HUD that fits the window
+  under the back bar: status, what happened and checks | decisions | more (compact live facts
+  first: session details, tools, activity, then session files and earlier turns; the nodes move,
+  so focus order matches), each column scrolling inside itself under a
+  sticky label. Nothing folds there: every disclosure opens and its summary is a label.
+  Phones keep the folded rows. Spacing uses only the shared 4px-step tokens; the plain chat
+  page is unchanged.
 
 ## Wide detail pane
 

@@ -85,7 +85,8 @@ test('legacy working clear markers never hide a running session', () => {
 
 test('six-cell magazine apportions fleet counts and handles focused and empty states', () => {
   assert.deepEqual(Array.from(context.deckMagazine({ waiting: 7, working: 1, new: 4 })), ['waiting', 'waiting', 'waiting', 'working', 'new', 'new']);
-  assert.deepEqual(Array.from(context.deckMagazine({ waiting: 1, working: 1, new: 1 })), ['waiting', 'waiting', 'working', 'working', 'new', 'new']);
+  assert.deepEqual(Array.from(context.deckMagazine({ waiting: 1, working: 1, new: 1 })), ['waiting', 'working', 'new', '', '', '']);
+  assert.deepEqual(Array.from(context.deckMagazine({ waiting: 2, working: 0, new: 1 })), ['waiting', 'waiting', 'new', '', '', '']);
   assert.deepEqual(Array.from(context.deckMagazine({ waiting: 7, working: 1, new: 4 }, 'working')), ['working', '', '', '', '', '']);
   assert.deepEqual(Array.from(context.deckMagazine({ waiting: 7, working: 1, new: 3 }, 'new')), ['new', 'new', 'new', '', '', '']);
   assert.deepEqual(Array.from(context.deckMagazine({ waiting: 7, working: 1, new: 4 }, 'waiting')), Array(6).fill('waiting'));
@@ -223,4 +224,11 @@ test('working captions use recorded live activity and never imply live Cursor ac
   const chat = { status: 'working', activity_summary: 'make test', outcome: 'Previous result', capabilities: { live_activity: true } };
   assert.equal(helpers.summary(chat), 'make test');
   assert.equal(helpers.summary({ ...chat, capabilities: { live_activity: false } }), 'Previous result');
+});
+
+test('deck telemetry spends color only on a signal: neutral by default, amber for a wait, thresholds for context', () => {
+  const now = Date.parse('2026-11-04T12:00:00Z');
+  const tones = (waits, used) => Array.from(context.deckTelemetry([{ harness: 'codex', context_used: used, context_window: 1000 }], [], waits, now), (m) => m.tone);
+  assert.deepEqual(tones([], 100), ['', '', '', '', '', '']);
+  assert.deepEqual(tones(['2026-11-04T11:00:00Z'], 800), ['', '', '', 'amber', 'amber', '']);
 });

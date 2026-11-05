@@ -166,18 +166,18 @@ SOFTWARE.
   <div id="deck-view" hidden>
     <h1 class="sr-only">Deck</h1>
     <section class="deck-cockpit" aria-label="Fleet telemetry">
-      <div class="deck-fleet" id="deck-fleet"></div>
       <div class="deck-brand-row">
-        <div class="deck-brand"><strong>Your Turn</strong><span>SHIFT-LIGHT FLEET</span></div>
+        <div class="deck-brand"><strong>Deck</strong></div>
         <div class="deck-slots" id="deck-slots">
           <button class="deck-telemetry" type="button" data-slot="1"></button>
           <button class="deck-telemetry" type="button" data-slot="2"></button>
         </div>
         <div class="deck-layout" id="deck-layout" role="group" aria-label="Deck layout">
-          <button type="button" data-layout="focus" aria-pressed="false">1-Card Focus</button>
-          <button type="button" data-layout="multi" aria-pressed="true">Bento Cockpit</button>
+          <button type="button" data-layout="focus" aria-label="Single-Gauge" title="Single-Gauge" aria-pressed="false"><svg aria-hidden="true"><use href="#i-focus"/></svg></button>
+          <button type="button" data-layout="multi" aria-label="Multi-Telemetry" title="Multi-Telemetry" aria-pressed="true"><svg aria-hidden="true"><use href="#i-grid"/></svg></button>
         </div>
       </div>
+      <div class="deck-fleet" id="deck-fleet"></div>
     </section>
     <div class="deck-stage" id="deck-stage" hidden>
     <section class="deck-feature" id="deck-feature" aria-label="Selected chat" hidden></section>
@@ -289,7 +289,7 @@ SOFTWARE.
           <ol class="timeline" id="timeline"></ol>
         </details>
         <details class="list-row disclosure-row" id="tools-wrap">
-          <summary id="tools-summary">MCP tools</summary>
+          <summary id="tools-summary">Tools</summary>
           <ul class="usage-list" id="mcp-tools"></ul>
         </details>
         <details class="list-row disclosure-row" id="hero-meta">

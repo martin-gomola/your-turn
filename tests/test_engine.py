@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from yourturn.app import create_app
-from yourturn.engine import SessionHub, TurnFolder
+from yourturn.engine import MAX_LOG, SessionHub, TurnFolder
 from yourturn.harness.base import END_NOT_RECORDED, AgentMessage, CommandRun, FilesEdited, TurnEnded, TurnStarted, Usage
 from yourturn.harness.codex import DECISION_TOOL, CodexAdapter, record_to_events
 from yourturn.heuristics import QUIET_SECONDS
@@ -119,6 +119,32 @@ def test_folder_completed_turn() -> None:
     assert {"user", "command", "edit"} <= set(kinds)
     # The turn's last agent message is promoted to its final answer.
     assert "answer" in kinds and "message" not in kinds
+
+
+def test_turn_sectors_split_agent_time_and_skip_waits_on_the_user() -> None:
+    from datetime import datetime, timezone
+
+    from yourturn.harness.base import ApprovalPending
+
+    folder = TurnFolder(_ref())
+    records = [_meta(SID), *_turn()]
+    records.insert(-3, _item(5, {"type": "Reasoning", "summary_text": []}))
+    folder.fold_many(_events(records))
+    # Prompt at 2, command at 3, edit at 4, silent reasoning at 5, answer at 5.
+    assert folder.turns[-1].sectors == {"run": 1.0, "edit": 1.0, "think": 1.0}
+    assert folder.turns[-1].context_end == folder.context_used
+
+    at = lambda second: datetime(2026, 10, 31, 10, 1, second, tzinfo=timezone.utc)  # noqa: E731
+    folder.fold(TurnStarted(ts=at(0), turn_id="t2"))
+    folder.fold(ApprovalPending(ts=at(2), pending=True, text="Run tests?"))
+    folder.fold(ApprovalPending(ts=at(40), pending=False))
+    folder.fold(CommandRun(ts=at(45), command="uv run pytest", exit_code=0))
+    assert folder.turns[-1].sectors == {}
+
+    laps = folder.inbox_fields()["laps"]
+    assert [lap["turn"] for lap in laps] == [1, 2]
+    assert laps[0]["sectors"] == {"run": 1, "edit": 1, "think": 1} and laps[0]["status"] == "done"
+    assert laps[1]["ended_at"] == ""
 
 
 def test_folder_aborted_turn_is_interrupted() -> None:
@@ -593,6 +619,7 @@ INBOX_KEYS = {
     "question", "options", "attention_key", "check_state", "pending_tool", "approval_policy", "needs_you", "quiet",
     "project", "title", "content_available", "summary", "capabilities", "recap", "decisions", "changed_files",
     "context_used", "context_window", "git_branch", "rate_limits", "rate_limits_at", "usage_minutes", "message_minutes",
+    "laps", "tool_calls", "model", "reasoning_effort", "cache_hit",
 }
 DETAIL_KEYS = {
     "id", "title", "cwd", "project", "parent_id", "subagent", "started_at", "updated_at", "status",
@@ -603,7 +630,7 @@ DETAIL_KEYS = {
 }
 TURN_KEYS = {
     "index", "started_at", "ended_at", "status", "prompt", "outcome", "recap", "next_kind", "next_text",
-    "formatted", "files", "checks", "edited_after_check",
+    "formatted", "files", "checks", "edited_after_check", "sectors", "context_end",
 }
 CHECK_KEYS = {"command", "exit_code", "at"}
 STEP_KEYS = {"at", "kind", "title", "detail", "status", "turn"}
@@ -705,7 +732,7 @@ def test_working_activity_stream_is_current_turn_only_and_preserves_recorded_com
         for index,command in enumerate(commands,5):
             output.write(json.dumps(_item(index,{"type":"CommandExecution","command":command,"exit_code":0}))+"\n")
     log = hub.inbox_dicts()[0]["activity_log"]
-    assert [event["title"] for event in log] == commands[-3:]
+    assert [event["title"] for event in log] == commands[-MAX_LOG:]
     assert all(event["kind"] == "command" and event["at"] for event in log)
 
 
@@ -801,3 +828,21 @@ def test_version_and_fingerprint_change_only_on_append(tmp_path: Path) -> None:
     assert hub.inbox_fingerprint() == settled
     final = hub.detail_dict(SID)
     assert final is not None and final["version"] == after["version"]
+
+
+def test_inbox_row_ranks_mcp_tool_calls_with_latest_call(tmp_path: Path) -> None:
+    call = lambda n, tool: _item(n, {"type": "McpToolCall", "server": "docs", "tool": tool, "status": "completed", "arguments": {}})
+    records = [_meta(SID), _event(1, {"type": "task_started", "turn_id": "t1"}),
+               call(2, "search"), call(3, "fetch"), call(4, "search")]
+    _write(tmp_path, SID, records)
+    tools = SessionHub.for_codex_home(tmp_path, scan_ttl=0).inbox_dicts()[0]["tool_calls"]
+    assert [(tool["count"], tool["name"].endswith("search")) for tool in tools] == [(2, True), (1, False)]
+    assert tools[0]["last_at"] == _ts(4)
+
+
+def test_cache_hit_is_cached_share_of_input_or_none() -> None:
+    folder = TurnFolder.__new__(TurnFolder)
+    folder.token_usage = {"input_tokens": 1000, "cached_input_tokens": 994}
+    assert folder._cache_hit() == 99
+    folder.token_usage = {"input_tokens": 1000}
+    assert folder._cache_hit() is None

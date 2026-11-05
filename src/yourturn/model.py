@@ -90,6 +90,10 @@ class Turn:
     checks: list[Check] = field(default_factory=list)
     # Set only by code edits after a check; a README touch-up does not make passed checks stale.
     edited_after_check: bool = False
+    # Seconds between recorded steps, by what the step was: "think", "run" or "edit".
+    sectors: dict[str, float] = field(default_factory=dict)
+    # Context tokens in use when the turn ended; 0 until then.
+    context_end: int = 0
 
 
 # --- Phase 2: harness-adapter view model ------------------------------------------------------

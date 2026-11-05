@@ -59,6 +59,16 @@ def normalize_text(text: str) -> str:
     return " ".join(MARKDOWN_EMPHASIS.sub("", MARKDOWN_LINK.sub(r"\1", text)).split())
 
 
+LEADING_TAGS = re.compile(r"^\s*(?:<[A-Za-z][\w-]*(?:\s[^<>]*)?>\s*)+")
+TRAILING_TAGS = re.compile(r"(?:\s*</[A-Za-z][\w-]*(?:\s[^<>]*)?>)+\s*$")
+LEADING_HEADING = re.compile(r"^#+\s*")
+
+
+def prompt_text(text: str) -> str:
+    """A prompt as the user reads it: wrapper tags around a paste and a leading Markdown heading mark go."""
+    return LEADING_HEADING.sub("", TRAILING_TAGS.sub("", LEADING_TAGS.sub("", text)))
+
+
 def clip(text: str, limit: int = MAX_TEXT) -> str:
     text = normalize_text(text)
     return text if len(text) <= limit else f"{text[: limit - 1]}…"
