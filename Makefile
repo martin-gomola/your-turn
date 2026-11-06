@@ -5,7 +5,7 @@ LOG_FILE := $(STATE_DIR)/server.log
 URL := http://localhost:$(PORT)
 MARKETPLACE := your-turn
 
-.PHONY: install doctor up down restart phone status logs test screenshots
+.PHONY: install doctor up down restart phone status logs test screenshots demo
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
@@ -75,3 +75,8 @@ test:
 screenshots:
 	@uv sync --quiet
 	@uvx --with playwright python scripts/readme_screenshots.py
+
+# Made-up chats in every Deck state for design QA at http://127.0.0.1:8790/deck (disposable homes and state).
+demo:
+	@uv sync --quiet
+	@uv run python scripts/deck_demo.py

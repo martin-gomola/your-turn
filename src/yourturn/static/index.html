@@ -158,16 +158,16 @@ SOFTWARE.
     <div class="away-digest" id="away-digest" hidden><a id="away-link" href="/?status=waiting"></a><button id="away-dismiss" type="button" aria-label="Dismiss away summary">×</button></div>
     <p class="empty card" id="search-empty" role="status" hidden></p>
     <p class="empty card" id="inbox-empty" hidden>No agent chats found. Start a chat in Codex, Claude Code or Cursor and it appears here.</p>
+    <p class="empty card" id="inbox-unreachable" role="status" hidden>Can't reach the local Your Turn server, so no chats are shown. Retrying on its own; if it stopped, start it again with <code>your-turn serve</code> (or <code>make up</code> in a clone).</p>
     <p class="empty card" id="filter-empty" role="status" hidden></p>
     <div class="sections" id="sections"></div>
     </div>
   </div>
 
   <div id="deck-view" hidden>
-    <h1 class="sr-only">Deck</h1>
     <section class="deck-cockpit" aria-label="Fleet telemetry">
       <div class="deck-brand-row">
-        <div class="deck-brand"><strong>Deck</strong></div>
+        <h1 class="deck-brand"><strong>Your Turn</strong><span><span aria-hidden="true">/ </span>DECK</span></h1>
         <div class="deck-slots" id="deck-slots">
           <button class="deck-telemetry" type="button" data-slot="1"></button>
           <button class="deck-telemetry" type="button" data-slot="2"></button>
@@ -184,6 +184,7 @@ SOFTWARE.
     <aside class="deck-matrix" id="deck-matrix" aria-labelledby="deck-matrix-title" hidden>
       <h2 id="deck-matrix-title"></h2>
       <ol class="deck-mini-grid" id="deck-mini-grid"></ol>
+      <section class="deck-usage" id="deck-usage" aria-label="Plan usage" hidden></section>
     </aside>
     <nav class="deck-carousel" id="deck-carousel" aria-label="Chat carousel" hidden>
       <button type="button" data-step="-1" aria-label="Previous chat (K or Left arrow)">‹</button>
@@ -316,6 +317,15 @@ SOFTWARE.
     <label><input type="radio" name="appearance" value="dark">Dark</label>
   </div></fieldset></form>
   <p id="appearance-note" class="settings-note" role="status">Follows your device until you choose a theme.</p>
+  <form id="deck-form" class="notification-setting"><fieldset><legend><span class="setting-title"><svg aria-hidden="true"><use href="#i-grid"/></svg>Deck <span class="beta-tag">Beta</span></span></legend>
+    <label class="setting-switch"><input type="checkbox" name="deck-enabled">Show Deck in the sidebar</label>
+    <p class="settings-note">A live telemetry view of every chat. Still in beta, so its layout may change.</p>
+    <p class="setting-subtitle" id="deck-theme-label">Deck theme</p>
+    <div class="appearance-choices" role="radiogroup" aria-labelledby="deck-theme-label">
+      <label><input type="radio" name="deck-theme" value="dark">Dark</label>
+      <label><input type="radio" name="deck-theme" value="warm">Warm</label>
+    </div>
+  </fieldset></form>
   <section class="notification-setting"><h3 class="setting-title"><svg aria-hidden="true"><use href="#i-bell"/></svg>Desktop notifications</h3><p id="notification-status"></p><button type="button" id="settings-notify" class="button">Enable notifications</button><p class="settings-note">Notifications work while a Your Turn tab is open. Your choice is saved only in this browser.</p></section>
   <section class="notification-setting" id="fullscreen-setting" hidden><h3 class="setting-title"><svg aria-hidden="true"><use href="#i-maximize"/></svg>Full screen</h3><p id="fullscreen-status"></p><button type="button" id="settings-fullscreen" class="button">Open full-screen mode</button><p class="settings-note">Hides the browser bar and keeps it hidden as you open chats, filters and Deck. If you leave full screen, tap once to return.</p></section>
 </section>

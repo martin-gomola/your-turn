@@ -679,3 +679,14 @@ def test_same_words_under_different_identities_stay_two_messages(tmp_path: Path)
     folder = _both(tmp_path, records)
     assert [step.detail for step in folder.steps if step.kind == "user"] == ["Refactor", PROMPT, PROMPT]
     assert [(turn.status, turn.prompt) for turn in folder.turns] == [("interrupted", "Refactor"), ("done", PROMPT)]
+
+
+def test_claude_rows_carry_the_captured_plan_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from yourturn import usage
+
+    _write(tmp_path, _turn())
+    assert "rate_limits_at" not in _hub(tmp_path).inbox_dicts()[0] or not _hub(tmp_path).inbox_dicts()[0]["rate_limits"]
+    window = {"used_percent": 7.0, "window_minutes": 300, "resets_at": ""}
+    monkeypatch.setattr(usage, "read", lambda path=None: ([window], "2026-11-06T08:00:00Z"))
+    (row,) = _hub(tmp_path).inbox_dicts()
+    assert (row["rate_limits"], row["rate_limits_at"]) == ([window], "2026-11-06T08:00:00Z")

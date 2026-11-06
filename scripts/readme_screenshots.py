@@ -395,11 +395,11 @@ def serve_demo(root: Path, port: int) -> None:
     """Run a disposable app with its own reminder state as well as its own agent homes."""
     import uvicorn
 
-    from yourturn.app import create_app
+    from yourturn.app import SHUTDOWN_SECONDS, create_app
 
     app = create_app(root / "codex", claude_home=root / "claude", cursor_home=root / "cursor",
                      cursor_user_dir=root / "cursor-user", state_path=root / "inbox-state.json")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=SHUTDOWN_SECONDS)
 
 
 @contextmanager

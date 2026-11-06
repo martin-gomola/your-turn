@@ -44,7 +44,7 @@ test('terminal shows recorded commands and pending calls without pretending unsu
 test('missing handoffs use honest checkpoint copy, ignore old recaps and never invent a next action', () => {
   const chat = { outcome:' ',recap:'A stale previous outcome',next_kind:'unknown',next_text:' ',question:' ' };
   const waiting = context.deckHandoffText(chat,'waiting');
-  assert.equal(waiting.outcome,'Awaiting agent completion checkpoint…');
+  assert.equal(waiting.outcome,'');  // No outcome line: the chat is waiting on you, not still running.
   assert.equal(waiting.pending,true);
   assert.equal(waiting.next,'Open this chat to review the handoff.');
   assert.equal(context.deckHandoffText(chat,'new').outcome,'Completion checkpoint not recorded yet.');
@@ -124,7 +124,13 @@ test('deck telemetry uses windowed logs, account quota, active chats and known c
     rate_limits_at: '2026-11-04T11:59:00Z', rate_limits: [{ window_minutes: 300, used_percent: 16 }] };
   const chats = [working, { harness: 'claude', message_minutes: ['2026-11-04T06:59:00Z', '2026-11-04T08:00:00Z', '2026-11-04T13:00:00Z'] }];
   const metrics = context.deckTelemetry(chats, [working], ['2026-11-04T10:11:00Z'], now);
-  assert.deepEqual(Array.from(metrics, (m) => m.value), ['01:00:00', '1 ACTIVE / 84%', '2.0k/min', '90%', '1h 49m', '0.0M TOK']);
+  assert.deepEqual(Array.from(metrics, (m) => m.value), ['1h', '1 ACTIVE / 84%', '2.0k/min', '90%', '1h 49m', '0.0M TOK']);
+  assert.equal(metrics[0].label, 'CLAUDE RESET EST.');
+  // A captured 5-hour window replaces the estimate, so the strip and the usage card agree.
+  const captured = { harness: 'claude', rate_limits_at: '2026-11-04T11:58:00Z',
+    rate_limits: [{ window_minutes: 300, used_percent: 18, resets_at: '2026-11-04T15:00:00Z' }] };
+  const reported = context.deckTelemetry([...chats, captured], [working], [], now)[0];
+  assert.deepEqual([reported.label, reported.value], ['CLAUDE RESET', '3h']);
   assert.equal(metrics[3].tone, 'red');
   const empty = context.deckTelemetry([], [], [], now);
   assert.deepEqual(Array.from(empty, (m) => m.value), ['—', '0 ACTIVE', '—', '—', '—', '—']);

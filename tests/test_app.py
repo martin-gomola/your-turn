@@ -236,3 +236,32 @@ def test_phone_mode_needs_the_token_once_then_its_cookie(codex_home: Path, tmp_p
     assert phone.get("/api/inbox").status_code == 200  # the cookie from the QR visit
     assert phone.post("/api/state", json={}, headers={"origin": "http://172.20.10.2:8787"}).status_code == 204
     assert TestClient(phone.app, base_url="http://evil.example").get("/?t=secret").status_code == 400
+
+
+def test_phone_opens_the_chat_link_on_this_computer_only(codex_home: Path, tmp_path: Path,
+                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    write_rollout(codex_home, THREAD, [meta(THREAD)])
+    opened: list[list[str]] = []
+    monkeypatch.setattr("yourturn.app.subprocess.run", lambda args, **_: opened.append(args))
+    app = create_app(codex_home, state_path=tmp_path / "state.json", phone_token="secret", lan_hosts=("172.20.10.2",))
+    phone = TestClient(app, base_url="http://172.20.10.2", cookies={"yt": "secret"})
+    page = {"origin": "http://172.20.10.2:8787"}
+    assert phone.post(f"/api/open/{THREAD}", json={}, headers=page).status_code == 204
+    assert opened[-1][-1] == f"codex://threads/{THREAD}"  # Built from the chat, never from the request.
+    assert phone.post(f"/api/open/{THREAD}", json={}, headers={"origin": "http://evil.example"}).status_code == 403
+    assert phone.post(f"/api/open/{THREAD}", content="{}", headers=page).status_code == 403  # Not JSON: a form.
+    assert phone.post(f"/api/open/{OTHER}", json={}, headers=page).status_code == 404
+    assert TestClient(app, base_url="http://172.20.10.2").post(f"/api/open/{THREAD}", json={}).status_code == 403
+    assert len(opened) == 1
+    # Without phone mode nothing but this computer can reach the page, so there is nothing to open remotely.
+    assert client(codex_home).post(f"/api/open/{THREAD}", json={}).status_code in (404, 405)
+
+
+def test_pages_and_assets_revalidate_but_chat_data_is_never_stored(codex_home: Path) -> None:
+    app = client(codex_home)
+    assert app.get("/api/inbox").headers["cache-control"] == "no-store"
+    assert app.get("/deck").headers["cache-control"] == "no-cache"  # Lets Back restore the page from memory.
+    first = app.get("/assets/app.js")
+    assert first.headers["cache-control"] == "no-cache" and first.headers["etag"]
+    again = app.get("/assets/app.js", headers={"if-none-match": first.headers["etag"]})
+    assert again.status_code == 304 and not again.content

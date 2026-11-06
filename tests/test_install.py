@@ -193,6 +193,7 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
         return {(app, artifact): state for app, artifact, state, _ in check(["codex", "claude", "cursor"], homes)}
 
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "missing", ("claude", "CLAUDE.md block"): "missing",
+                        ("claude", "plan usage capture"): "unverified (off)",
                         ("cursor", "skill"): "missing", ("cursor", "rule"): "missing", ("cursor", "rule loaded"): "unverified"}
     install(["claude", "cursor"], homes)
     install_log.unlink(missing_ok=True)
@@ -201,6 +202,7 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
     (homes["claude"] / "CLAUDE.md").write_text(secret + (homes["claude"] / "CLAUDE.md").read_text())
     # A saved rule is current text, never proof that Cursor loaded it.
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "current", ("claude", "CLAUDE.md block"): "current",
+                        ("claude", "plan usage capture"): "unverified (off)",
                         ("cursor", "skill"): "current", ("cursor", "rule"): "current", ("cursor", "rule loaded"): "unverified"}
 
     (homes["cursor"] / "skills" / "your-turn" / "SKILL.md").write_bytes(b"\xff\xfe not text")
@@ -293,7 +295,7 @@ def test_cli_install_in_a_terminal_starts_the_inbox_unless_it_runs(tmp_path: Pat
     served: list[int] = []
     monkeypatch.setattr(cli, "_interactive", lambda: True)
     monkeypatch.setattr(cli, "_inbox_running", lambda port: running)
-    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: served.append(port))
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level, **_: served.append(port))
     claude = tmp_path / "claude"
     main(["install", "--harness", "claude", "--claude-home", str(claude), "--codex-home", str(tmp_path / "codex"),
           "--cursor-home", str(tmp_path / "cursor")])

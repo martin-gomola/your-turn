@@ -45,9 +45,13 @@ def test_no_subcommand_serves(argv: list[str], monkeypatch: pytest.MonkeyPatch, 
     import uvicorn
 
     ports: list[int] = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: ports.append(port))
+    shutdown: list[object] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level, timeout_graceful_shutdown:
+                        (ports.append(port), shutdown.append(timeout_graceful_shutdown)))
     main(argv)
     assert ports == [9000 if argv else 8787]
+    # Open event streams never end on their own: without a timeout, Ctrl+C would hang and pages stay "Live".
+    assert shutdown == [2]
     assert "Starting Your Turn at http://localhost:" in capsys.readouterr().out
 
 

@@ -16,6 +16,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from yourturn import usage
 from yourturn.install import APPS, detect, doctor, install, rule_text, uninstall
 
 SERVE = "uvx your-turn@latest serve"
@@ -104,6 +105,10 @@ def main(argv: list[str] | None = None) -> int | None:
         else:
             command.add_argument("--harness", choices=[*APPS, "all"], default=None,
                                  help="Only this app, or all three (default: every app whose folder exists)")
+            if name != "doctor":
+                command.add_argument("--claude-usage", action="store_true",
+                                     help="Also capture Claude Code's 5-hour and weekly plan usage for the Deck through "
+                                          "its status line (your existing status line keeps working); opt-in")
         command.add_argument("--codex-home", type=Path,
                              default=Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")))
         command.add_argument("--claude-home", type=Path,
@@ -126,6 +131,12 @@ def main(argv: list[str] | None = None) -> int | None:
             done = (install if args.command == "install" else uninstall)(harnesses, homes)
         except subprocess.CalledProcessError as error:
             parser.exit(1, f"Plugin install failed: {' '.join(error.cmd)}\n")
+        if args.claude_usage:
+            try:
+                change = usage.install if args.command == "install" else usage.uninstall
+                print(f"Claude Code: {change(homes['claude'])} ({homes['claude'] / 'settings.json'}).", flush=True)
+            except (OSError, ValueError) as error:
+                parser.exit(1, f"Claude Code plan usage capture not changed: {error}\n")
         if args.command == "uninstall":
             return
         names = [APPS[harness] for harness in done]
@@ -146,7 +157,7 @@ def main(argv: list[str] | None = None) -> int | None:
 
     import uvicorn
 
-    from yourturn.app import create_app
+    from yourturn.app import SHUTDOWN_SECONDS, create_app
 
     from yourturn.config import load_history_days
 
@@ -181,7 +192,7 @@ def main(argv: list[str] | None = None) -> int | None:
         uvicorn.run(create_app(args.codex_home, history_days=history_days, claude_home=args.claude_home,
                                cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir,
                                phone_token=token, lan_hosts=lan),
-                    host=host, port=args.port, log_level="warning")
+                    host=host, port=args.port, log_level="warning", timeout_graceful_shutdown=SHUTDOWN_SECONDS)
     except SystemExit as error:
         if error.code not in (None, 0):
             print(

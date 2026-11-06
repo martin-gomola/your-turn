@@ -58,6 +58,13 @@ calls in older transcripts still read as decisions.
   filters and utilities: one strip on desktop, utilities above filters in narrow windows. The choice
   persists in browser-local storage, resolves before first paint, and can be reversed with the same
   toggle. A blocked storage write changes only the current page. Chat-only pages omit this control.
+- Without a saved choice, windows shorter than 1100px start with the compact header, so the first
+  chats sit above the fold; the artwork stays one toggle away and a saved choice always wins.
+- Below 960px, and beside an open Settings or Help panel, a row's summary takes its own line under
+  the tags (three lines for Needs you) and options wrap to two, so the next action is never cut to a
+  fragment. On phones the selected status filter shows its label; the others show icon and count.
+- The light theme darkens harness pill text slightly so 12px labels clear 4.5:1 on their tint.
+- Quiet working chats keep the amber tag: a chat quiet for five minutes notifies, as it may be stuck.
 - Focus density animates in both directions using the existing motion tokens: artwork and title
   fade upward while filters and the inbox move into place. Reduced motion, unsupported browsers,
   and an already compact split view apply the preference immediately; rapid toggles cancel the
@@ -128,6 +135,85 @@ calls in older transcripts still read as decisions.
 
 ## Deck
 
+Deck is in beta and opt-in: Settings → Deck (Beta) shows it in the sidebar (off by default; `/deck` and
+chats opened from it keep the entry so you can return). Settings also offers two Deck themes, saved per
+browser and applied before first paint: Dark (charcoal) and Warm (inspired by Monokai Pro: warm charcoal
+canvas with a slight purple-brown tint, faint warm grid, warm-grey frames and bars). Both keep amber attention, purple work
+and emerald ready, so a theme never changes what a colour means.
+
+### Primary contract — glanceable industrial telemetry (2026-11-06)
+
+This contract supersedes older Deck rules below wherever they conflict. Deck is an
+operational HUD: a quick glance must reveal which chat is selected, its state, what
+it is doing or produced, what needs the user, and whether recorded checks support it.
+Industrial cyberpunk is the visual vocabulary; comprehension is the acceptance test.
+
+- Reading order: state and task identity → current activity or next action → outcome
+  and verification → context headroom → optional supporting evidence → action.
+- Needs you leads with the complete next action in an amber inset. Ready leads with
+  the outcome; Working leads with the recorded current-turn log and source freshness.
+  A Needs you state is not automatically a blocked agent.
+- Status sits beside the title. Elapsed time has an explicit label and subordinate
+  size. Titles and handoff prose wrap; essential instructions never require hover.
+- Check state, file count and decision count stay visible. File paths, tool rankings,
+  historical decisions and traces live in a keyboard-accessible Supporting evidence
+  disclosure, closed by default on every card.
+  Its open state survives updates for the selected chat.
+- The agent-open action is the visually primary footer control. Review and reminder
+  dismissal remain secondary, with their existing safety restrictions and undo.
+- Flat charcoal surfaces, crisp 1px frames, restrained chamfers, the static 32px grid,
+  and the 4px/8px spacing tokens retain the product identity. Background and chrome
+  stay quieter than the selected card. Avoid light pools, bloom and decorative gauges.
+- Use sans-serif for instructions and prose; monospace for labels, commands and
+  numerical telemetry. Color has meaning: amber attention, purple work, emerald ready;
+  context warnings retain independent 75%/90% thresholds. State also has a text label.
+- Narrow views preserve the same reading order, 16px side gutters, wrapping text,
+  collapsed supporting evidence and 44px actions in the reserved bottom action area.
+- A Needs you card without a recorded outcome omits the Outcome line rather than implying the
+  agent is still running. Claude's reset reading has one source: the captured 5-hour window when
+  present (matching the usage card), otherwise a reading labelled `CLAUDE RESET EST.` in minutes.
+- The top strip's telemetry readouts and layout toggle wear the same chamfered 1px frame as the cards
+  (neutral, or the reading's colour once it signals) with monospace labels; their focus ring draws inside.
+  The live indicator matches: a chamfered frame and monospace caps in the state's colour (emerald LIVE,
+  red RECONNECTING, muted while connecting); on phones it is a framed 44px square holding the dot.
+- A card's status icon is 24px on the status line, so the title and agent row start at the card's
+  leading edge.
+- The status word sits in a tag sized to it, chamfered like the frames (6px top-right and bottom-left)
+  on a 16% tint, followed by a trail of slanted segments like a split shift light, in the status colour.
+- Section labels stay uppercase scan anchors; readings and values use sentence case ("Resets in
+  3h", "157.5K left", "≈21 turns", "22 calls"). Deck text is at least 12px.
+- Supporting evidence starts closed on every card and opens on request; the choice holds for the
+  selected chat. In the fixed-height wide card the footer stays pinned to the bottom: closed, the
+  handoff takes the free space so the evidence row sits just above the buttons; opened, the evidence
+  grows upward into that space and scrolls inside it, so the buttons never move (on a Working card it shares that space with the log, which keeps its header and six lines);
+  below 1200px it expands to full height and the page scrolls. A dock queue
+  with more below fades at its foot. Deck controls are at least 44px; compact chips and footer
+  links keep their look with an invisible 44px-tall hit area.
+- On phones the context barometer follows the handoff, so it shows above the fixed actions.
+- Offline, nothing on the Deck moves: every Deck animation stops until the connection returns.
+  If the page goes offline before anything loaded, the Deck standby panel reads `NO CONNECTION ·
+  RETRYING` and the Inbox shows a status line saying the server is unreachable and how to restart
+  it, instead of a blank page. On phones the fixed actions hide while the menu is open.
+- The server closes open event streams two seconds after a stop signal, so it exits promptly and
+  pages switch to Reconnecting instead of staying "Live" against a shutting-down process.
+- Motion marks live activity only; quiet/offline and reduced-motion states remain
+  understandable without animation. Unknown or absent readings are never zero-filled.
+
+Research application: [Google's expressive design research](https://design.google/library/expressive-material-design-google-research)
+supports selective emphasis through size, color and containment while preserving
+familiar labels and interaction. [Stephen Few's situation-awareness guidance](https://perceptualedge.com/articles/Whitepapers/Dashboard_Design.pdf)
+supports a neutral baseline, meaningful comparisons and prominence proportional to
+importance. These are mechanisms to test here, not evidence of a measured speed gain
+for Deck. Validate first-glance identification of state, task, next action and checks;
+verify long content, keyboard disclosure, live updates, offline, and narrow viewports.
+
+The Deck page background uses a static 32px grid with 1px slate lines at 10% opacity,
+fading into the base black through a symmetric vignette. Content panels remain opaque.
+Shading stays near-black (#101318 to #0d0f12), with no corner spotlights or directional
+light pools. The current card's status frame, title and content own the visual focus;
+background texture and header chrome remain subordinate. No background animation
+or page-edge urgency glow; urgency is conveyed by the existing status controls and card.
+
 ### Telemetry HUD revision (2026-11-05)
 
 The current HUD supersedes the older Deck composition below: a flat navigation row
@@ -139,9 +225,12 @@ decisions and turn history use a collapsed disclosure. Surfaces have crisp 1px
 borders without bevels or terminal scanlines. Existing source and freshness labels
 remain authoritative; recorded activity never implies access to private reasoning.
 At phone widths, maintain 16px gutters, three equal status columns, collapsed queues,
-and fixed bottom actions with 44px targets and reserved document space. All spacing
+and fixed bottom actions with 44px targets and reserved document space. On phones the header controls share one
+treatment (44px squares framed in the Deck line, like the layout toggle), the fleet strip's lights
+are centred on the whole strip in the reset button's row, and count dividers sit only between counts. All spacing
 continues to consume the scoped Deck tokens.
-From 1200px in Multi-Telemetry, the hero takes about 70% of the stage and a
+From 1200px with a mouse or trackpad (touch tablets keep the stacked layout that scrolls as one page,
+since inner scroll boxes with hidden scrollbars swallow swipes) in Multi-Telemetry, the hero takes about 70% of the stage and a
 single-column queue dock the rest. The dock lists every other queued chat (Needs you,
 Working, Ready; only the focused status under a fleet filter) as mini-cards with a 3px
 status strip. Docked, the page is a three-zone grid that fits the window with no page
@@ -166,9 +255,23 @@ the lap readout sit beside it. The context barometer is a full-width strip along
 edge (used | gauge | left; on phones the gauge drops under the readings).
 Motion marks only what is live (the current lap, a sweep across a live chart); reduced
 motion and an offline connection stop it. The Working log shows up to 12 recorded steps.
-The readout column also carries a SETUP line (model, reasoning effort, cached share of the
-session's input) and TOOLS (built-in and MCP): up to six tools ranked by calls, server muted;
+The header's agent row carries the setup after agent and repo (model, reasoning effort, cached
+share of the session's input), a quick read of what drives the run. The readout column carries
+TOOLS (built-in and MCP): up to six tools ranked by calls, server muted;
 a tool called in the last minute of a live run turns purple and flows.
+Off the Working card, CHANGED FILES lists up to 12 changed files newest first (path relative to
+the project, folder muted and ellipsized so the file name stays readable, `+N more in the chat`)
+above the traces. A source that records no per-step times or token usage (Cursor) gets one quiet
+line naming what it does not record instead of empty trace space.
+Blocks in a card's left column never shrink below their content (only the Working log flexes); a
+column that holds more than its cell scrolls inside itself, never over the barometer.
+The dock's foot holds plan usage: SESSION 5H and WEEKLY 7D cards with one row per agent account
+(name, percent, ten-segment gauge, `RESET IN …`; amber from 75%, red from 90%) and `AS OF …` once a
+reading is older than 15 minutes. Codex reports its quota in its transcripts; Claude Code only to a
+status line command, so `install --claude-usage` (opt-in, reversible with `uninstall --claude-usage`)
+routes the status line through a local script that saves it and still runs the previous status line.
+It calls no model. Cursor exposes no plan usage locally. Plan usage keeps the dock visible when no
+other chat is queued. `make demo` serves every Deck state, plan usage included, for design QA.
 The hero follows urgency, Needs you first, until the user picks a chat; a picked chat
 that is not Needs you offers an amber "N waiting →" jump. Color marks only a signal:
 telemetry and context bars stay neutral until a wait exists or a 75%/90% threshold is
@@ -255,12 +358,11 @@ Inbox/chat scale in `tokens.css`.
   in the linked chat. Missing outcomes use a completion-checkpoint status, never a
   previous turn's recap. Next distinguishes an explicitly empty action from an unknown handoff.
   Outcome labels use the category accent; Next uses neutral high-contrast text.
-  Right: 36px tabular elapsed timer
-  in the normal sans font with separate time units, a .22em flex gap and an accessible
-  single-space duration label, avoiding doubled monospace spacing,
-  uppercase status pill (red BLOCKED for Needs you, purple WORKING, green READY), and CTX.
+  The status label sits beside the title (amber NEEDS YOU, purple WORKING, green READY; a Needs you
+  chat is not called blocked). Elapsed time carries an explicit label (WAITING, RUNNING) at a
+  subordinate monospace size, and the context barometer runs along the card's bottom edge.
   Working cards replace handoff prose with a purple monospace terminal (#080A0F,
-  8px radius, standard 16px internal padding) containing up to three recorded current-turn steps
+  8px radius, standard 16px internal padding) containing up to twelve recorded current-turn steps
   and any outstanding call. Shell rows show the recorded display command unchanged,
   never a shortened check caption or invented output. Long commands wrap; phones show
   the latest two events. Historical commands are explicitly headed RECORDED LOG;
@@ -357,11 +459,15 @@ Inbox/chat scale in `tokens.css`.
   (8px top-right and bottom-left chamfers drawn as a 1px `rgb(255 255 255 / .15)` ring; the
   status card's ring takes its status tone). Chips, metadata, decision meta, labels and
   timestamps use the monospace face; the open and copy actions are at least 44px tall with
-  1px strokes and token padding. From 1200px the chat is a no-scroll HUD that fits the window
+  1px strokes and token padding. From 1200px with a mouse or trackpad the chat is a no-scroll HUD that fits the window
   under the back bar: status, what happened and checks | decisions | more (compact live facts
   first: session details, tools, activity, then session files and earlier turns; the nodes move,
   so focus order matches), each column scrolling inside itself under a
-  sticky label. Nothing folds there: every disclosure opens and its summary is a label.
+  sticky label. Sections still fold and start closed, as on the plain chat page: someone who opens the
+  chat has time to go through them. The page uses the
+  full window width (no 1440px cap), with the normal side gutters. The columns are plain scrolling blocks, so
+  lists keep their full height; a chat without decisions drops to two columns (5:8) so More is not
+  squeezed beside an empty one. Crossing 1200px re-renders the chat in the matching layout.
   Phones keep the folded rows. Spacing uses only the shared 4px-step tokens; the plain chat
   page is unchanged.
 

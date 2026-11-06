@@ -54,6 +54,7 @@ from yourturn.harness.codex import (
 )
 from yourturn.harness.claude import ClaudeAdapter
 from yourturn.harness.cursor import CursorAdapter
+from yourturn import usage
 from yourturn.heuristics import (
     ACTION_KINDS,
     check_key,
@@ -840,6 +841,12 @@ class SessionHub:
         data["project"] = folder.project
         data["quiet"] = tracked.quiet(data["status"], mtime)
         data["harness"] = ref.harness
+        if ref.harness == "claude" and not detail:
+            # Plan usage is per account and lives outside the transcript (see usage.py); every Claude row
+            # carries the latest capture, so the Deck reads it like Codex's own rate_limits.
+            limits, captured_at = usage.read()
+            if limits:
+                data["rate_limits"], data["rate_limits_at"] = limits, captured_at
         data["key"] = str(ref.key)
         data["handoff"] = asdict(adapter.handoff(ref, folder.cwd or None))
         # What the source can record, so the UI can say what is missing instead of guessing.

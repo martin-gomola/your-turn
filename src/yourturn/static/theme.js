@@ -2,9 +2,20 @@
 
 // Resolve header density before first paint, alongside appearance.
 try {
-  document.documentElement.dataset.header = localStorage.getItem("compact-header") === "true" ? "compact" : "full";
+  // Without a saved choice, shorter windows start compact so the first chats sit above the fold.
+  const saved = localStorage.getItem("compact-header");
+  document.documentElement.dataset.header = saved === "true" || (saved === null && innerHeight < 1100) ? "compact" : "full";
 } catch {
   document.documentElement.dataset.header = "full";
+}
+// Deck is opt-in while in beta; its theme is Dark unless Warm was chosen.
+try {
+  document.documentElement.dataset.deckEnabled = String(localStorage.getItem("your-turn.deck.enabled") === "true");
+  const deckTheme = localStorage.getItem("your-turn.deck.theme");
+  document.documentElement.dataset.deckTheme = deckTheme === "warm" ? "warm" : "dark";
+} catch {
+  document.documentElement.dataset.deckEnabled = "false";
+  document.documentElement.dataset.deckTheme = "dark";
 }
 
 // Loaded without defer so the theme is set before first paint.

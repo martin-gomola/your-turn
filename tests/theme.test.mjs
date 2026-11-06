@@ -5,16 +5,17 @@ import assert from 'node:assert/strict';
 
 const source = readFileSync(new URL('../src/yourturn/static/theme.js', import.meta.url), 'utf8');
 
-function browser({ stored = null, dark = false, blocked = false, compact = false, search = '' } = {}) {
+function browser({ stored = null, dark = false, blocked = false, compact = false, search = '', height = 1200, header = null } = {}) {
   const storage = new Map(stored ? [['theme', stored]] : []);
   if (compact) storage.set('compact-header', 'true');
+  if (header !== null) storage.set('compact-header', header);
   const events = new Map();
   const system = { matches: dark, addEventListener: (_, callback) => events.set('system', callback) };
   const root = { dataset: {} };
   let changes = 0;
   const window = {};
   vm.runInNewContext(source, {
-    window, Event, URLSearchParams,
+    window, Event, URLSearchParams, innerHeight: height,
     location: { search },
     matchMedia: () => system,
     localStorage: {
@@ -79,4 +80,11 @@ test('unavailable storage still permits a page-local theme choice', () => {
   assert.equal(b.root.dataset.theme, 'dark');
   assert.equal(b.api.preference(), 'dark');
   assert.equal(b.storage.size, 0);
+});
+
+test('without a saved choice, short windows start with the compact header; a saved choice always wins', () => {
+  assert.equal(browser({ height: 1000 }).root.dataset.header, 'compact');
+  assert.equal(browser({ height: 1200 }).root.dataset.header, 'full');
+  assert.equal(browser({ height: 800, header: 'false' }).root.dataset.header, 'full');
+  assert.equal(browser({ height: 1400, header: 'true' }).root.dataset.header, 'compact');
 });

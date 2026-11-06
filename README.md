@@ -48,7 +48,7 @@ When Codex, Claude Code, and Cursor run side by side, the slow part is your atte
 - ➡️ **What is the exact next step?**<br>
   One line per chat, with one click to open or resume it in its app.<br>
 
-Your Turn runs on your machine. It does not take over agent processes, run a background service, or send chat data to the cloud. It uses no cloud account or extra agent permissions.
+Your Turn runs on your machine. It does not take over agent processes, run a background service, or send chat data to the cloud. It uses no cloud account or extra agent permissions. From a phone or tablet, "Open in Codex" and "Open in Cursor" ask your Mac to open that chat's own link, the same as clicking it there.
 
 ## Quick start
 
@@ -149,6 +149,7 @@ make up        # start the inbox in the background
 make down      # stop it
 make doctor    # check the handoff without changing it
 make test      # run the test suite
+make demo      # made-up chats in every Deck state at http://127.0.0.1:8790/deck, for design QA
 ```
 
 See [docs/configuration.md](./docs/configuration.md#development) for all `make` targets and API routes.
