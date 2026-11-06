@@ -1195,9 +1195,7 @@ body[data-connection="offline"] .deck-card[data-checkpoint="true"]::after { anim
 }
 .deck-earlier-link { color: inherit; text-decoration: none; }
 .deck-earlier-link:not([hidden]) + span::before { content: "·"; margin-inline-end: var(--space-2); }
-/* No-scroll layouts need a mouse or trackpad: on a touch tablet their inner boxes are the only places a swipe
-   scrolls, and their scrollbars stay hidden, so touch keeps the stacked layout that scrolls as one page. */
-@media (min-width: 1200px) and (pointer: fine) {
+@media (min-width: 1200px) {
   body[data-view="deck"] .page { padding-inline: var(--space-6); }
   /* Three-zone, no-scroll grid: telemetry strip on top, the active card (~70%) and a permanent
      single-column queue (~30%) fill the rest of the window. Nothing collapses; logs scroll inside
@@ -1231,12 +1229,12 @@ body[data-connection="offline"] .deck-card[data-checkpoint="true"]::after { anim
   /* Footer pinned to the card's bottom, as on the Working card: closed, the handoff takes the free space
      so the evidence row sits just above the buttons; opened, the evidence takes that space and grows
      upward while the handoff keeps its own height. Buttons never move. */
-  #deck-view[data-docked="true"] .deck-card:not([data-kind="working"]) > .deck-hero { flex: 1 1 auto; }
-  #deck-view[data-docked="true"] .deck-card:not([data-kind="working"]):has(> .deck-supporting[open]) > .deck-hero { flex-grow: 0; }
+  #deck-view[data-docked="true"] .deck-card:not([data-kind="working"]) .deck-card-body > .deck-hero { flex: 1 1 auto; }
+  #deck-view[data-docked="true"] .deck-card:not([data-kind="working"]) .deck-card-body:has(> .deck-supporting[open]) > .deck-hero { flex-grow: 0; }
   /* Opened evidence takes the fixed-height card's free space and scrolls inside it, the same on every card
      (on a Working card it shares that space with the log, which keeps its header and six lines). */
   #deck-view[data-docked="true"] .deck-supporting { overflow-y: auto; }
-  #deck-view[data-docked="true"] .deck-card > .deck-supporting[open] { flex: 1 1 0; }
+  #deck-view[data-docked="true"] .deck-card-body > .deck-supporting[open] { flex: 1 1 0; }
   #deck-view[data-layout="multi"] .deck-hero { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   #deck-view[data-layout="multi"] .deck-mini-grid { grid-template-columns: minmax(0, 1fr); }
   #deck-view[data-layout="multi"] .deck-feature { grid-column: 1; grid-row: 1; }
@@ -1671,4 +1669,17 @@ body[data-view="deck"] .connection .connection-dot { background: currentColor; }
 /* On touch, a swipe that starts on a small scrolling box (the Working log) carries on to the page at the box's end. */
 @media (pointer: coarse) {
   :is(.deck-terminal-body, .deck-mini-grid) { overscroll-behavior: auto; }
+}
+/* The card body is layout-neutral: hero and evidence act as the card's own flex children. */
+.deck-card-body { display: contents; }
+/* A touch tablet keeps the docked, fit-to-window card and queue, but inner boxes with hidden scrollbars would be
+   the only places a swipe scrolls. There the hero and evidence keep their content height and the card body is
+   one scrolling area above the pinned footer, so a swipe anywhere on the card scrolls it. */
+@media (min-width: 1200px) and (pointer: coarse) {
+  #deck-view[data-docked="true"] .deck-card-body { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  #deck-view[data-docked="true"] .deck-card-body > * { flex: none; }
+  #deck-view[data-docked="true"] :is(.deck-hero, .deck-hero-left, .deck-readout, .deck-supporting) { min-height: auto; overflow: visible; }
+  #deck-view[data-docked="true"] .deck-hero { grid-template-rows: auto; }
+  /* The log shows all its recorded lines instead of being a second scrolling box inside the card. */
+  #deck-view[data-docked="true"] .deck-terminal-body { height: auto; min-height: 0; overflow: visible; }
 }

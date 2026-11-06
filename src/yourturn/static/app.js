@@ -1901,10 +1901,24 @@ const deckGroupOpen = new Map();
 // Narrow portrait (phone, split pane) starts queues collapsed; a tap or fleet filter opens one.
 const deckNarrow = matchMedia("(max-width: 599px) and (orientation: portrait)");
 // With the queue dock showing, the full lists below are a secondary tray and start collapsed too.
-const deckWide = HUD_WIDE;
+const deckWide = matchMedia("(min-width: 1200px)");
 const deckDocked = () => deckLayout === "multi" && deckWide.matches && !$("deck-matrix").hidden;
 deckWide.addEventListener("change", () => { if (deckData) renderDeck(deckData); });
 let deckGesture = null;
+// While the browser scrolls a touch drag (and its fling), live renders wait: replacing the card would end the scroll.
+let deckScrolling = false;
+function deckScrollTakeover() {
+  deckGesture = null;
+  if (deckScrolling) return;
+  deckScrolling = true;
+  const done = () => {
+    if (!deckScrolling) return;
+    deckScrolling = false;
+    renderDeck(deckData);
+  };
+  document.addEventListener("scrollend", done, { capture: true, once: true });
+  setTimeout(done, 3000);  // No scroll after all (a tap that drifted), or no scrollend support.
+}
 let deckSwipeUntil = 0;
 const DECK_NAMES = { waiting: "NEEDS YOU", working: "WORKING", new: "READY" };
 const DECK_AGENTS = { claude: "Claude", codex: "Codex", cursor: "Cursor" };
@@ -2744,7 +2758,7 @@ function deckRow(chat, kind) {
 
 function renderDeck(chats) {
   deckData = chats;
-  if (deckGesture || deckDismissals.size) return;
+  if (deckGesture || deckScrolling || deckDismissals.size) return;
   const groups = deckGroups(chats);
   const kinds = ["waiting", "working", "new"];
   const fallback = deckFallback(Object.fromEntries([...groups].map(([kind, list]) => [kind, list.length])));
@@ -2777,7 +2791,10 @@ function renderDeck(chats) {
       card.dataset.kind = kind;
       card.dataset.selected = String(chatKey(chat) === deckSelected);
       card.dataset.checkpoint = String(kind === "working" || !chat.outcome?.trim());
-      card.append(deckHero(chat, kind));
+      // Hero and evidence share one body: on a touch tablet it is the card's single scrolling area (see app.css).
+      const body = el("div", "deck-card-body");
+      card.append(body);
+      body.append(deckHero(chat, kind));
       const supporting = el("details", "deck-supporting");
       supporting.open = supportingOpen;
       supporting.append(el("summary", "", "Supporting evidence · files, tools & history"));
@@ -2797,7 +2814,7 @@ function renderDeck(chats) {
         history.append(list);
         supporting.append(history);
       }
-      if (supporting.children.length > 1) card.append(supporting);
+      if (supporting.children.length > 1) body.append(supporting);
       const footer = el("div", "deck-card-footer");
       const waiting = groups.get("waiting").length;
       if (kind !== "waiting" && waiting && !deckFilter) {
@@ -2823,6 +2840,9 @@ function renderDeck(chats) {
     const signature = cards.map((card) => card.outerHTML).join("");
     if (feature.dataset.sig !== signature) {
       feature.dataset.sig = signature;
+      // A live update must not scroll the card being read back to its top. Read before the reuse below moves
+      // the log and charts out of the old card, which shrinks it and resets its scroll.
+      const scrolled = new Map([...feature.querySelectorAll(".deck-card")].map((card) => [card.dataset.key, card.querySelector(".deck-card-body")?.scrollTop || 0]));
       // Keep ongoing cell reveals alive when live updates replace the surrounding card.
       for (const card of cards) {
         const previous = previousBlocks.get(card.dataset.key);
@@ -2838,6 +2858,7 @@ function renderDeck(chats) {
       }
       if (feature.contains(carousel)) $("deck-stage").append(carousel);
       feature.replaceChildren(...cards);
+      for (const card of cards) if (scrolled.get(card.dataset.key)) card.querySelector(".deck-card-body").scrollTop = scrolled.get(card.dataset.key);
       feature.dataset.selected = deckSelected;
       if (!calm.matches) {
         for (const hero of feature.querySelectorAll(".deck-hero")) {
@@ -2996,7 +3017,7 @@ for (const root of [$("deck-feature"), $("deck-groups")]) {
     swipe.lastAt = now;
     swipe.dx = event.clientX - swipe.x;
     swipe.dy = event.clientY - swipe.y;
-    if (!swipe.moved && Math.abs(swipe.dy) > Math.abs(swipe.dx) && Math.abs(swipe.dy) > 8) { deckGesture = null; renderDeck(deckData); return; }
+    if (!swipe.moved && Math.abs(swipe.dy) > Math.abs(swipe.dx) && Math.abs(swipe.dy) > 8) { deckScrollTakeover(); return; }
     if (Math.abs(swipe.dx) < 8 && !swipe.moved) return;
     swipe.moved = true;
     swipe.node.setPointerCapture(event.pointerId);
@@ -3012,7 +3033,7 @@ for (const root of [$("deck-feature"), $("deck-groups")]) {
     delete swipe.node.dataset.dragging;
     if (swipe.node.hasPointerCapture(event.pointerId)) swipe.node.releasePointerCapture(event.pointerId);
     // Keep the tapped DOM node alive until its click selects/opens the chat.
-    if (!swipe.moved) { if (event.type === "pointercancel") renderDeck(deckData); return; }
+    if (!swipe.moved) { if (event.type === "pointercancel") { deckGesture = swipe; deckScrollTakeover(); } return; }
     if (swipe.moved) deckSwipeUntil = performance.now() + 450;
     const velocity = performance.now() - swipe.lastAt < 100 ? swipe.velocity : 0;
     const action = event.type === "pointercancel" ? "" : deckSwipe(swipe.dx, swipe.dy, swipe.node.offsetWidth, swipe.hero, velocity);

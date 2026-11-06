@@ -229,8 +229,10 @@ and fixed bottom actions with 44px targets and reserved document space. On phone
 treatment (44px squares framed in the Deck line, like the layout toggle), the fleet strip's lights
 are centred on the whole strip in the reset button's row, and count dividers sit only between counts. All spacing
 continues to consume the scoped Deck tokens.
-From 1200px with a mouse or trackpad (touch tablets keep the stacked layout that scrolls as one page,
-since inner scroll boxes with hidden scrollbars swallow swipes) in Multi-Telemetry, the hero takes about 70% of the stage and a
+From 1200px in Multi-Telemetry (on a touch tablet too: there the card body, hero and evidence together, is the
+card's one scrolling area above the pinned footer, since inner scroll boxes with hidden scrollbars swallow swipes;
+the Working log shows all its lines instead of scrolling on its own; live renders wait while a touch scroll
+and its fling run, and then keep the scroll position), the hero takes about 70% of the stage and a
 single-column queue dock the rest. The dock lists every other queued chat (Needs you,
 Working, Ready; only the focused status under a fleet filter) as mini-cards with a 3px
 status strip. Docked, the page is a three-zone grid that fits the window with no page
