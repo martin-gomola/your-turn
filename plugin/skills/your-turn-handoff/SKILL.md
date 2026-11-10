@@ -2,7 +2,7 @@
 name: your-turn-handoff
 description: End every response to the user with the Your Turn handoff (Outcome and Next step lines, plus Recap on multi-turn chats and Decision for real trade-offs), and run checks after your last code edit. Always active for every task and every turn in Codex so the user can triage chats across apps at a glance.
 metadata:
-  version: "0.5.2"
+  version: "0.6.0"
 ---
 
 # Your Turn handoff

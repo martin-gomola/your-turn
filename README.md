@@ -37,6 +37,13 @@ When Codex, Claude Code, and Cursor run side by side, the slow part is your atte
 <img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
 
 </details>
+
+<details>
+<summary>See the Deck on a second screen or tablet</summary>
+
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/deck.gif?v=1" width="800" alt="The Deck telemetry view on a running Codex chat, with its recorded log, lap timers, context gauge, queue and plan usage">
+
+</details>
 <br>
 
 **Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
@@ -73,7 +80,7 @@ The server binds to loopback only (`127.0.0.1`). To remove the handoff, run `uvx
 <details>
 <summary>Check where a release comes from, or pin one</summary>
 
-`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.5.1`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.5.1 your-turn`.
+`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.6.0`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.6.0 your-turn`.
 
 </details>
 
@@ -86,7 +93,7 @@ The repository is a flake, with dependencies pinned in `flake.lock`. This starts
 nix run github:martin-gomola/your-turn
 ```
 
-Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.5.1`.
+Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.6.0`.
 
 </details>
 
