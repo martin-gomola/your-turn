@@ -25,6 +25,8 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+from yourturn import usage
+
 MARKETPLACE_SOURCE = "martin-gomola/your-turn"
 MARKETPLACE = "your-turn"
 PLUGIN = f"your-turn@{MARKETPLACE}"
@@ -424,6 +426,10 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
                             str(home / "skills" / NAME / "SKILL.md")))
         if harness == "claude":
             results.append(("claude", "CLAUDE.md block", _block_state(home / "CLAUDE.md"), str(home / "CLAUDE.md")))
+            capture = usage.state(home)
+            results.append(("claude", "plan usage capture", "unverified (off)" if capture == "off" else capture,
+                            "Opt-in: `install --claude-usage` routes the status line through a local script that saves "
+                            "the 5-hour and weekly usage for the Deck and keeps your status line."))
         else:
             results.append(("cursor", "rule", _state(_cursor_rule(home), cursor_rule_file()), str(_cursor_rule(home))))
             results.append(("cursor", "rule loaded", "unverified",

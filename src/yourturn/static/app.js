@@ -136,15 +136,183 @@ function focusAfterRemoval(keys, removed) {
 function shortcutBlocked(target, modalOpen) {
   return modalOpen || Boolean(target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
 }
+
+// How full a chat's context was at its last request, or null when the app reports no window size.
+// ponytail: fixed 50%/80% bands for every model; tune per model if they mislead.
+function contextFill(used, size) {
+  if (!Number.isSafeInteger(used) || !Number.isSafeInteger(size) || used <= 0 || size <= 0) return null;
+  const percent = Math.min(100, Math.round(used / size * 100));
+  return { percent, level: percent >= 80 ? "heavy" : percent >= 50 ? "filling" : "ok" };
+}
+
+// The context window to measure against. Claude Code records none, but its windows are 200K or 1M,
+// so usage past 200K can only be a 1M window; below that the size stays unknown (0).
+// Claude transcripts omit the window; usage past the 200K window proves the 1M one. Else unknown.
+function contextSize(chat) {
+  if (chat.context_window > 0) return chat.context_window;
+  return chat.harness === "claude" && chat.context_used > 200000 ? 1000000 : 0;
+}
+
+// Deck order changes only when something meaningful does: the inbox sorts by latest write, which on
+// a glanceable screen would swap working keys every time an agent writes. Working keys keep the order
+// they started in and new results the order they arrived in, so a newcomer joins the end and no key
+// moves for a routine update. Needs you keeps longest wait first, which already appends newcomers.
+function deckOrder(groups) {
+  const by = (field) => (a, b) => (a[field] || "").localeCompare(b[field] || "");
+  return new Map([...groups].map(([key, chats]) =>
+    [key, key === "working" ? [...chats].sort(by("working_since")) : key === "new" ? [...chats].sort(by("turn_ended_at")) : chats]));
+}
+
+// Usage limits are per account, so the chat that reported last speaks for all; an ended window is dropped.
+function latestQuota(chats, now = Date.now()) {
+  const newest = chats.reduce((best, chat) => (chat.rate_limits_at || "") > (best?.rate_limits_at || "") ? chat : best, null);
+  return (newest?.rate_limits || []).filter((window) => !window.resets_at || new Date(window.resets_at).getTime() > now);
+}
+
+function windowLabel(minutes) {
+  if (minutes === 10080) return "Week";
+  return minutes % 1440 === 0 ? `${minutes / 1440}d` : minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+}
+
+// Time left until `iso`, rounded to what a glance needs: "<1m", "12m", "4h", "6d"; "" once passed.
+function untilShort(iso, now = Date.now()) {
+  const minutes = (new Date(iso).getTime() - now) / 60000;
+  if (!(minutes > 0)) return "";
+  if (minutes < 1) return "<1m";
+  return minutes < 60 ? `${Math.round(minutes)}m` : minutes < 1440 ? `${Math.round(minutes / 60)}h` : `${Math.round(minutes / 1440)}d`;
+}
+function untilClock(iso, now = Date.now()) {
+  const seconds = Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor(seconds % 86400 / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  const remainder = seconds % 60;
+  const clock = [hours, minutes, remainder].map((value) => String(value).padStart(2, "0")).join(":");
+  return days ? `${days}d ${clock}` : clock;
+}
+function deckElapsed(since, now = Date.now()) {
+  const started = new Date(since).getTime();
+  if (!Number.isFinite(started)) return "";
+  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor(seconds % 86400 / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${seconds}s`;
+}
+
+function deckTelemetry(chats, working, waits, now = Date.now()) {
+  const recent = (at, duration) => { const time = Date.parse(at); return time <= now && time > now - duration; };
+  const claude = chats.filter((chat) => chat.harness === "claude");
+  const messages = claude.flatMap((chat) => chat.message_minutes || []).filter((at) => recent(at, 5 * 3600000));
+  const reset = messages.length ? new Date(Math.min(...messages.map(Date.parse)) + 5 * 3600000).toISOString() : "";
+  const captured = latestQuota(claude, now).find((window) => window.window_minutes === 300 && window.resets_at);
+  const quota = latestQuota(chats.filter((chat) => chat.harness === "codex"), now).sort((a, b) => a.window_minutes - b.window_minutes)[0];
+  const active = working.filter((chat) => chat.harness === "codex").length;
+  const samples = chats.flatMap((chat) => chat.usage_minutes || []);
+  const burn = working.flatMap((chat) => chat.usage_minutes || []).filter(([at]) => recent(at, 15 * 60000)).reduce((sum, [, tokens]) => sum + tokens, 0);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const tokens = samples.filter(([at]) => Date.parse(at) >= today.getTime() && Date.parse(at) <= now).reduce((sum, [, count]) => sum + count, 0);
+  const fills = chats.map((chat) => contextFill(chat.context_used, contextSize(chat))).filter(Boolean);
+  const peak = fills.length ? Math.max(...fills.map((fill) => fill.percent)) : null;
+  const earliest = waits.map(Date.parse).filter((at) => Number.isFinite(at) && at <= now);
+  const note = "Local logs only; truncated histories and unsupported agents may omit usage.";
+  return [
+    // One reset reading per account: the captured 5-hour window when there is one (as the usage card shows),
+    // otherwise a labelled estimate in minutes, never a seconds clock that looks more exact than it is.
+    captured ? { id: "claude", label: "CLAUDE RESET", value: untilShort(captured.resets_at, now) || "—", tone: "",
+      note: "From Claude Code's reported 5-hour window (status line capture)." }
+      : { id: "claude", label: "CLAUDE RESET EST.", value: reset ? untilShort(reset, now) : claude.length ? "READY" : "—", tone: "",
+        note: "Estimated from the earliest recorded Claude message in the last 5h; not an account quota reset. Turn on `install --claude-usage` for the reported value." },
+    { id: "codex", label: "CODEX", value: `${active} ACTIVE${quota ? ` / ${Math.max(0, Math.round(100 - quota.used_percent))}%` : ""}`, tone: "", note: quota ? `Latest recorded ${windowLabel(quota.window_minutes)} account quota remaining.` : "Working Codex chats; quota not reported." },
+    { id: "burn", label: "BURN", value: samples.length ? `${(burn / 15000).toFixed(1)}k/min` : "—", tone: "", note: `Recorded tokens over 15 minutes in currently working chats. ${note}` },
+    { id: "peak", label: "PEAK CTX", value: peak === null ? "—" : `${peak}%`, tone: peak >= 90 ? "red" : peak >= 75 ? "amber" : "", note: "Highest context utilization among chats with a known window." },
+    { id: "wait", label: "MAX WAIT", value: earliest.length ? deckElapsed(new Date(Math.min(...earliest)).toISOString(), now) : "—", tone: earliest.length ? "amber" : "", note: "Longest wait among Needs you chats." },
+    { id: "today", label: "TODAY", value: samples.length ? `${(tokens / 1000000).toFixed(1)}M TOK` : "—", tone: "", note: `Recorded tokens since local midnight. ${note}` },
+  ];
+}
+
+// Apportion six cells, keeping at least one for each active status so rare work stays visible.
+function deckMagazine(counts, filter = "") {
+  const kinds = ["waiting", "working", "new"];
+  if (filter) return Array.from({ length: 6 }, (_, index) => index < Math.min(6, counts[filter] || 0) ? filter : "");
+  const total = kinds.reduce((sum, kind) => sum + counts[kind], 0);
+  if (!total) return Array(6).fill("");
+  // Up to six chats, one cell per chat; beyond that the cells become proportional shares.
+  if (total <= 6) return [...kinds.flatMap((kind) => Array(counts[kind]).fill(kind)), ...Array(6 - total).fill("")];
+  const shares = kinds.map((kind, index) => ({ kind, index, quota: counts[kind] / total * 6 }));
+  const cells = shares.flatMap(({ kind, quota }) => Array(Math.floor(quota)).fill(kind));
+  const remainder = [...shares].sort((a, b) => (b.quota % 1) - (a.quota % 1) || a.index - b.index);
+  for (let i = 0; cells.length < 6; i++) cells.push(remainder[i].kind);
+  for (const share of shares) {
+    if (counts[share.kind] && !cells.includes(share.kind)) {
+      const donor = shares.filter(({ kind }) => cells.filter((cell) => cell === kind).length > 1)
+        .sort((a, b) => (cells.filter((cell) => cell === b.kind).length - b.quota) - (cells.filter((cell) => cell === a.kind).length - a.quota))[0];
+      cells[cells.indexOf(donor.kind)] = share.kind;
+    }
+  }
+  return kinds.flatMap((kind) => cells.filter((cell) => cell === kind));
+}
+
+function deckSwipe(dx, dy, width, hero = false, velocity = 0) {
+  const travel = hero && Math.abs(dx) >= 12 && Math.sign(velocity) === Math.sign(dx) ? dx + velocity * 120 : dx;
+  if (Math.abs(travel) < Math.max(40, Math.min(80, width * .16)) || Math.abs(dx) < Math.abs(dy) * 1.4) return "";
+  return hero ? dx < 0 ? "next" : "previous" : dx < 0 ? "review" : "focus";
+}
+
+function deckUrgent(waits, now = Date.now()) {
+  return waits.some((at) => { const elapsed = now - Date.parse(at); return elapsed > 15 * 60000; });
+}
+
+function deckTerminalState(chat, connected = true) {
+  const reportedLive = chat.capabilities?.live_activity === true;
+  const live = connected && reportedLive && !chat.quiet;
+  const records = reportedLive ? (chat.activity_log || []).slice(-12) : [];
+  const pending = reportedLive && chat.pending_tool;
+  const events = pending ? [...records.slice(-11),{ at: "", kind: pending.startsWith("Bash: ") ? "command" : "tool", title: pending.replace(/^Bash: /, ""), pending: true }] : records;
+  const label = !connected ? "OFFLINE" : !reportedLive ? "LAST KNOWN STATE" : chat.quiet ? "QUIET" : pending ? "CALL PENDING" : "RUNNING...";
+  const fallback = reportedLive && chat.activity_summary ? chat.activity_summary : "Awaiting agent completion checkpoint…";
+  return { label, live, events, fallback };
+}
+
+function deckHandoffText(chat, kind) {
+  // A chat waiting on you has no outcome yet; a "still running" placeholder would contradict the question above it.
+  const outcome = chat.outcome?.trim() || (kind === "new" ? "Completion checkpoint not recorded yet." : "");
+  const next = chat.question?.trim() || (chat.next_kind !== "none" && chat.next_text?.trim())
+    || (chat.next_kind === "none" ? "No further action requested." : "Open this chat to review the handoff.");
+  return { outcome, next, pending: !chat.outcome?.trim() };
+}
+
+// Quiet for this long, a Working chat may be stuck (the same five minutes that notify).
+const DECK_STALL_MS = 5 * 60_000;
+
+function deckQuiet(chat, kind) {
+  return kind === "working" && Boolean(chat.quiet);
+}
+
+function deckCanReview(chat, kind, now = Date.now()) {
+  // A Working chat quiet past the stall threshold may be dead (closed terminal, crashed agent): let it be set
+  // aside until it writes again. Earlier, a quiet chat may just be running a long command.
+  if (chat.status === "working") return deckQuiet(chat, kind) && now - Date.parse(chat.updated_at) > DECK_STALL_MS;
+  return kind === "new" || kind === "waiting" && Boolean(chat.attention_key);
+}
+
+function deckFallback(counts) {
+  return counts.waiting || counts.working || counts.new ? "active" : counts.earlier ? "earlier" : "standby";
+}
 // End pure triage helpers.
 const params = new URLSearchParams(location.search);
 const threadId = params.get("thread") || "";
 const returnOpenId = params.get("returnOpen") || "";
+const deckView = params.get("view") === "deck" || location.pathname === "/deck";
 const statusParam = params.get("status");
 const inboxStatus = Object.hasOwn(INBOX_FILTERS, statusParam) ? statusParam : "";
 const inboxReturn = inboxStatus ? `&status=${inboxStatus}` : "";
 $("nav-inbox").dataset.category = inboxStatus || "all";
-document.body.dataset.view = threadId ? "thread" : "inbox";
+document.body.dataset.view = threadId ? "thread" : deckView ? "deck" : "inbox";
+if (threadId && deckView) document.body.dataset.origin = "deck";
 if (threadId) $("nav-inbox").removeAttribute("aria-current");
 const wideDetail = matchMedia("(min-width: 1280px)");
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
@@ -290,10 +458,47 @@ function migrateLocalMarks(chats) {
 function setConnection(state, text) {
   $("connection").dataset.state = state;
   $("connection-text").textContent = text;
+  document.body.dataset.connection = state;
+  if (deckView && !threadId && deckData) renderDeck(deckData);
+  showUnreachable(state !== "live");
+}
+
+// Offline before anything loaded: say the server is unreachable instead of leaving a blank page.
+// Once data arrives the normal render owns these panels (Deck standby text, Inbox empty state).
+function showUnreachable(offline) {
+  if (threadId) return;
+  if (deckView) {
+    if (deckData) return;
+    $("deck-empty").hidden = !offline;
+    $("deck-empty").dataset.connected = "false";
+    $("deck-standby-title").textContent = "NO CONNECTION · RETRYING";
+    $("deck-standby-description").textContent = "Can't reach the local Your Turn server. Retrying on its own; if it stopped, start it again with your-turn serve (or make up in a clone).";
+  } else {
+    $("inbox-unreachable").hidden = !offline || Boolean(inboxData);
+  }
+}
+
+// Open streams keep a page out of the browser's back/forward cache: close them on leaving, reopen on return.
+const streams = new Map();
+addEventListener("pagehide", () => { for (const source of streams.keys()) source.close(); });
+addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  for (const [source, open] of [...streams]) { streams.delete(source); open(); }
+  rememberPage();
+});
+
+function stream(url, setup) {
+  const source = new EventSource(url);
+  streams.set(source, () => stream(url, setup));
+  setup(source);
+  return source;
 }
 
 function connect(url, event, render) {
-  const source = new EventSource(url);
+  return stream(url, (source) => connected(source, event, render));
+}
+
+function connected(source, event, render) {
   source.onopen = () => { setConnection("live", "Live"); stateSync.flush(); };
   source.onerror = () => setConnection("offline", "Reconnecting");
   source.addEventListener(event, (message) => render(JSON.parse(message.data)));
@@ -465,6 +670,13 @@ function hideUndo() {
   $("undo-toast").replaceChildren();
 }
 
+// Keep Undo available while it is being read or operated, in either inbox layout.
+const undoToast = $("undo-toast");
+undoToast.addEventListener("pointerenter", () => clearTimeout(undoTimer));
+undoToast.addEventListener("focusin", () => clearTimeout(undoTimer));
+undoToast.addEventListener("pointerleave", () => { if (undoToast.childNodes.length && !undoToast.contains(document.activeElement)) restartUndoTimer(); });
+undoToast.addEventListener("focusout", (event) => { if (undoToast.childNodes.length && !undoToast.contains(event.relatedTarget)) restartUndoTimer(); });
+
 // `fold` is "open" or "closed" for a section the user can collapse, "" otherwise.
 function renderSection({ key, label }, chats, fold = "") {
   const limit = visibleRows.get(key) || SECTION_LIMIT;
@@ -596,6 +808,7 @@ function renderInbox(chats) {
   const fold = (key) => foldable ? ((sectionOpen.get(key) ?? key !== "earlier") ? "open" : "closed") : "";
   $("sections").replaceChildren(...shown.map((section) => renderSection(section, groups.get(section.key), fold(section.key))));
   $("inbox-empty").hidden = chats.length > 0 || Boolean(searchQuery);
+  $("inbox-unreachable").hidden = true;
   const noMatches = Boolean(searchQuery.trim()) && shown.length === 0;
   $("search-empty").hidden = !noMatches;
   $("search-empty").textContent = noMatches ? `No chats match '${searchQuery}'` : "";
@@ -755,6 +968,33 @@ $("open-codex").addEventListener("click", async (event) => {
   }, 2000);
 });
 
+// On a phone or tablet an app link would try to open the app there; ask the computer running Your Turn instead.
+const REMOTE = !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
+document.addEventListener("click", async (event) => {
+  const link = event.target.closest?.("a[data-open-key]");
+  if (!REMOTE || !link) return;
+  event.preventDefault();
+  const text = link.firstChild;
+  const label = text.textContent;
+  link.dataset.copied = "true";  // Holds the result label through live re-renders, like a copied command.
+  let opened = false;
+  try {
+    const response = await fetch(`/api/open/${encodeURIComponent(link.dataset.openKey)}`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(10000) });
+    opened = response.ok;
+  } catch { /* Shown as not opened below. */ }
+  text.textContent = opened ? "Opened on your Mac" : "Couldn’t open on your Mac";
+  setTimeout(() => {
+    delete link.dataset.copied;
+    text.textContent = label;
+  }, 2000);
+});
+
+function setOpenKey(link, key) {
+  if (key) link.dataset.openKey = key;
+  else delete link.dataset.openKey;
+}
+
 function renderSessionInfo(thread, turn) {
   if ($("session-thread-id").textContent !== thread.id) {
     $("session-thread-id").textContent = thread.id;
@@ -874,6 +1114,8 @@ function renderStatus(thread, turn) {
   $("open-codex").setAttribute("aria-label", resume ? `${action}: ${resume}` : thread.harness === "cursor" ? "Open the project in Cursor" : "Open in Codex (full chat)");
   $("open-codex").title = resume;
   $("open-codex").hidden = !resume && !link;
+  setOpenKey($("open-codex"), !resume && link ? chatKey(thread) : "");
+  setOpenKey($("open-claude-desktop"), desktopLink ? chatKey(thread) : "");
   $("open-action-icon").setAttribute("href", resume ? "#i-copy" : "#i-external");
   $("open-claude-desktop").href = desktopLink || "claude://code/new";
   $("open-claude-desktop").hidden = !desktopLink;
@@ -985,11 +1227,12 @@ function syncAppearance() {
 
 function syncSettingsNotifications() {
   const blocked = notifySupported && Notification.permission === "denied";
+  // Only a state the switch cannot show gets words: unsupported, or blocked with the way out.
+  $("notification-status").hidden = notifySupported && !blocked;
   $("notification-status").textContent = !notifySupported ? "This browser does not support desktop notifications here."
-    : blocked ? "Blocked in this browser’s site settings. Allow them there."
-    : notifyOn() ? "On while a Your Turn tab is open." : "Off in this browser.";
-  $("settings-notify").hidden = !notifySupported || blocked;
-  $("settings-notify").textContent = notifyOn() ? "Turn off notifications" : "Enable notifications";
+    : "Blocked in this browser’s site settings. Allow them there.";
+  $("settings-notify").disabled = !notifySupported || blocked;
+  $("settings-notify").checked = notifySupported && notifyOn();
 }
 
 document.addEventListener("themechange", syncAppearance);
@@ -1001,7 +1244,24 @@ $("appearance-form").addEventListener("change", (event) => {
   $("appearance-note").textContent = saved ? "Appearance is saved in this browser. System follows your device."
     : "Applied for this page, but browser storage is unavailable.";
 });
-$("settings-notify").addEventListener("click", async () => {
+// Deck (beta): opt-in rail entry and theme, saved per browser and applied without a reload.
+function syncDeckSettings() {
+  const root = document.documentElement.dataset;
+  $("deck-form").elements["deck-enabled"].checked = root.deckEnabled === "true";
+  for (const radio of document.querySelectorAll('[name="deck-theme"]')) radio.checked = radio.value === root.deckTheme;
+}
+syncDeckSettings();
+$("deck-form").addEventListener("change", (event) => {
+  const root = document.documentElement.dataset;
+  if (event.target.name === "deck-enabled") root.deckEnabled = String(event.target.checked);
+  else if (event.target.name === "deck-theme") root.deckTheme = event.target.value;
+  else return;
+  try {
+    localStorage.setItem("your-turn.deck.enabled", root.deckEnabled);
+    localStorage.setItem("your-turn.deck.theme", root.deckTheme);
+  } catch { /* Applied to this page; the choice resets when storage is unavailable. */ }
+});
+$("settings-notify").addEventListener("change", async () => {
   if (!notifySupported || Notification.permission === "denied") return;
   if (notifyOn()) {
     try { localStorage.removeItem("notify"); } catch { /* Stays on until storage works. */ }
@@ -1011,6 +1271,48 @@ $("settings-notify").addEventListener("click", async () => {
   syncSettingsNotifications();
 });
 
+// Full screen ends on every page load, so the app runs in a full-screen frame and navigates inside it.
+const inFullscreenShell = (() => {
+  try { return Boolean(window.frameElement?.hasAttribute("data-fullscreen-shell")); } catch { return false; }
+})();
+// The click that asks is the only gesture that may enter full screen, so the frame opens on this page.
+function enterFullscreen(here) {
+  const frame = document.createElement("iframe");
+  frame.className = "fullscreen-frame";
+  frame.title = "Your Turn";
+  frame.dataset.fullscreenShell = "";
+  frame.src = here;
+  document.body.append(frame);
+  frame.requestFullscreen().then(() => {
+    for (const source of streams.keys()) source.close();
+    streams.clear();
+    document.addEventListener("fullscreenchange", () => {
+      if (document.fullscreenElement) return;
+      const inner = frame.contentWindow.location;
+      location.assign(inner.pathname + inner.search);
+    });
+  }, () => {
+    frame.remove();
+    location.assign(`/fullscreen?to=${encodeURIComponent(here)}`);
+  });
+}
+if (inFullscreenShell || document.fullscreenEnabled) {
+  $("fullscreen-setting").hidden = false;
+  $("settings-fullscreen").checked = inFullscreenShell;
+  $("settings-fullscreen").addEventListener("change", () => {
+    const here = location.pathname + location.search;
+    if (inFullscreenShell) window.top.location.assign(here);
+    else enterFullscreen(here);
+  });
+}
+if (inFullscreenShell) {
+  // The frame allows only this origin, so links that leave the app replace the full-screen page.
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href]");
+    if (link && link.origin !== location.origin) link.target = "_top";
+  }, { capture: true });
+}
+
 const drawer = matchMedia("(max-width: 959px)");
 const railTooltip = $("rail-tooltip");
 for (const control of document.querySelectorAll(".rail-action")) {
@@ -1019,6 +1321,9 @@ for (const control of document.querySelectorAll(".rail-action")) {
     railTooltip.textContent = control.dataset.tooltip;
     const box = control.getBoundingClientRect();
     railTooltip.style.top = `${box.top + box.height / 2}px`;
+    // With Settings or Help open, sit left of the panel instead of over its header and Close button.
+    const panel = document.querySelector(".aside-panel:not([hidden])");
+    railTooltip.style.right = panel ? `${innerWidth - panel.getBoundingClientRect().left + 8}px` : "";
     railTooltip.hidden = false;
   };
   control.addEventListener("mouseenter", show);
@@ -1096,6 +1401,7 @@ if (!threadId) for (const theme of ["light", "dark"]) {
 function renderShared() {
   if (threadData) renderThread(threadData);
   if (inboxData) renderInbox(inboxData);
+  if (deckData) renderDeck(deckData);
   if (attentionData) { syncNavigation(attentionData); setFavicon(attentionData.some(needsAttention)); }
 }
 
@@ -1380,7 +1686,7 @@ function renderToolUsage(thread) {
   }
   const calls = [...tools.values()].reduce((total, count) => total + count, 0);
   $("tools-wrap").hidden = tools.size === 0;
-  rowLabel("tools-summary", "MCP tools", `${calls} ${calls === 1 ? "call" : "calls"}`);
+  rowLabel("tools-summary", "Tools", `${calls} ${calls === 1 ? "call" : "calls"}`);
   const toolRows = [...tools].map(([name, count]) => {
     const [server, tool] = name.split(" · ");
     const item = el("li", "usage-item");
@@ -1491,6 +1797,16 @@ $("evidence-list").addEventListener("click", (event) => {
   }
 });
 
+// The no-scroll HUD layouts: wide and driven by a mouse or trackpad (see app.css).
+const HUD_WIDE = matchMedia("(min-width: 1200px) and (pointer: fine)");
+
+function deckHudWide() {
+  return document.body.dataset.origin === "deck" && HUD_WIDE.matches;
+}
+
+// Crossing 1200px (or plugging in a mouse) re-renders the chat so its layout (data-hud) matches the window.
+HUD_WIDE.addEventListener("change", () => { if (threadData) renderThread(threadData); });
+
 function renderThread(thread) {
   const title = threadId ? $("title") : $("panel-title");
   const openingPanel = !threadId && title.textContent === "Loading…";
@@ -1527,6 +1843,14 @@ function renderThread(thread) {
   renderTimeline(thread);
   renderToolUsage(thread);
   renderSessionInfo(thread, turn);
+  // Opened from Deck on a wide screen, the chat is a no-scroll, three-column HUD. Its sections still fold:
+  // someone who opened the chat has time to go through them.
+  $("thread-view").dataset.hud = String(deckHudWide());
+  if (deckHudWide()) {
+    // Compact live facts lead the More column and long histories close it. Moving the nodes, not
+    // CSS `order`, keeps keyboard and reading order equal to what is on screen.
+    $("more").querySelector(".list").append(...["hero-meta", "tools-wrap", "activity-wrap", "session-files-wrap", "earlier-wrap"].map($));
+  }
   if (turn?.ended_at && seen.get(chatKey(thread)) < turn.ended_at) {
     seen.set(chatKey(thread), turn.ended_at);
     if (inboxData) renderInbox(inboxData);
@@ -1571,6 +1895,7 @@ function resetThread() {
 function showPanel(id) {
   if (id === openId) return Promise.resolve();
   threadSource?.close();
+  streams.delete(threadSource);
   threadSource = null;
   threadData = null;
   openId = id;
@@ -1592,7 +1917,1236 @@ function closePanel() {
   showPanel("").then(() => (cardFor(id) || document.querySelector('.segments [aria-current="page"]'))?.focus());
 }
 
-if (!threadId) {
+// Deck: selected handoff and telemetry above compact, selectable status rows.
+let deckData = null;
+let deckSelected = "";
+// The hero follows urgency (Needs you first) until the user picks a chat; a status filter resets it.
+let deckPinned = false;
+let deckFilter = "";
+let deckDirection = 0;
+let deckMomentum = 0;
+let deckEarlierLimit = SECTION_LIMIT;
+let deckLayout = readPreference("your-turn.deck.layout") === "focus" ? "focus" : "multi";
+const deckDismissals = new Map();
+const deckGroupOpen = new Map();
+// Narrow portrait (phone, split pane) starts queues collapsed; a tap or fleet filter opens one.
+const deckNarrow = matchMedia("(max-width: 599px) and (orientation: portrait)");
+// With the queue dock showing, the full lists below are a secondary tray and start collapsed too.
+const deckWide = matchMedia("(min-width: 1200px)");
+const deckDocked = () => deckLayout === "multi" && deckWide.matches && !$("deck-matrix").hidden;
+deckWide.addEventListener("change", () => { if (deckData) renderDeck(deckData); });
+let deckGesture = null;
+// While the browser scrolls a touch drag (and its fling), live renders wait: replacing the card would end the scroll.
+let deckScrolling = false;
+function deckScrollTakeover() {
+  deckGesture = null;
+  if (deckScrolling) return;
+  deckScrolling = true;
+  const done = () => {
+    if (!deckScrolling) return;
+    deckScrolling = false;
+    renderDeck(deckData);
+  };
+  document.addEventListener("scrollend", done, { capture: true, once: true });
+  setTimeout(done, 3000);  // No scroll after all (a tap that drifted), or no scrollend support.
+}
+let deckSwipeUntil = 0;
+const DECK_NAMES = { waiting: "NEEDS YOU", working: "WORKING", new: "READY" };
+const DECK_AGENTS = { claude: "Claude", codex: "Codex", cursor: "Cursor" };
+const deckSlots = [readPreference("your-turn.deck.slot1") || "claude", readPreference("your-turn.deck.slot2") || "codex"];
+const DECK_REVIEW_KEY = "your-turn.deck.reviewed";
+let deckReviewed = deckView && !threadId ? readDeckReviews() : new Map();
+
+function readDeckReviews() {
+  try {
+    const entries = JSON.parse(readPreference(DECK_REVIEW_KEY) || "[]");
+    return new Map(Array.isArray(entries) ? entries.filter((entry) => Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && (typeof entry[1] === "string" || entry[1] === null)) : []);
+  } catch { return new Map(); }
+}
+
+function deckReviewStamp(chat) {
+  const key = chatKey(chat);
+  if (deckReviewed.has(key)) return deckReviewed.get(key);
+  // Older Deck versions used the reminder map; only Deck interprets those markers.
+  const legacy = shared.dismissed[key];
+  return typeof legacy === "string" && legacy.startsWith("reviewed:") ? legacy.slice(9) : null;
+}
+
+function setDeckReview(key, value) {
+  deckReviewed = new Map([...deckReviewed, ...readDeckReviews()]);
+  deckReviewed.set(key, value);
+  try { localStorage.setItem(DECK_REVIEW_KEY, JSON.stringify([...deckReviewed])); } catch { /* Keep this page's review state. */ }
+}
+
+// What a Deck review remembers: the result it saw, or for a quiet chat the silence it set aside.
+function deckReviewMark(chat, kind) {
+  return kind === "working" ? `quiet:${chat.updated_at}` : chat.turn_ended_at;
+}
+
+function deckSectionOf(chat) {
+  const kind = sectionOf(chat);
+  return ["new", "working"].includes(kind) && deckReviewStamp(chat) === deckReviewMark(chat, kind) ? "earlier" : kind;
+}
+
+function deckGroups(chats) {
+  const groups = deckOrder(groupChats(chats));
+  for (const kind of ["new", "working"]) {
+    const reviewed = groups.get(kind).filter((chat) => deckReviewStamp(chat) === deckReviewMark(chat, kind));
+    if (!reviewed.length) continue;
+    const keys = new Set(reviewed.map(chatKey));
+    groups.set(kind, groups.get(kind).filter((chat) => !keys.has(chatKey(chat))));
+    groups.set("earlier", [...groups.get("earlier"), ...reviewed].sort((a, b) => b.updated_at.localeCompare(a.updated_at)));
+  }
+  return groups;
+}
+
+if (deckView && !threadId) window.addEventListener("storage", (event) => {
+  if (event.key !== DECK_REVIEW_KEY && event.key !== null) return;
+  deckReviewed = readDeckReviews();
+  if (deckData) renderDeck(deckData);
+});
+
+function deckEntries(groups) {
+  return ["waiting", "working", "new"].filter((kind) => !deckFilter || kind === deckFilter)
+    .flatMap((kind) => groups.get(kind).map((chat) => ({ chat, kind })));
+}
+
+function deckCarouselQueue(groups) {
+  const kind = deckFilter || ["waiting", "working", "new"].find((key) => groups.get(key).some((chat) => chatKey(chat) === deckSelected)) || "waiting";
+  return groups.get(kind);
+}
+
+function selectDeckChat(key, direction = 0) {
+  deckSelected = key;
+  deckPinned = true;
+  deckDirection = direction;
+  if (deckData) renderDeck(deckData);
+}
+
+function cycleDeckChat(step, velocity = 0) {
+  if (!deckData) return;
+  const queue = deckCarouselQueue(deckGroups(deckData));
+  if (queue.length < 2) { renderDeck(deckData); return; }
+  const index = queue.findIndex((chat) => chatKey(chat) === deckSelected);
+  deckMomentum = Math.min(2, Math.abs(velocity));
+  selectDeckChat(chatKey(queue[(index + step + queue.length) % queue.length]), step);
+}
+
+function focusDeckKind(kind) {
+  deckFilter = deckFilter === kind ? "" : kind;
+  const groups = deckGroups(deckData);
+  if (deckFilter) deckGroupOpen.set(deckFilter, true);
+  deckPinned = false;
+  deckSelected = deckEntries(groups)[0] ? chatKey(deckEntries(groups)[0].chat) : "";
+  renderDeck(deckData);
+}
+
+function renderDeckFleet(groups) {
+  const fleet = $("deck-fleet");
+  if (!fleet.children.length) {
+    const all = el("button", "deck-fleet-all");
+    all.type = "button";
+    all.dataset.clearFilter = "";
+    all.title = "All chats · Clear status filter";
+    all.setAttribute("aria-label", "Show all chats and clear status filter");
+    all.append(icon("i-fleet"));
+    const lights = el("span", "deck-lights");
+    lights.setAttribute("aria-hidden", "true");
+    lights.append(...Array.from({ length: 6 }, (_, index) => {
+      const light = el("span");
+      light.dataset.kind = "";
+      light.style.setProperty("--index", String(index));
+      return light;
+    }));
+    fleet.append(all, lights, ...Object.keys(DECK_NAMES).map((kind) => {
+      const button = el("button", "deck-fleet-readout");
+      button.type = "button";
+      button.dataset.kind = kind;
+      button.append(el("strong"), el("span", "", DECK_NAMES[kind]));
+      return button;
+    }));
+  }
+  const counts = Object.fromEntries(Object.keys(DECK_NAMES).map((kind) => [kind, groups.get(kind).length]));
+  const cells = deckMagazine(counts, deckFilter);
+  const lights = fleet.querySelector(".deck-lights");
+  const revUp = fleet.dataset.filter !== deckFilter && !calm.matches;
+  if (revUp) {
+    lights.classList.remove("deck-lights-rev");
+    // Restart the keyframe sweep even when the new filter uses the same cell colors.
+    void lights.offsetWidth;
+  }
+  [...lights.children].forEach((light, index) => {
+    light.dataset.kind = cells[index];
+  });
+  if (revUp) lights.classList.add("deck-lights-rev");
+  fleet.querySelector(".deck-fleet-all").setAttribute("aria-pressed", String(!deckFilter));
+  for (const button of fleet.querySelectorAll("button[data-kind]")) {
+    const kind = button.dataset.kind;
+    button.firstChild.textContent = counts[kind];
+    // Working counts every open turn; the quiet ones (maybe stuck) are named beside it.
+    const quiet = kind === "working" ? groups.get(kind).filter((chat) => chat.quiet).length : 0;
+    button.lastChild.textContent = quiet ? `${DECK_NAMES[kind]} · ${quiet} QUIET` : DECK_NAMES[kind];
+    button.setAttribute("aria-pressed", String(deckFilter === kind));
+    button.setAttribute("aria-label", `${DECK_NAMES[kind]}: ${counts[kind]}${quiet ? `, ${quiet} quiet` : ""}. ${deckFilter === kind ? "Show all chats" : "Focus this group"}.`);
+  }
+  fleet.dataset.filter = deckFilter;
+}
+
+$("deck-fleet").addEventListener("click", (event) => {
+  if (event.target.closest("[data-clear-filter]") && deckData) {
+    deckFilter = "";
+    renderDeck(deckData);
+    return;
+  }
+  const button = event.target.closest("button[data-kind]");
+  if (button && deckData) focusDeckKind(button.dataset.kind);
+});
+$("deck-reload").addEventListener("click", (event) => {
+  event.currentTarget.setAttribute("aria-busy", "true");
+  location.reload();
+});
+$("deck-layout").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-layout]");
+  if (!button) return;
+  deckLayout = button.dataset.layout;
+  try { localStorage.setItem("your-turn.deck.layout", deckLayout); } catch { /* Page-local layout still works. */ }
+  if (deckData) renderDeck(deckData);
+});
+$("deck-carousel").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-step]");
+  if (button) cycleDeckChat(Number(button.dataset.step));
+});
+
+function deckReviewButton(chat, kind, className) {
+  if (!deckCanReview(chat, kind)) return null;
+  const button = el("button", className, kind === "new" ? "Mark reviewed" : "Dismiss");
+  button.type = "button";
+  button.dataset.review = chatKey(chat);
+  button.setAttribute("aria-label", `${kind === "new" ? "Mark reviewed" : kind === "working" ? "Set aside quiet chat" : "Dismiss reminder for"} ${chatName(chat)}`);
+  button.title = kind === "new" ? "Move this result to Earlier"
+    : kind === "working" ? "Move this quiet chat to Earlier; it comes back if the agent writes again"
+    : "Hide this reminder; the request stays open in its agent";
+  return button;
+}
+
+function reviewDeckChat(key) {
+  if (!deckView || threadId) return;
+  const chat = deckData?.find((item) => chatKey(item) === key);
+  if (!chat || deckDismissals.has(key)) return;
+  const kind = deckSectionOf(chat);
+  if (!deckCanReview(chat, kind)) { renderDeck(deckData); return; }
+  const local = kind !== "waiting";
+  const previous = local ? deckReviewStamp(chat) : shared.dismissed[key] || null;
+  if (local) setDeckReview(key, deckReviewMark(chat, kind));
+  else saveShared({ dismissed: { [key]: chat.attention_key } });
+  const row = [...$("deck-groups").querySelectorAll("[data-select]")].find((node) => node.dataset.select === key);
+  const focused = row?.parentElement.contains(document.activeElement) || [...$("deck-feature").children].some((card) => card.dataset.key === key && card.contains(document.activeElement));
+  let undone = false;
+  const finish = () => {
+    if (undone) return;
+    deckDismissals.delete(key);
+    renderShared();
+    if (focused) ([...$("deck-groups").querySelectorAll(".deck-row")].find((node) => node.getClientRects().length) || $("deck-fleet").querySelector("button"))?.focus({ preventScroll: true });
+  };
+  if (row && !calm.matches) {
+    const item = row.parentElement;
+    const animation = item.animate([{ height: `${item.offsetHeight}px`, opacity: 1 }, { height: "0px", opacity: 0 }], { duration: 180, easing: "ease-out" });
+    deckDismissals.set(key, animation);
+    animation.finished.then(finish, finish);
+  } else finish();
+  const undo = el("button", "button", "Undo");
+  undo.type = "button";
+  undo.addEventListener("click", () => {
+    hideUndo();
+    undone = true;
+    deckDismissals.get(key)?.cancel();
+    deckDismissals.delete(key);
+    if (local) setDeckReview(key, previous);
+    else saveShared({ dismissed: { [key]: previous } });
+    deckSelected = key;
+    deckPinned = true;
+    deckFilter = "";
+    renderShared();
+    $("deck-groups").querySelector(`[data-select="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  });
+  const toast = el("div", "undo-toast-body");
+  toast.append(el("span", "", `${kind === "new" ? "Reviewed" : kind === "working" ? "Set aside" : "Reminder dismissed"}: ${chatName(chat)}`), undo);
+  $("undo-toast").replaceChildren(toast);
+  restartUndoTimer();
+}
+
+function renderDeckTelemetry() {
+  if (!deckData) return;
+  const groups = deckGroups(deckData);
+  document.body.dataset.deckUrgent = String(deckUrgent(groups.get("waiting").map(waitingSince)));
+  const metrics = deckTelemetry(deckData, deckData.filter((chat) => chat.status === "working"), groups.get("waiting").map(waitingSince));
+  for (const button of $("deck-slots").children) {
+    const metric = metrics.find((item) => item.id === deckSlots[Number(button.dataset.slot) - 1]) || metrics[Number(button.dataset.slot) - 1];
+    button.dataset.metric = metric.id;
+    button.dataset.tone = metric.tone;
+    button.title = `${metric.note} Click to switch metric.`;
+    button.setAttribute("aria-label", `${metric.label} ${metric.value}. Switch telemetry metric.`);
+    const reading = el("span", "deck-telemetry-reading");
+    const cycle = el("span", "deck-cycle", "↻");
+    cycle.setAttribute("aria-hidden", "true");
+    reading.append(el("strong", "", metric.value), cycle);
+    button.replaceChildren(el("span", "", metric.label), reading);
+  }
+}
+
+$("deck-slots").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-slot]");
+  if (!button || !deckData) return;
+  const modes = ["claude", "codex", "burn", "peak", "wait", "today"];
+  const slot = Number(button.dataset.slot);
+  deckSlots[slot - 1] = modes[(modes.indexOf(button.dataset.metric) + 1) % modes.length];
+  try { localStorage.setItem(`your-turn.deck.slot${slot}`, deckSlots[slot - 1]); } catch { /* Keep this page's selection. */ }
+  renderDeckTelemetry();
+});
+
+function deckSince(chat, kind) {
+  return kind === "working" ? chat.working_since : kind === "waiting" ? waitingSince(chat)
+    : chat.turn_ended_at || chat.updated_at;
+}
+
+function deckAgent(chat) {
+  return el("span", "deck-agent", DECK_AGENTS[chat.harness] || appName(chat));
+}
+
+function deckRepo(chat) {
+  const repo = el("span", "deck-repo");
+  repo.title = chat.cwd || projectName(chat);
+  repo.append(icon("i-workspace"), el("span", "", projectName(chat)));
+  return repo;
+}
+
+function updateDeckTimer(node) {
+  const duration = deckElapsed(node.dataset.lcd) || "—";
+  node.setAttribute("aria-label", `Elapsed time: ${duration}`);
+  node.replaceChildren(...duration.split(" ").map((part) => {
+    const unit = el("span", "", part);
+    unit.setAttribute("aria-hidden", "true");
+    return unit;
+  }));
+}
+
+function deckTimer(since, className = "deck-timer") {
+  const timer = el("span", className);
+  timer.setAttribute("role", "timer");
+  timer.setAttribute("aria-live", "off");
+  if (since) timer.dataset.lcd = since;
+  updateDeckTimer(timer);
+  return timer;
+}
+
+// "Quiet 18h", refreshed in place by the 30-second ticker like the Inbox's quiet tag.
+function deckQuietAge(chat, className) {
+  const age = el("span", className, `Quiet ${quietFor(chat)}`);
+  age.dataset.quietAt = chat.updated_at;
+  return age;
+}
+
+function deckMini(chat, kind) {
+  const item = el("li");
+  const button = el("button", "deck-mini");
+  button.type = "button";
+  button.dataset.select = chatKey(chat);
+  button.dataset.kind = kind;
+  const quiet = deckQuiet(chat, kind);
+  button.dataset.quiet = String(quiet);
+  button.setAttribute("aria-label", `Focus ${chatName(chat)}, ${quiet ? "quiet, " : ""}${appName(chat)}, ${projectName(chat)}`);
+  const head = el("span", "deck-mini-head");
+  const title = el("span", "deck-mini-title", chatName(chat));
+  title.title = chatName(chat);
+  head.append(icon(SECTION_ICONS[kind]), title);
+  const meta = el("span", "deck-mini-meta");
+  meta.append(deckAgent(chat), deckRepo(chat), quiet ? deckQuietAge(chat, "deck-mini-time") : deckTimer(deckSince(chat, kind), "deck-mini-time"));
+  const fill = contextFill(chat.context_used, contextSize(chat));
+  const readout = el("span", "deck-mini-readout");
+  const context = el("span", "deck-mini-context", fill ? `CTX ${fill.percent}%` : "CTX unknown");
+  context.title = fill ? `${tokenCount(chat.context_used, true)} / ${tokenCount(contextSize(chat), true)}` : "Context window not reported";
+  const gauge = el("span", `deck-mini-gauge${fill ? "" : " deck-mini-standby"}`);
+  gauge.setAttribute("aria-hidden", "true");
+  gauge.dataset.tone = fill?.percent >= 90 ? "red" : fill?.percent >= 75 ? "amber" : "green";
+  for (let i = 0; i < 10; i++) {
+    const block = el("span");
+    block.style.setProperty("--fill", `${fill ? Math.max(0, Math.min(100, (fill.percent - i * 10) * 10)) : 0}%`);
+    gauge.append(block);
+  }
+  readout.append(gauge, context);
+  button.append(head, meta, readout);
+  item.append(button);
+  return item;
+}
+
+function renderDeckMatrix(groups, selected) {
+  const matrix = $("deck-matrix");
+  const grid = $("deck-mini-grid");
+  // The dock lists every other queued chat, Needs you first, so the hero never has to scroll for them.
+  const entries = deckEntries(groups).filter(({ chat }) => chatKey(chat) !== deckSelected);
+  const usage = deckUsage(deckData);
+  const slot = $("deck-usage");
+  slot.hidden = !usage;
+  if (usage && slot.dataset.sig !== usage.outerHTML) { slot.dataset.sig = usage.outerHTML; slot.replaceChildren(...usage.children); }
+  // Plan usage keeps the dock visible even when no other chat is queued.
+  matrix.hidden = !selected || (!entries.length && !usage);
+  grid.hidden = $("deck-matrix-title").hidden = !entries.length;
+  $("deck-stage").dataset.queueEmpty = String(matrix.hidden);
+  $("deck-matrix-title").textContent = deckFilter ? `${DECK_NAMES[deckFilter]} QUEUE` : "QUEUE";
+  const focused = grid.contains(document.activeElement) && document.activeElement.dataset.select;
+  const cards = entries.map(({ chat, kind }) => deckMini(chat, kind));
+  const signature = cards.map((card) => card.outerHTML).join("");
+  if (grid.dataset.sig !== signature) {
+    const scroll = grid.scrollTop;
+    grid.dataset.sig = signature;
+    grid.replaceChildren(...cards);
+    grid.scrollTop = scroll;
+    if (focused) (grid.querySelector(`[data-select="${CSS.escape(focused)}"]`) || $("deck-feature").querySelector("a"))?.focus({ preventScroll: true });
+  }
+}
+
+// A queue with more below its fold fades out at the bottom, so a half-visible row reads as "scroll for more".
+function markDeckQueueMore() {
+  const grid = $("deck-mini-grid");
+  grid.dataset.more = String(grid.scrollTop + grid.clientHeight < grid.scrollHeight - 1);
+}
+$("deck-mini-grid").addEventListener("scroll", markDeckQueueMore, { passive: true });
+
+$("deck-feature").addEventListener("keydown", (event) => {
+  const supporting = event.target.closest?.(".deck-supporting[open]");
+  if (event.key !== "Escape" || !supporting) return;
+  event.preventDefault();
+  supporting.open = false;
+  supporting.querySelector("summary").focus();
+});
+
+$("deck-mini-grid").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-select]");
+  if (!button) return;
+  selectDeckChat(button.dataset.select);
+  $("deck-feature").querySelector("a")?.focus({ preventScroll: true });
+});
+
+function deckTerminal(chat) {
+  const state = deckTerminalState(chat, $("connection").dataset.state === "live");
+  const terminal = el("div", "deck-terminal");
+  terminal.dataset.live = String(state.live);
+  terminal.dataset.stream = JSON.stringify(state.events.length ? state.events : [state.fallback]);
+  const header = el("div", "deck-terminal-header");
+  const status = el("span", "deck-terminal-state");
+  const dot = el("span", "deck-terminal-dot");
+  dot.setAttribute("aria-hidden", "true");
+  status.append(dot, document.createTextNode(state.label));
+  header.append(status, el("span", "deck-terminal-source", "RECORDED LOG"));
+  terminal.append(header);
+  const body = el("div", "deck-terminal-body");
+  terminal.append(body);
+  if (state.events.length) {
+    const log = el("ol", "deck-terminal-log");
+    log.setAttribute("aria-label", "Latest recorded activity");
+    state.events.forEach((event, index) => {
+      const row = el("li");
+      row.title = event.title;
+      const time = el("span", "deck-terminal-time", event.pending ? "PENDING" : clock(event.at) || "LOG");
+      const text = el("code", "deck-terminal-text", `${event.kind === "command" ? "$" : "›"} ${event.title}`);
+      if (index === state.events.length - 1) {
+        const cursor = el("span", "deck-terminal-cursor", "_");
+        cursor.setAttribute("aria-hidden", "true");
+        text.append(cursor);
+      }
+      row.append(time, text);
+      log.append(row);
+    });
+    body.append(log);
+  } else {
+    body.append(el("p", "deck-terminal-idle", state.fallback));
+  }
+  return terminal;
+}
+
+function deckGoal(recap) {
+  return (recap || "").match(/(?:^|\s)Goal:\s*(.+?)(?=\s+(?:Settled|Open|Done|Next|Status):|$)/s)?.[1].trim() || "";
+}
+
+function updateDeckPulse(node) {
+  const age = Date.now() - Date.parse(node.dataset.pulseLast);
+  const pulse = node.closest(".deck-pulse");
+  const stalled = pulse.dataset.quiet === "true" || age > DECK_STALL_MS;
+  pulse.dataset.stalled = String(stalled);
+  const since = deckElapsed(node.dataset.pulseLast) || "—";
+  node.textContent = stalled ? `NO ACTIVITY ${since}` : `LAST STEP ${since}`;
+}
+
+// Goal, 30 minutes of token activity, and changed files fill the readout beside a working terminal.
+function deckVitals(chat) {
+  const vitals = el("div", "deck-vitals");
+  const goal = deckGoal(chat.recap);
+  if (goal) {
+    const row = el("p", "deck-goal");
+    row.title = goal;
+    row.append(el("span", "deck-vital-label", "GOAL"), document.createTextNode(goal));
+    vitals.append(row);
+  }
+  const minutes = minuteBuckets(chat.usage_minutes, 30);
+  const peak = Math.max(...minutes);
+  const pulse = el("div", "deck-pulse");
+  pulse.dataset.quiet = String(Boolean(chat.quiet));
+  const head = el("p", "deck-pulse-head");
+  const last = el("span", "deck-pulse-last");
+  last.dataset.pulseLast = chat.activity_log?.at(-1)?.at || chat.updated_at;
+  head.append(el("span", "deck-vital-label", "PULSE · 30M"), last);
+  const chart = el("div", "deck-pulse-chart");
+  chart.setAttribute("aria-hidden", "true");
+  for (const tokens of minutes) {
+    const bar = el("span", "deck-pulse-bar");
+    if (tokens) bar.style.setProperty("--h", `${Math.max(12, Math.round(Math.sqrt(tokens / peak) * 100))}%`);
+    chart.append(bar);
+  }
+  pulse.append(head, chart);
+  vitals.append(pulse);
+  updateDeckPulse(last);
+  const files = [...new Set(chat.changed_files || [])];
+  if (files.length) {
+    const row = el("p", "deck-files");
+    row.title = files.join("\n");
+    row.append(el("span", "deck-vital-label", `${files.length} ${files.length === 1 ? "FILE" : "FILES"}`),
+      el("code", "", files.slice(-2).map((path) => path.split("/").pop()).join(" · ")));
+    vitals.append(row);
+  }
+  return vitals;
+}
+
+// Tokens per minute over the last `count` minutes, oldest first; the last slot is the current minute.
+function minuteBuckets(samples, count, now = Date.now()) {
+  const minutes = Array(count).fill(0);
+  const current = Math.floor(now / 60_000);
+  for (const [at, tokens] of samples || []) {
+    const slot = count - 1 - (current - Math.floor(Date.parse(at) / 60_000));
+    if (slot >= 0 && slot < count) minutes[slot] += tokens;
+  }
+  return minutes;
+}
+
+// One instrument for every trace: bars scaled to the peak (or `max`), newest on the right.
+// The head carries the reading in text, so the chart itself stays decorative for screen readers.
+function deckTrace(label, values, { reading = "", max, tone = () => "", title = () => "", live = false } = {}) {
+  const block = el("div", "deck-trace");
+  const head = el("p", "deck-trace-head");
+  head.append(el("span", "deck-vital-label", label), el("span", "deck-trace-reading", reading));
+  const chart = el("div", "deck-trace-chart");
+  chart.setAttribute("aria-hidden", "true");
+  chart.dataset.live = String(live);
+  const peak = max ?? Math.max(1, ...values);
+  values.forEach((value, index) => {
+    const bar = el("span", "deck-trace-bar");
+    bar.style.setProperty("--h", `${value > 0 ? Math.max(4, Math.min(100, Math.round(value / peak * 100))) : 0}%`);
+    if (tone(value, index)) bar.dataset.tone = tone(value, index);
+    if (title(value, index)) bar.title = title(value, index);
+    chart.append(bar);
+  });
+  block.append(head, chart);
+  return block;
+}
+
+// Real telemetry for the hero's free space: lap times (purple best, live lap animated), context
+// at the end of each lap against the 75%/90% marks, and, off the Working card, the chat's token flow.
+function deckTraces(chat, kind) {
+  const traces = [];
+  const laps = (chat.laps || []).filter((lap) => lapSeconds(lap) > 0);
+  const live = laps.length > 0 && !laps.at(-1).ended_at;
+  if (laps.length >= 2) {
+    const seconds = laps.map(lapSeconds);
+    const finished = seconds.filter((_, i) => laps[i].ended_at);
+    const best = finished.length ? Math.min(...finished) : 0;
+    traces.push(deckTrace(`LAPS · ${laps.length}`, seconds, {
+      reading: finished.length ? `Best ${lapClock(best)} · avg ${lapClock(mean(finished))}` : "",
+      tone: (value, i) => !laps[i].ended_at ? "live" : value === best ? "best" : "",
+      title: (value, i) => `Turn ${laps[i].turn}: ${lapClock(value)}${laps[i].ended_at ? "" : " so far"}`,
+      live,
+    }));
+  }
+  const size = contextSize(chat);
+  const filled = (chat.laps || []).filter((lap) => lap.context > 0);
+  if (size && filled.length >= 2) {
+    const percents = filled.map((lap) => Math.min(100, lap.context / size * 100));
+    const growth = percents.slice(1).map((value, i) => value - percents[i]).filter((value) => value > 0);
+    traces.push(deckTrace("CTX / LAP", percents, {
+      max: 100,
+      reading: growth.length ? `+${mean(growth).toFixed(1)}% per lap` : "",
+      tone: (value) => value >= 90 ? "red" : value >= 75 ? "amber" : "",
+      title: (value, i) => `Turn ${filled[i].turn}: ${Math.round(value)}% of the context window`,
+    }));
+  }
+  if (kind !== "working") {
+    const minutes = minuteBuckets(chat.usage_minutes, 60);
+    const total = minutes.reduce((sum, value) => sum + value, 0);
+    if (total) traces.push(deckTrace("TOKENS · 60M", minutes, { reading: `${tokenCount(total, true)} tokens` }));
+  }
+  if (!traces.length) return null;
+  const band = el("div", "deck-traces");
+  band.append(...traces);
+  return band;
+}
+
+const DECK_SECTORS = [["think", "THINK"], ["run", "RUN"], ["edit", "EDIT"]];
+// 5% segments: the 75% and 90% marks land on segment edges.
+const DECK_CTX_SEGMENTS = 20;
+
+function lapSeconds(lap) {
+  const start = Date.parse(lap.started_at);
+  const end = lap.ended_at ? Date.parse(lap.ended_at) : Date.now();
+  return start && end > start ? (end - start) / 1000 : 0;
+}
+
+function lapClock(seconds) {
+  const s = Math.round(Math.abs(seconds));
+  const mm = String(Math.floor((s % 3600) / 60)), ss = String(s % 60).padStart(2, "0");
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${mm.padStart(2, "0")}:${ss}` : `${mm}:${ss}`;
+}
+
+const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+
+// What the chat changed, newest first: the files to review before acting on its handoff.
+const DECK_FILES_SHOWN = 12;
+function deckChangedFiles(chat) {
+  const files = [...new Set(chat.changed_files || [])].reverse();
+  if (!files.length) return null;
+  const root = chat.cwd ? `${chat.cwd.replace(/\/$/, "")}/` : "";
+  const block = el("section", "deck-files-panel");
+  block.setAttribute("aria-label", "Changed files");
+  const head = el("p", "deck-trace-head");
+  head.append(el("span", "deck-vital-label", "CHANGED FILES"), el("span", "deck-trace-reading", String(files.length)));
+  const list = el("ol", "deck-files-list");
+  for (const path of files.slice(0, DECK_FILES_SHOWN)) {
+    const relative = root && path.startsWith(root) ? path.slice(root.length) : path;
+    const slash = relative.lastIndexOf("/");
+    const item = el("li");
+    item.title = relative;
+    if (slash > 0) item.append(el("span", "deck-files-dir", relative.slice(0, slash + 1)));
+    item.append(el("span", "deck-files-name", relative.slice(slash + 1)));
+    list.append(item);
+  }
+  if (files.length > DECK_FILES_SHOWN) list.append(el("li", "deck-files-more", `+${files.length - DECK_FILES_SHOWN} more in the chat`));
+  block.append(head, list);
+  return block;
+}
+
+// Plan usage per agent account: the 5-hour session and the weekly window, from the newest report each
+// agent made (Codex in its transcripts, Claude through the opt-in status line capture).
+const USAGE_WINDOWS = [[300, "SESSION 5H"], [10_080, "WEEKLY 7D"]];
+const USAGE_STALE_MS = 15 * 60_000;
+function deckUsage(chats, now = Date.now()) {
+  const providers = ["claude", "codex"].map((harness) => {
+    const own = (chats || []).filter((chat) => chat.harness === harness);
+    return { harness, at: own.map((chat) => chat.rate_limits_at || "").sort().at(-1) || "", windows: latestQuota(own, now) };
+  }).filter(({ windows }) => windows.length);
+  const cards = USAGE_WINDOWS.map(([minutes, label]) => {
+    const rows = providers.map((provider) => [provider, provider.windows.find((window) => window.window_minutes === minutes)])
+      .filter(([, window]) => window);
+    if (!rows.length) return null;
+    const card = el("div", "deck-usage-card");
+    const head = el("p", "deck-trace-head");
+    head.append(el("span", "deck-vital-label", label));
+    card.append(head);
+    for (const [{ harness, at }, window] of rows) {
+      const percent = Math.round(window.used_percent);
+      const row = el("div", "deck-usage-row");
+      row.dataset.tone = percent >= 90 ? "red" : percent >= 75 ? "amber" : "";
+      const gauge = el("span", "deck-mini-gauge");
+      gauge.dataset.tone = row.dataset.tone;
+      gauge.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < 10; i++) {
+        const block = el("span");
+        block.style.setProperty("--fill", `${Math.max(0, Math.min(100, (percent - i * 10) * 10))}%`);
+        gauge.append(block);
+      }
+      const notes = [window.resets_at ? `Resets in ${untilShort(window.resets_at, now)}` : ""];
+      const age = now - Date.parse(at);
+      // Claude's capture only updates while a session runs: say when a reading is old.
+      if (age > USAGE_STALE_MS) notes.push(`As of ${ago(at)}`);
+      row.append(el("span", "deck-usage-name", DECK_AGENTS[harness] || appName({ harness })), el("strong", "deck-usage-percent", `${percent}%`), gauge,
+        el("span", "deck-usage-note", notes.filter(Boolean).join(" · ")));
+      row.setAttribute("aria-label", `${appName({ harness })} ${label.toLowerCase()}: ${percent}% used${notes.filter(Boolean).length ? `, ${notes.filter(Boolean).join(", ").toLowerCase()}` : ""}`);
+      card.append(row);
+    }
+    return card;
+  }).filter(Boolean);
+  if (!cards.length) return null;
+  const block = el("section");
+  block.append(...cards);
+  return block;
+}
+
+// The run's setup, like a car's: model, reasoning effort and how much input the prompt cache served.
+function deckSetup(chat) {
+  const parts = [chat.model?.replace(/^claude-/, ""), chat.reasoning_effort?.toLowerCase(),
+    Number.isFinite(chat.cache_hit) ? `cache ${chat.cache_hit}%` : ""].filter(Boolean);
+  if (!parts.length) return null;
+  const row = el("span", "deck-setup", parts.join(" · "));
+  row.title = "Model and reasoning effort of the latest turn; cache is the cached share of this session's input tokens.";
+  return row;
+}
+
+// Tool use (built-in and MCP): calls per tool as ranked bars; a tool called in the last minute of a live run flows.
+function deckTools(chat) {
+  const tools = chat.tool_calls || [];
+  if (!tools.length) return null;
+  const peak = Math.max(...tools.map((tool) => tool.count));
+  const block = el("div", "deck-tools");
+  const head = el("p", "deck-trace-head");
+  const total = tools.reduce((sum, tool) => sum + tool.count, 0);
+  head.append(el("span", "deck-vital-label", "TOOLS"), el("span", "deck-trace-reading", `${total} ${total === 1 ? "call" : "calls"}`));
+  const list = el("ol", "deck-tools-list");
+  list.setAttribute("aria-label", "Tool calls by tool");
+  for (const tool of tools) {
+    const [server, name] = tool.name.includes(" · ") ? tool.name.split(" · ") : ["", tool.name];
+    const item = el("li");
+    item.title = `${tool.name}: ${tool.count} ${tool.count === 1 ? "call" : "calls"}`;
+    if (chat.status === "working" && !chat.quiet && Date.now() - Date.parse(tool.last_at) < 60_000) item.dataset.live = "true";
+    const label = el("span", "deck-tools-name", name);
+    if (server) label.append(el("span", "deck-tools-server", server));
+    const bar = el("span", "deck-tools-bar");
+    bar.setAttribute("aria-hidden", "true");
+    bar.style.setProperty("--w", `${Math.round(tool.count / peak * 100)}%`);
+    item.append(label, bar, el("span", "deck-tools-count", String(tool.count)));
+    list.append(item);
+  }
+  block.append(head, list);
+  return block;
+}
+
+// Turns left before the context fills: context left over this chat's average growth per finished turn.
+function deckRunway(chat) {
+  const laps = chat.laps || [];
+  const done = laps.filter((lap) => lap !== laps.at(-1) && ["done", "waiting"].includes(lap.status) && lapSeconds(lap) > 0);
+  const growth = done.slice(1).map((lap, i) => lap.context - done[i].context).filter((value, i) => value > 0 && done[i].context > 0).slice(-6);
+  const left = contextSize(chat) - chat.context_used;
+  return growth.length >= 2 && left > 0 ? Math.floor(left / mean(growth)) : null;
+}
+
+// The latest turn against this chat's finished turns: lap time and delta, and where the time went.
+function deckLap(chat) {
+  const laps = chat.laps || [];
+  const current = laps.at(-1);
+  // Sectors need per-step times; a source without them (Cursor's minute stamps) has no meaningful laps either.
+  if (!current?.started_at || !laps.some((lap) => Object.keys(lap.sectors || {}).length)) return null;
+  const live = !current.ended_at;
+  const done = laps.filter((lap) => lap !== current && ["done", "waiting"].includes(lap.status) && lapSeconds(lap) > 0);
+  const block = el("div", "deck-lap");
+  const head = el("p", "deck-lap-head");
+  const seconds = lapSeconds(current);
+  head.append(el("span", "deck-vital-label", `LAP ${current.turn}`));
+  if (!live) head.append(el("span", "deck-lap-time", lapClock(seconds)));
+  // A quiet lap is not a slow lap: its running delta would only measure the silence.
+  if (done.length && !(live && chat.quiet)) {
+    const average = mean(done.map(lapSeconds));
+    const delta = seconds - average;
+    const mark = el("span", "deck-lap-delta", `${delta >= 0 ? "+" : "−"}${lapClock(delta)}`);
+    mark.dataset.tone = delta > 0 ? "slower" : "faster";
+    mark.title = `${live ? "So far, compared" : "Compared"} with this chat's average turn: ${lapClock(average)} over ${done.length}`;
+    head.append(mark);
+  }
+  block.append(head);
+  if (DECK_SECTORS.some(([name]) => current.sectors?.[name])) {
+    const sectors = el("div", "deck-sectors");
+    sectors.setAttribute("aria-label", "Where this turn's time went");
+    for (const [name, label] of DECK_SECTORS) {
+      const value = current.sectors?.[name] || 0;
+      const history = done.map((lap) => lap.sectors?.[name] || 0);
+      const cell = el("span", "deck-sector");
+      cell.append(el("span", "", label), el("strong", "", lapClock(value)));
+      // Like F1 sectors: colored once the lap is complete, purple for this chat's best.
+      if (!live && history.length >= 2) {
+        cell.dataset.tone = value <= Math.min(...history) ? "best" : value <= mean(history) ? "good" : "slow";
+        cell.title = `${label}: ${lapClock(value)}; this chat's average ${lapClock(mean(history))}`;
+      }
+      sectors.append(cell);
+    }
+    block.append(sectors);
+  }
+  return block;
+}
+
+function deckHero(chat, kind) {
+  const hero = el("a", "deck-hero");
+  hero.href = `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
+  hero.setAttribute("aria-label", `Open ${chatName(chat)}`);
+  hero.dataset.key = chatKey(chat);
+  hero.dataset.kind = kind;
+  const left = el("div", "deck-hero-left");
+  const identity = el("div", "deck-identity");
+  const badge = el("span", "deck-icon");
+  badge.append(icon(SECTION_ICONS[kind]));
+  const heading = el("div", "deck-heading");
+  const title = el("h2", "deck-title", chatName(chat));
+  title.title = chatName(chat);
+  heading.append(title);
+  const meta = el("div", "deck-meta");
+  // Model, effort and cache sit with the agent: a quick read of what is driving this run.
+  meta.append(...[deckAgent(chat), deckSetup(chat)].filter(Boolean));
+  heading.append(meta);
+  identity.append(badge, heading);
+  left.append(identity);
+  const telemetry = el("div", "deck-evidence");
+  telemetry.setAttribute("aria-label", "Recorded chat telemetry");
+  const check = el("span", "", `CHECKS ${chat.check_state || "—"}`);
+  check.dataset.state = chat.check_state || "unknown";
+  if (!chat.check_state) check.title = "Checks not reported";
+  telemetry.append(check, el("span", "", `FILES ${chat.changed_files?.length || 0}`),
+    el("span", "", `DECISIONS ${chat.decisions?.filter((d) => d.chosen !== null).length || 0}`));
+  const handoff = el("div", "deck-handoff");
+  const line = (label, value) => {
+    const row = el("p");
+    row.dataset.label = label.toLowerCase();
+    row.title = `${label}: ${value}`;
+    row.append(el("strong", "", `${label}: `), document.createTextNode(value));
+    return row;
+  };
+  if (kind === "working") {
+    handoff.append(deckTerminal(chat));
+  } else {
+    const text = deckHandoffText(chat, kind);
+    if (kind === "waiting") handoff.append(...[line("Next", text.next), text.outcome && line("Outcome", text.outcome)].filter(Boolean));
+    else handoff.append(line("Outcome", text.outcome), line("Next", text.next));
+  }
+  left.append(handoff, telemetry);
+  // The Working log only needs a narrow column; its traces join the gauges on the right instead.
+  const traces = deckTraces(chat, kind);
+  if (kind !== "working") {
+    const files = deckChangedFiles(chat);
+    if (files) left.append(files);
+    if (traces) left.append(traces);
+    // Say what this source does not record instead of leaving a silent gap, but only when it truly records
+    // neither: a source with step times or token usage may simply not have enough laps yet.
+    else if (!(chat.laps || []).some((lap) => Object.keys(lap.sectors || {}).length) && !(chat.usage_minutes || []).length) {
+      left.append(el("p", "deck-unreported", `${appName(chat)} does not record per-step times or token usage, so laps and token flow are not shown.`));
+    }
+  }
+  const right = el("div", "deck-readout");
+  const quiet = deckQuiet(chat, kind);
+  // Quiet, the running clock stops meaning progress: show how long nothing was recorded instead.
+  const timer = deckTimer(quiet ? chat.updated_at : deckSince(chat, kind));
+  const status = el("span", "deck-status", quiet ? "QUIET" : DECK_NAMES[kind]);
+  status.dataset.kind = kind;
+  if (quiet) status.dataset.quiet = "true";
+  // The repo follows the status so the line reads as one phrase: "WORKING your-turn".
+  heading.prepend(status, deckRepo(chat));
+  right.append(el("span", "deck-time-label", kind === "waiting" ? "WAITING" : kind === "working" ? quiet ? "NO ACTIVITY FOR" : "ELAPSED" : "SINCE RESULT"), timer);
+  const size = contextSize(chat);
+  const fill = contextFill(chat.context_used, size);
+  const context = el("div", "deck-context");
+  const header = el("p", "deck-context-header");
+  if (fill) {
+    context.dataset.tone = fill.percent >= 90 ? "red" : fill.percent >= 75 ? "amber" : "green";
+    header.append(el("span", "deck-percent", `${fill.percent}%`),
+      el("span", "deck-context-tokens", `CTX ${tokenCount(chat.context_used, true)} / ${tokenCount(size, true)}`));
+    const gauge = el("div", "deck-gauge");
+    gauge.setAttribute("role", "meter");
+    gauge.setAttribute("aria-label", "Context window");
+    gauge.setAttribute("aria-valuemin", "0");
+    gauge.setAttribute("aria-valuemax", "100");
+    gauge.setAttribute("aria-valuenow", String(fill.percent));
+    const left = Math.max(0, size - chat.context_used);
+    const runway = deckRunway(chat);
+    gauge.setAttribute("aria-valuetext", `${fill.percent}% used, ${tokenCount(left, true)} tokens left${runway === null ? "" : `, about ${runway} turns`}`);
+    // Bullet-graph style: 75% and 90% fall on segment edges, so the warning zones tint the track
+    // and only the part of the bar inside a zone takes its color; no tick marks are needed.
+    const step = 100 / DECK_CTX_SEGMENTS;
+    for (let i = 0; i < DECK_CTX_SEGMENTS; i++) {
+      const block = el("span", "deck-gauge-block");
+      block.style.setProperty("--fill", `${Math.max(0, Math.min(100, (fill.percent - i * step) / step * 100))}%`);
+      const zone = i * step >= 90 ? "red" : i * step >= 75 ? "amber" : "";
+      if (zone) block.dataset.zone = zone;
+      block.append(el("span", "deck-gauge-fill"));
+      gauge.append(block);
+    }
+    const remaining = el("p", "deck-context-left");
+    remaining.append(el("span", "", `${tokenCount(left, true)} left`));
+    if (runway !== null) {
+      const turns = el("span", "deck-runway", runway < 1 ? "<1 turn" : `≈${runway > 99 ? "99+" : runway} ${runway === 1 ? "turn" : "turns"}`);
+      turns.dataset.low = String(runway <= 3);
+      turns.title = "Context left divided by this chat's average growth per turn; the agent may compact sooner.";
+      remaining.append(turns);
+    }
+    context.append(header, gauge, remaining);
+  } else {
+    header.textContent = chat.context_used > 0 ? `CTX ${tokenCount(chat.context_used, true)} · window unknown` : "CTX not reported";
+    header.title = "Context window not reported";
+    const gauge = el("div", "deck-gauge deck-gauge-standby");
+    gauge.setAttribute("aria-hidden", "true");
+    gauge.append(...Array.from({ length: DECK_CTX_SEGMENTS }, () => el("span", "deck-gauge-block")));
+    context.append(header, gauge, el("span", "deck-context-standby", "STANDBY · awaiting context telemetry"));
+  }
+  const lap = deckLap(chat);
+  if (lap) right.append(lap);
+  if (kind === "working") right.append(deckVitals(chat));
+  const tools = deckTools(chat);
+  if (tools) right.append(tools);
+  if (traces && kind === "working") right.append(traces);
+  // The context barometer spans the card's full width along its bottom edge.
+  hero.append(left, right, context);
+  return hero;
+}
+
+function deckRow(chat, kind) {
+  const item = el("li");
+  item.dataset.kind = kind;
+  const historical = kind === "earlier";
+  const row = el(historical ? "a" : "button", "deck-row");
+  if (historical) {
+    row.href = `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
+    row.dataset.history = chatKey(chat);
+  } else {
+    row.type = "button";
+    row.dataset.select = chatKey(chat);
+    row.setAttribute("aria-pressed", String(chatKey(chat) === deckSelected));
+  }
+  row.dataset.kind = kind;
+  const quiet = deckQuiet(chat, kind);
+  row.dataset.quiet = String(quiet);
+  row.setAttribute("aria-label", `${historical ? "Open historical chat" : "Select"} ${chatName(chat)}, ${quiet ? "quiet, " : ""}${DECK_AGENTS[chat.harness] || appName(chat)}, ${projectName(chat)}`);
+  const marker = el("span", "deck-row-marker", historical ? "" : kind === "new" ? "✓" : "●");
+  if (historical) marker.append(icon("i-turn"));
+  marker.setAttribute("aria-hidden", "true");
+  const title = el("span", "deck-row-title", chatName(chat));
+  title.title = chatName(chat);
+  const meta = el("span", "deck-row-meta");
+  const since = deckSince(chat, kind);
+  const age = el("span", "deck-age", since ? ago(since, "") : "—");
+  if (since) { age.dataset.ago = since; age.dataset.short = ""; }
+  const chevron = icon("i-chevron");
+  chevron.classList.add("deck-row-chevron");
+  meta.append(deckAgent(chat), deckRepo(chat), quiet ? deckQuietAge(chat, "deck-age") : age, chevron);
+  row.append(marker, title, meta);
+  item.append(row);
+  const review = deckReviewButton(chat, kind, "deck-row-review");
+  if (review) item.append(review);
+  return item;
+}
+
+function renderDeck(chats) {
+  deckData = chats;
+  if (deckGesture || deckScrolling || deckDismissals.size) return;
+  const groups = deckGroups(chats);
+  const kinds = ["waiting", "working", "new"];
+  const fallback = deckFallback(Object.fromEntries([...groups].map(([kind, list]) => [kind, list.length])));
+  renderDeckFleet(groups);
+  $("deck-view").dataset.layout = deckLayout;
+  for (const button of $("deck-layout").children) button.setAttribute("aria-pressed", String(button.dataset.layout === deckLayout));
+  renderDeckTelemetry();
+  const active = deckEntries(groups);
+  const selected = (deckPinned && active.find(({ chat }) => chatKey(chat) === deckSelected)) || active[0];
+  const feature = $("deck-feature");
+  const carousel = $("deck-carousel");
+  const focusedCarouselStep = carousel.contains(document.activeElement) ? document.activeElement.dataset.step : null;
+  if (selected) {
+    const selectionChanged = feature.dataset.selected !== chatKey(selected.chat);
+    const presentationChanged = selectionChanged || feature.firstElementChild?.dataset.kind !== selected.kind;
+    const previousBlocks = new Map([...feature.querySelectorAll(".deck-hero")].map((hero) => [hero.dataset.key, [...hero.querySelectorAll(".deck-gauge-block")]]));
+    const previousTerminals = new Map([...feature.querySelectorAll(".deck-hero")].map((hero) => [hero.dataset.key, hero.querySelector(".deck-terminal")]));
+    const previousCharts = new Map([...feature.querySelectorAll(".deck-hero")].map((hero) => [hero.dataset.key, hero.querySelector(".deck-pulse-chart")]));
+    const focusedKey = document.activeElement.closest(".deck-card")?.dataset.key;
+    const focusedReview = document.activeElement.hasAttribute("data-review");
+    const focusedSupporting = document.activeElement.matches(".deck-supporting > summary");
+    // Wide docked cards have room for the evidence, so it starts open there instead of leaving the card
+    // half empty; elsewhere it starts closed. A user's open or closed choice holds for the selected chat.
+    // Every card starts with its evidence closed and opens it on request; the choice holds for the selected chat.
+    const supportingOpen = !selectionChanged && Boolean(feature.querySelector(".deck-supporting")?.open);
+    deckSelected = chatKey(selected.chat);
+    const cards = [selected].map(({ chat, kind }) => {
+      const card = el("article", "deck-card");
+      card.dataset.key = chatKey(chat);
+      card.dataset.kind = kind;
+      card.dataset.selected = String(chatKey(chat) === deckSelected);
+      card.dataset.checkpoint = String(kind === "working" || !chat.outcome?.trim());
+      card.dataset.quiet = String(deckQuiet(chat, kind));
+      // Hero and evidence share one body: on a touch tablet it is the card's single scrolling area (see app.css).
+      const body = el("div", "deck-card-body");
+      card.append(body);
+      body.append(deckHero(chat, kind));
+      const supporting = el("details", "deck-supporting");
+      supporting.open = supportingOpen;
+      const summary = el("summary");
+      const collapse = el("span", "deck-supporting-collapse", "Collapse");
+      collapse.setAttribute("aria-hidden", "true");
+      summary.append(el("span", "", "Supporting evidence · files, tools & history"), collapse);
+      supporting.append(summary);
+      supporting.append(...card.querySelectorAll(".deck-files-panel, .deck-traces, .deck-tools, .deck-unreported"));
+      const decisions = (chat.decisions || []).filter((d) => d.chosen !== null);
+      // Historical decisions support the current handoff without competing with its next action.
+      if (decisions.length) {
+        const history = el("section", "deck-history");
+        history.setAttribute("aria-label", "Latest recorded decisions");
+        const list = el("ol");
+        for (const decision of decisions.slice(-3).reverse()) {
+          const item = el("li", "", `${decision.question || "Decision"} → ${decision.chosen}`);
+          item.title = item.textContent;
+          list.append(item);
+        }
+        if (decisions.length > 3) list.append(el("li", "deck-history-earlier", `+${decisions.length - 3} earlier in the chat`));
+        history.append(list);
+        supporting.append(history);
+      }
+      if (supporting.children.length > 1) body.append(supporting);
+      const footer = el("div", "deck-card-footer");
+      const waiting = groups.get("waiting").length;
+      if (kind !== "waiting" && waiting && !deckFilter) {
+        const jump = el("button", "deck-card-jump", `${waiting} waiting →`);
+        jump.type = "button";
+        jump.dataset.jumpWaiting = "";
+        jump.setAttribute("aria-label", `Show the first of ${waiting} Needs you chats`);
+        footer.append(jump);
+      }
+      const review = deckReviewButton(chat, kind, "deck-card-review");
+      if (review) footer.append(review);
+      // Claude chats resume from a terminal command, which the thread view offers to copy.
+      const agentLink = chat.harness === "cursor" ? chat.handoff?.open_uri || ""
+        : chat.harness === "claude" ? "" : `codex://threads/${encodeURIComponent(chat.id)}`;
+      const open = el("a", "deck-card-open", agentLink ? `Open in ${appName(chat)}` : "Open chat");
+      open.href = agentLink || `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
+      open.append(icon(agentLink ? "i-external" : "i-chevron"));
+      if (agentLink) open.dataset.openKey = chatKey(chat);
+      footer.append(open);
+      card.append(footer);
+      return card;
+    });
+    const signature = cards.map((card) => card.outerHTML).join("");
+    if (feature.dataset.sig !== signature) {
+      feature.dataset.sig = signature;
+      // A live update must not scroll the card being read back to its top. Read before the reuse below moves
+      // the log and charts out of the old card, which shrinks it and resets its scroll.
+      const scrolled = new Map([...feature.querySelectorAll(".deck-card")].map((card) => [card.dataset.key, card.querySelector(".deck-card-body")?.scrollTop || 0]));
+      // Keep ongoing cell reveals alive when live updates replace the surrounding card.
+      for (const card of cards) {
+        const previous = previousBlocks.get(card.dataset.key);
+        const terminal = card.querySelector(".deck-terminal");
+        const previousTerminal = previousTerminals.get(card.dataset.key);
+        if (terminal && terminal.outerHTML === previousTerminal?.outerHTML) terminal.replaceWith(previousTerminal);
+        const chart = card.querySelector(".deck-pulse-chart");
+        const previousChart = previousCharts.get(card.dataset.key);
+        if (chart && chart.outerHTML === previousChart?.outerHTML) chart.replaceWith(previousChart);
+        card.querySelectorAll(".deck-gauge-block").forEach((block, index) => {
+          if (!calm.matches && previous?.[index]?.outerHTML === block.outerHTML) block.replaceWith(previous[index]);
+        });
+      }
+      if (feature.contains(carousel)) $("deck-stage").append(carousel);
+      feature.replaceChildren(...cards);
+      for (const card of cards) if (scrolled.get(card.dataset.key)) card.querySelector(".deck-card-body").scrollTop = scrolled.get(card.dataset.key);
+      feature.dataset.selected = deckSelected;
+      if (!calm.matches) {
+        for (const hero of feature.querySelectorAll(".deck-hero")) {
+          if (presentationChanged) hero.animate([{ opacity: .25, transform: "translateY(4px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 220, easing: "cubic-bezier(.22,1,.36,1)" });
+          const terminal = hero.querySelector(".deck-terminal");
+          if (terminal && terminal.dataset.live === "true" && terminal.dataset.stream !== previousTerminals.get(hero.dataset.key)?.dataset.stream) {
+            terminal.querySelector("li:last-child, .deck-terminal-idle")?.animate([{ opacity: .2, transform: "translateY(4px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 180, easing: "cubic-bezier(.22,1,.36,1)" });
+          }
+          const previous = previousBlocks.get(hero.dataset.key);
+          hero.querySelectorAll(".deck-gauge:not(.deck-gauge-standby) .deck-gauge-block").forEach((block, index, blocks) => {
+            const from = selectionChanged ? "0%" : previous?.[index]?.style.getPropertyValue("--fill") || "0%";
+            const to = block.style.getPropertyValue("--fill");
+            if (from !== to && to !== "0%") block.querySelector(".deck-gauge-fill").animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350, delay: index * (1400 / blocks.length), easing: "ease", fill: "backwards" });
+          });
+        }
+        if (deckDirection) cards[0].animate([{ transform: `translateX(${deckDirection * (24 + deckMomentum * 8)}px)`, opacity: .5 }, { transform: "translateX(0)", opacity: 1 }], { duration: 280 - deckMomentum * 40, easing: "cubic-bezier(.22,1,.36,1)" });
+      }
+      if (focusedKey && focusedCarouselStep === null) {
+        const card = cards.find((item) => item.dataset.key === focusedKey);
+        (card?.querySelector(focusedSupporting ? ".deck-supporting > summary" : focusedReview ? "button" : "a") || cards[0].querySelector("a")).focus({ preventScroll: true });
+      }
+    }
+  } else {
+    if (feature.contains(carousel)) $("deck-stage").append(carousel);
+    feature.replaceChildren();
+    delete feature.dataset.sig;
+    delete feature.dataset.selected;
+  }
+  deckDirection = 0;
+  deckMomentum = 0;
+  feature.hidden = !selected;
+  if (selected) {
+    const footer = feature.querySelector(".deck-card-footer");
+    if (carousel.parentElement !== footer) footer.prepend(carousel);
+    if (focusedCarouselStep !== null) carousel.querySelector(`[data-step="${focusedCarouselStep}"]`)?.focus({ preventScroll: true });
+  } else if (focusedCarouselStep !== null) $("deck-fleet").querySelector(".deck-fleet-all")?.focus({ preventScroll: true });
+  $("deck-stage").hidden = !selected;
+  renderDeckMatrix(groups, selected);
+  markDeckQueueMore();
+  const queue = deckCarouselQueue(groups);
+  // One chat has nowhere to step to; the status pill already names the kind.
+  $("deck-carousel").hidden = !selected || queue.length < 2;
+  const position = `${Math.max(0, queue.findIndex((chat) => chatKey(chat) === deckSelected)) + 1} / ${queue.length}`;
+  if ($("deck-position").textContent !== position) $("deck-position").textContent = position;
+  $("deck-carousel").setAttribute("aria-label", `${selected ? DECK_NAMES[selected.kind] : "Chat"} carousel`);
+  for (const button of $("deck-carousel").querySelectorAll("button")) button.disabled = queue.length < 2;
+  if (focusedCarouselStep !== null && selected && queue.length < 2) feature.querySelector("a")?.focus({ preventScroll: true });
+  const root = $("deck-groups");
+  const focused = root.contains(document.activeElement) && document.activeElement?.dataset.select;
+  const focusedHistory = root.contains(document.activeElement) && document.activeElement?.dataset.history;
+  const focusedReview = root.contains(document.activeElement) && document.activeElement?.dataset.review;
+  const focusedMore = root.contains(document.activeElement) && document.activeElement?.hasAttribute("data-more-earlier");
+  const focusedGroup = document.activeElement?.closest("details")?.dataset.kind;
+  const swiped = root.querySelector("li[data-swiped] .deck-row")?.dataset.select;
+  // Docked, the dock is the permanent queue and the page is a three-zone, no-scroll grid: no lists below.
+  $("deck-view").dataset.docked = String(deckDocked());
+  root.hidden = fallback === "standby" || deckDocked();
+  root.replaceChildren(...(fallback === "earlier" ? [...kinds, "earlier"] : kinds).map((kind) => {
+    const group = el("details", "deck-group");
+    group.dataset.kind = kind;
+    group.open = groups.get(kind).length > 0 && (kind === "earlier" || !deckFilter || kind === deckFilter) && (deckGroupOpen.get(kind) ?? !deckNarrow.matches);
+    group.dataset.muted = String(Boolean(deckFilter) && kind !== deckFilter && kind !== "earlier");
+    const summary = el("summary", "deck-group-heading");
+    const badge = el("span", "deck-icon");
+    badge.append(icon(SECTION_ICONS[kind]));
+    const chevron = icon("i-chevron");
+    chevron.classList.add("deck-collapse");
+    summary.append(badge, el("span", "deck-group-name", DECK_NAMES[kind] || "EARLIER"),
+      el("span", "deck-group-count", String(groups.get(kind).length)), chevron);
+    summary.addEventListener("click", (event) => {
+      if (kind !== "earlier" && deckFilter && deckFilter !== kind) { event.preventDefault(); focusDeckKind(kind); }
+      else deckGroupOpen.set(kind, !group.open);
+    });
+    const list = el("ol", "deck-rows");
+    const rows = kind === "earlier" ? groups.get(kind).slice(0, deckEarlierLimit) : groups.get(kind);
+    list.append(...rows.map((chat) => deckRow(chat, kind)));
+    if (deckFilter === kind && !groups.get(kind).length) {
+      group.open = true;
+      list.append(el("li", "deck-filter-empty", `No ${DECK_NAMES[kind].toLowerCase()} chats. Select this fleet filter again to show all.`));
+    }
+    group.append(summary, list);
+    if (kind === "earlier" && rows.length < groups.get(kind).length) {
+      const more = el("button", "deck-history-more", "Load more earlier chats");
+      more.type = "button";
+      more.dataset.moreEarlier = "";
+      group.append(more);
+    }
+    return group;
+  }));
+  let restoreTarget;
+  if (focused) restoreTarget = root.querySelector(`[data-select="${CSS.escape(focused)}"], [data-history="${CSS.escape(focused)}"]`);
+  else if (focusedHistory) restoreTarget = root.querySelector(`[data-history="${CSS.escape(focusedHistory)}"], [data-select="${CSS.escape(focusedHistory)}"]`);
+  else if (focusedReview) restoreTarget = root.querySelector(`[data-review="${CSS.escape(focusedReview)}"]`);
+  else if (focusedMore) restoreTarget = root.querySelector("[data-more-earlier]");
+  else if (focusedGroup) restoreTarget = root.querySelector(`[data-kind="${focusedGroup}"] > summary`);
+  if (focused || focusedHistory || focusedReview || focusedMore || focusedGroup) {
+    (restoreTarget?.getClientRects().length ? restoreTarget : $("deck-fleet").querySelector(".deck-fleet-all"))?.focus({ preventScroll: true });
+  }
+  if (swiped) root.querySelector(`[data-select="${CSS.escape(swiped)}"]`)?.parentElement.setAttribute("data-swiped", "");
+  const standby = $("deck-empty");
+  standby.hidden = fallback !== "standby";
+  const connected = $("connection").dataset.state === "live";
+  standby.dataset.connected = String(connected);
+  const headline = connected ? "FLEET STANDBY · ALL SYSTEMS CLEAR" : "FLEET STANDBY · WAITING FOR CONNECTION";
+  const description = connected ? "No blocking tasks. All parallel agent streams are synchronized." : "Local telemetry is reconnecting. The last known queue is empty.";
+  if ($("deck-standby-title").textContent !== headline) $("deck-standby-title").textContent = headline;
+  if ($("deck-standby-description").textContent !== description) $("deck-standby-description").textContent = description;
+  const earlier = groups.get("earlier").length;
+  $("deck-earlier-link").hidden = earlier === 0 || fallback === "earlier";
+  $("deck-earlier-link").textContent = `${earlier} earlier ${earlier === 1 ? "chat" : "chats"} in the inbox`;
+  const needs = groups.get("waiting").length;
+  document.title = needs ? `(${needs}) Your Turn` : "Your Turn";
+  setFavicon(needs > 0);
+}
+
+$("deck-groups").addEventListener("click", (event) => {
+  if (event.target.closest("[data-more-earlier]")) {
+    const next = deckEarlierLimit;
+    deckEarlierLimit += SECTION_LIMIT;
+    renderDeck(deckData);
+    document.querySelectorAll('.deck-group[data-kind="earlier"] [data-history]')[next]?.focus();
+    return;
+  }
+  const review = event.target.closest("[data-review]");
+  if (review) { reviewDeckChat(review.dataset.review); return; }
+  const row = event.target.closest(".deck-row");
+  if (!row || !deckData || row.dataset.history) return;
+  selectDeckChat(row.dataset.select);
+  $("deck-feature").scrollIntoView({ block: "nearest", behavior: "instant" });
+});
+
+$("deck-feature").addEventListener("click", (event) => {
+  const review = event.target.closest("[data-review]");
+  if (review) reviewDeckChat(review.dataset.review);
+  if (event.target.closest("[data-jump-waiting]")) {
+    deckPinned = false;
+    renderDeck(deckData);
+    $("deck-feature").querySelector("a")?.focus({ preventScroll: true });
+  }
+});
+
+// Hero swipes navigate; queue swipes act. Vertical drags keep native page scrolling.
+for (const root of [$("deck-feature"), $("deck-groups")]) {
+  root.addEventListener("pointerdown", (event) => {
+    deckSwipeUntil = 0;
+    const node = event.target.closest(".deck-row, .deck-hero");
+    if (!node || node.dataset.history || !["touch", "pen"].includes(event.pointerType) || event.isPrimary === false) return;
+    deckGesture = { node, key: node.dataset.select || node.dataset.key, id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false, hero: node.classList.contains("deck-hero"), lastX: event.clientX, lastAt: performance.now(), velocity: 0 };
+  });
+  root.addEventListener("pointermove", (event) => {
+    const swipe = deckGesture;
+    if (!swipe || swipe.id !== event.pointerId) return;
+    const now = performance.now();
+    swipe.velocity = (event.clientX - swipe.lastX) / Math.max(1, now - swipe.lastAt);
+    swipe.lastX = event.clientX;
+    swipe.lastAt = now;
+    swipe.dx = event.clientX - swipe.x;
+    swipe.dy = event.clientY - swipe.y;
+    if (!swipe.moved && Math.abs(swipe.dy) > Math.abs(swipe.dx) && Math.abs(swipe.dy) > 8) { deckScrollTakeover(); return; }
+    if (Math.abs(swipe.dx) < 8 && !swipe.moved) return;
+    swipe.moved = true;
+    swipe.node.setPointerCapture(event.pointerId);
+    const protectedRow = !swipe.hero && swipe.dx < 0 && !swipe.node.parentElement.querySelector("[data-review]");
+    swipe.node.style.translate = `${protectedRow ? Math.max(-8, swipe.dx * .1) : Math.max(-120, Math.min(60, swipe.dx * (swipe.hero ? .25 : 1)))}px 0`;
+    swipe.node.dataset.dragging = "true";
+  });
+  const end = (event) => {
+    const swipe = deckGesture;
+    if (!swipe || swipe.id !== event.pointerId) return;
+    deckGesture = null;
+    swipe.node.style.translate = "";
+    delete swipe.node.dataset.dragging;
+    if (swipe.node.hasPointerCapture(event.pointerId)) swipe.node.releasePointerCapture(event.pointerId);
+    // Keep the tapped DOM node alive until its click selects/opens the chat.
+    if (!swipe.moved) { if (event.type === "pointercancel") { deckGesture = swipe; deckScrollTakeover(); } return; }
+    if (swipe.moved) deckSwipeUntil = performance.now() + 450;
+    const velocity = performance.now() - swipe.lastAt < 100 ? swipe.velocity : 0;
+    const action = event.type === "pointercancel" ? "" : deckSwipe(swipe.dx, swipe.dy, swipe.node.offsetWidth, swipe.hero, velocity);
+    if (action === "next" || action === "previous") { deckSelected = swipe.key; cycleDeckChat(action === "next" ? 1 : -1, velocity); }
+    else if (action === "focus") { selectDeckChat(swipe.key); $("deck-feature").scrollIntoView({ block: "nearest", behavior: "instant" }); }
+    else if (action === "review" && swipe.node.parentElement.querySelector("[data-review]")) {
+      if (-swipe.dx > swipe.node.offsetWidth / 2) reviewDeckChat(swipe.key);
+      else { swipe.node.parentElement.dataset.swiped = ""; renderDeck(deckData); }
+    } else { delete swipe.node.parentElement.dataset.swiped; renderDeck(deckData); }
+  };
+  root.addEventListener("pointerup", end);
+  root.addEventListener("pointercancel", end);
+  root.addEventListener("click", (event) => {
+    if (performance.now() < deckSwipeUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+    const row = event.target.closest(".deck-row");
+    if (row && "swiped" in row.parentElement.dataset) {
+      event.preventDefault(); event.stopImmediatePropagation(); delete row.parentElement.dataset.swiped;
+    }
+  }, true);
+}
+
+if (deckView && !threadId) document.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
+      shortcutBlocked(event.target, Boolean(document.body.dataset.aside)) || document.body.dataset.navigation === "open") return;
+  const step = ["j", "J", "ArrowRight"].includes(event.key) ? 1 : ["k", "K", "ArrowLeft"].includes(event.key) ? -1 : 0;
+  if (step) { event.preventDefault(); cycleDeckChat(step); }
+  if (event.key === "e") {
+    const key = document.activeElement.closest(".deck-card")?.dataset.key || document.activeElement.dataset.select;
+    if (key) { event.preventDefault(); reviewDeckChat(key); }
+  }
+});
+
+function liveDeck(chats) {
+  stateSync.retain(chats.map(chatKey));
+  migrateLocalMarks(chats);
+  notifyChanges(chats);
+  renderDeck(chats);
+}
+
+if (!threadId && !deckView) {
   const headerToggle = $("header-toggle");
   headerToggle.hidden = false;
   function syncHeaderToggle() {
@@ -1626,7 +3180,8 @@ if (!threadId) {
   });
   window.addEventListener("storage", (event) => {
     if (event.key !== "compact-header" && event.key !== null) return;
-    document.documentElement.dataset.header = readPreference("compact-header") === "true" ? "compact" : "full";
+    const saved = readPreference("compact-header");
+    document.documentElement.dataset.header = saved === "true" || (saved === null && innerHeight < 1100) ? "compact" : "full";
     requestedCompact = document.documentElement.dataset.header === "compact";
     syncHeaderToggle();
   });
@@ -1662,12 +3217,6 @@ if (!threadId) {
     target.focus();
   });
   $("away-dismiss").addEventListener("click", () => { $("away-digest").hidden = true; });
-  // The Undo offer stays while it is pointed at or focused, so it never expires under the user.
-  const undoToast = $("undo-toast");
-  undoToast.addEventListener("pointerenter", () => clearTimeout(undoTimer));
-  undoToast.addEventListener("focusin", () => clearTimeout(undoTimer));
-  undoToast.addEventListener("pointerleave", () => { if (undoToast.childNodes.length && !undoToast.contains(document.activeElement)) restartUndoTimer(); });
-  undoToast.addEventListener("focusout", (event) => { if (undoToast.childNodes.length && !undoToast.contains(event.relatedTarget)) restartUndoTimer(); });
   window.addEventListener("blur", () => {
     if (!inboxData || awaySnapshot) return;
     awaySnapshot = { at: Date.now(), keys: new Set(inboxData.filter(needsAttention).map(chatKey)) };
@@ -1798,21 +3347,77 @@ for (const chip of document.querySelectorAll(".chip")) {
 let attentionData = null;
 setInterval(() => {
   stateSync.flush();
-  const chats = inboxData || attentionData;
+  const chats = inboxData || attentionData || deckData;
   if (chats) notifyChanges(chats);
   if (document.hidden) return;
+  // Passing the stall threshold writes nothing, so redraw once to offer Dismiss on a now-stuck chat.
+  if (deckView && !threadId && deckData?.some((chat) => {
+    const age = Date.now() - Date.parse(chat.updated_at);
+    return chat.quiet && age > DECK_STALL_MS && age <= DECK_STALL_MS + 30_000;
+  })) renderDeck(deckData);
   for (const node of document.querySelectorAll("[data-ago]")) node.textContent = ago(node.dataset.ago, "short" in node.dataset ? "" : " ago");
   for (const node of document.querySelectorAll("[data-quiet-at]")) node.textContent = `Quiet ${ago(node.dataset.quietAt).replace(/ ago$/, "")}`;
   for (const node of document.querySelectorAll("[data-working-since]")) node.textContent = `${STATUS.working.label} ${workingFor(node.dataset.workingSince)}`;
   if (threadData) renderStatus(threadData, threadData.turns[threadData.turns.length - 1]);
 }, 30_000);
+setInterval(() => {
+  if (document.hidden || !deckView) return;
+  renderDeckTelemetry();
+  for (const node of document.querySelectorAll("[data-lcd]")) updateDeckTimer(node);
+  for (const node of document.querySelectorAll("[data-pulse-last]")) updateDeckPulse(node);
+  for (const node of document.querySelectorAll("[data-until]")) {
+    node.textContent = untilShort(node.dataset.until) ? `RESET ${untilClock(node.dataset.until)}` : "";
+  }
+}, 1_000);
 
+
+// The page this tab showed before this one, so Back can step back in history (restored instantly) when it is the
+// page the back link names, instead of loading it again as a new entry.
+const previousView = (() => { try { return sessionStorage.getItem("your-turn.view") || ""; } catch { return ""; } })();
+function rememberPage() {
+  try { sessionStorage.setItem("your-turn.view", `${document.body.dataset.view}:${threadId || deckView ? "" : inboxStatus}`); } catch { /* Back loads the page. */ }
+}
+rememberPage();
+
+function goBack() {
+  if (history.length > 1 && previousView === (deckView ? "deck:" : `inbox:${inboxStatus}`) && !returnOpenId) history.back();
+  else location.assign($("back").href);
+}
+
+// A home-screen app has no browser Back gesture: a swipe from the left edge goes back, as in Safari.
+function edgeSwipeBack() {
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  if (!standalone) return;
+  const view = $("thread-view");
+  let start = null;
+  addEventListener("touchstart", (event) => {
+    const touch = event.touches[0];
+    start = event.touches.length === 1 && touch.clientX < 24 ? { x: touch.clientX, y: touch.clientY, dx: 0 } : null;
+  }, { passive: true });
+  addEventListener("touchmove", (event) => {
+    if (!start) return;
+    const touch = event.touches[0];
+    start.dx = touch.clientX - start.x;
+    if (Math.abs(touch.clientY - start.y) > Math.max(30, start.dx)) { start = null; view.style.translate = ""; return; }
+    if (!calm.matches) view.style.translate = `${Math.max(0, start.dx * .6)}px 0`;
+  }, { passive: true });
+  const end = (event) => {
+    if (!start) return;
+    const back = event.type === "touchend" && start.dx > Math.min(100, innerWidth / 4);
+    start = null;
+    view.style.translate = "";
+    if (back) goBack();
+  };
+  addEventListener("touchend", end);
+  addEventListener("touchcancel", end);
+}
 
 if (threadId) {
   $("thread-view").hidden = false;
   $("back").hidden = false;
   $("back").href = inboxUrl(inboxStatus, returnOpenId);
   $("back-label").textContent = inboxStatus ? INBOX_FILTERS[inboxStatus].label : "Inbox";
+  if (deckView) { $("back").href = "/deck"; $("back-label").textContent = "Deck"; }
   $("inbox-title").hidden = true;
   $("thread-heading").hidden = false;
   document.addEventListener("keydown", (event) => {
@@ -1820,17 +3425,33 @@ if (threadId) {
         document.body.dataset.navigation === "open" || document.body.dataset.aside) return;
     // Escape's default action stops loading, which cancels this navigation and closes the live streams.
     event.preventDefault();
-    location.assign($("back").href);
+    goBack();
   });
+  $("back").addEventListener("click", (event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    goBack();
+  });
+  edgeSwipeBack();
   connect(`/api/stream?thread=${encodeURIComponent(threadId)}`, "thread", renderThread);
   // The favicon and notifications cover every chat, not just this one; the live label follows this chat's stream.
-  new EventSource("/api/stream").addEventListener("inbox", (message) => {
+  stream("/api/stream", (source) => source.addEventListener("inbox", (message) => {
     attentionData = JSON.parse(message.data);
     stateSync.retain(attentionData.map(chatKey));
     syncNavigation(attentionData);
     notifyChanges(attentionData);
     setFavicon(attentionData.some(needsAttention));
-  });
+  }));
+} else if (deckView) {
+  $("deck-view").hidden = false;
+  document.querySelector(".deck-brand-row").append(document.querySelector(".bar"));
+  $("nav-inbox").removeAttribute("aria-current");
+  // The rail icon toggles the layout: on the deck it turns the deck off.
+  $("nav-deck").setAttribute("aria-current", "page");
+  $("nav-deck").href = "/";
+  $("nav-deck").dataset.tooltip = "Turn off deck";
+  $("nav-deck").setAttribute("aria-label", "Turn off deck");
+  connect("/api/stream", "inbox", liveDeck);
 } else {
   $("inbox-view").hidden = false;
   $("panel-head").hidden = false;

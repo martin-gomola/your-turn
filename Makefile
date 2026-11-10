@@ -5,7 +5,7 @@ LOG_FILE := $(STATE_DIR)/server.log
 URL := http://localhost:$(PORT)
 MARKETPLACE := your-turn
 
-.PHONY: install doctor up down restart status logs test screenshots
+.PHONY: install doctor up down restart phone status logs test screenshots demo
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
@@ -31,16 +31,25 @@ up:
 		echo "Port $(PORT) is in use by another process. Try: make up PORT=8788"; exit 1; \
 	fi; \
 	uv sync --quiet || exit 1; \
-	nohup .venv/bin/yourturn serve --port $(PORT) >"$(LOG_FILE)" 2>&1 & \
+	nohup .venv/bin/yourturn serve --port $(PORT) $(if $(PHONE),--phone) >"$(LOG_FILE)" 2>&1 & \
 	echo $$! >"$(PID_FILE)"; \
 	for _ in 1 2 3 4 5 6 7 8 9 10; do \
-		curl -fsS -o /dev/null "$(URL)/" 2>/dev/null && { echo "Your Turn on $(URL)"; exit 0; }; \
+		curl -fsS -o /dev/null "$(URL)/" 2>/dev/null && { $(if $(PHONE),cat "$(LOG_FILE)";) echo "Your Turn on $(URL)"; exit 0; }; \
 		sleep 0.5; \
 	done; \
 	echo "Your Turn did not start. Last log lines:"; tail -n 20 "$(LOG_FILE)"; exit 1
 
+# Restart with --phone and show the QR code to scan with the iPhone.
+phone:
+	@$(MAKE) --no-print-directory down
+	@$(MAKE) --no-print-directory up PHONE=1
+
 down:
-	@if [ -f "$(PID_FILE)" ] && pid="$$(cat "$(PID_FILE)")" && kill "$$pid" 2>/dev/null; then \
+	@pid=""; [ -f "$(PID_FILE)" ] && pid="$$(cat "$(PID_FILE)")"; \
+	if ! kill -0 "$$pid" 2>/dev/null && curl -fsS -o /dev/null "$(URL)/api/inbox" 2>/dev/null; then \
+		pid="$$(lsof -nP -t -iTCP:$(PORT) -sTCP:LISTEN 2>/dev/null | head -n 1)"; \
+	fi; \
+	if [ -n "$$pid" ] && kill "$$pid" 2>/dev/null; then \
 		for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$$pid" 2>/dev/null || break; sleep 0.3; done; \
 		echo "Stopped Your Turn (pid $$pid)"; \
 	else \
@@ -66,3 +75,8 @@ test:
 screenshots:
 	@uv sync --quiet
 	@uvx --with playwright python scripts/readme_screenshots.py
+
+# Made-up chats in every Deck state for design QA at http://127.0.0.1:8790/deck (disposable homes and state).
+demo:
+	@uv sync --quiet
+	@uv run python scripts/deck_demo.py

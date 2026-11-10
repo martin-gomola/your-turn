@@ -235,6 +235,18 @@ def test_full_turn_folds_into_a_done_turn_with_parsed_answer(tmp_path: Path) -> 
     assert [step.kind for step in folder.steps] == ["turn", "user", "thinking", "command", "edit", "answer", "turn"]
     assert folder.inbox_fields()["needs_you"] is True
     assert (folder.context_used, folder.token_usage["total_tokens"]) == (135, 405)
+    assert folder.context_window == 1_000_000
+
+
+@pytest.mark.parametrize(("model", "prompt", "window"), [
+    ("claude-sonnet-4-5", 150_000, 200_000),
+    ("claude-sonnet-4-5", 250_000, 1_000_000),
+    ("us.anthropic.claude-opus-5-v1:0", 10, 1_000_000),
+])
+def test_context_window_follows_the_model_until_a_prompt_outgrows_it(tmp_path: Path, model: str, prompt: int, window: int) -> None:
+    reply = assistant(2, {"type": "text", "text": "Done."}, stop="end_turn", usage={"input_tokens": prompt, "output_tokens": 5})
+    reply["message"]["model"] = model
+    assert _fold(_write(tmp_path, [user(1, "Go"), reply])).context_window == window
 
 
 def test_plain_final_answer_has_no_next_step(tmp_path: Path) -> None:
@@ -667,3 +679,14 @@ def test_same_words_under_different_identities_stay_two_messages(tmp_path: Path)
     folder = _both(tmp_path, records)
     assert [step.detail for step in folder.steps if step.kind == "user"] == ["Refactor", PROMPT, PROMPT]
     assert [(turn.status, turn.prompt) for turn in folder.turns] == [("interrupted", "Refactor"), ("done", PROMPT)]
+
+
+def test_claude_rows_carry_the_captured_plan_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from yourturn import usage
+
+    _write(tmp_path, _turn())
+    assert "rate_limits_at" not in _hub(tmp_path).inbox_dicts()[0] or not _hub(tmp_path).inbox_dicts()[0]["rate_limits"]
+    window = {"used_percent": 7.0, "window_minutes": 300, "resets_at": ""}
+    monkeypatch.setattr(usage, "read", lambda path=None: ([window], "2026-11-06T08:00:00Z"))
+    (row,) = _hub(tmp_path).inbox_dicts()
+    assert (row["rate_limits"], row["rate_limits_at"]) == ([window], "2026-11-06T08:00:00Z")

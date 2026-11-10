@@ -59,6 +59,16 @@ def normalize_text(text: str) -> str:
     return " ".join(MARKDOWN_EMPHASIS.sub("", MARKDOWN_LINK.sub(r"\1", text)).split())
 
 
+LEADING_TAGS = re.compile(r"^\s*(?:<[A-Za-z][\w-]*(?:\s[^<>]*)?>\s*)+")
+TRAILING_TAGS = re.compile(r"(?:\s*</[A-Za-z][\w-]*(?:\s[^<>]*)?>)+\s*$")
+LEADING_HEADING = re.compile(r"^#+\s*")
+
+
+def prompt_text(text: str) -> str:
+    """A prompt as the user reads it: wrapper tags around a paste and a leading Markdown heading mark go."""
+    return LEADING_HEADING.sub("", TRAILING_TAGS.sub("", LEADING_TAGS.sub("", text)))
+
+
 def clip(text: str, limit: int = MAX_TEXT) -> str:
     text = normalize_text(text)
     return text if len(text) <= limit else f"{text[: limit - 1]}…"
@@ -79,7 +89,11 @@ def parse_answer(text: str) -> tuple[str, str, str, bool]:
         # Code blocks are not prose: `then run ./deploy` in a script is not an ask.
         parts = [part.strip() for part in re.split(r"\n\s*\n", FENCE.sub("", text)) if part.strip()]
         flat = [" ".join(line.strip(" -*#>") for line in part.splitlines()).strip() for part in parts]
-        body = [line for part, line in zip(parts, flat) if not HEADING.fullmatch(part) and not line.endswith(":")]
+        # A `Recap:` or `Next:` paragraph is handoff, not the answer's summary.
+        body = [line for part, line in zip(parts, flat)
+                if not HEADING.fullmatch(part) and not line.endswith(":") and not ANSWER_LABEL.match(part)]
+        if step is not None:
+            return clip(body[0] if body else "", 200), *_next_step(step), False
         last = " ".join(flat[-2:]) if len(flat) > 1 and flat[-2].endswith(":") else flat[-1] if flat else ""
         kind = next((name for name, ask in FINAL_ASKS if ask.search(last)), "answer" if last.endswith("?") else "")
         request = last if kind else ""
@@ -87,15 +101,17 @@ def parse_answer(text: str) -> tuple[str, str, str, bool]:
             kind, request = "answer", " ".join(flat[:2]) if flat[0].endswith(":") else flat[0]
         summary = body[0] if body else flat[0] if flat else ""
         return clip(summary, 200), kind or "unknown", clip(request, 200), False
-    kind, step_text = "unknown", clip(step or "", 200)
-    if step is not None:
-        if NOTHING_NEEDED.match(step_text) or NOTHING_NEEDED_SK.match(step_text):
-            kind, step_text = "none", ""
-        elif match := NEXT_KIND.match(step_text):
-            kind, step_text = match.group(1).lower(), step_text[match.end():]
-        else:
-            kind = "do"
-    return clip(outcome, 200), kind, step_text, True
+    return clip(outcome, 200), *(_next_step(step) if step is not None else ("unknown", "")), True
+
+
+def _next_step(step: str) -> tuple[str, str]:
+    """(next_kind, next_text) of a labeled `Next step:` value."""
+    text = clip(step, 200)
+    if NOTHING_NEEDED.match(text) or NOTHING_NEEDED_SK.match(text):
+        return "none", ""
+    if match := NEXT_KIND.match(text):
+        return match.group(1).lower(), text[match.end():]
+    return "do", text
 
 
 def parse_decisions(text: str) -> list[dict[str, Any]]:

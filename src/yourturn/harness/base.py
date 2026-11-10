@@ -189,6 +189,8 @@ class Usage:
     total: dict[str, int] | None = None
     last: dict[str, int] = field(default_factory=dict)
     window: int | None = None
+    # Account quota windows (5h, weekly): None when this report has none, [] when the plan reports no windows.
+    limits: list[dict[str, Any]] | None = None
 
 
 Event: TypeAlias = (

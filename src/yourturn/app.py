@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import secrets
+import subprocess
+import sys
 from collections.abc import AsyncIterator, Callable
 from importlib.resources import files
 from pathlib import Path
@@ -24,23 +28,31 @@ LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
 POLL_SECONDS = 1.0
 HEARTBEAT_SECONDS = 15.0
 PAGE_POLICY = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; manifest-src 'self'; "
+    "frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 )
-ASSET_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".ico": "image/x-icon"}
+ASSET_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json"}
 
 
 def _static(name: str) -> str:
     return files("yourturn").joinpath("static", name).read_text(encoding="utf-8")
 
 
+# Event streams never end on their own, so uvicorn would wait for them forever on shutdown: the process
+# would linger, keep pages saying "Live" and hold the port. Close open streams after this many seconds.
+SHUTDOWN_SECONDS = 2
+
+
 def create_app(
     codex_home: Path, poll_seconds: float = POLL_SECONDS, should_stop: Callable[[], bool] = lambda: False,
     history_days: int = DEFAULT_HISTORY_DAYS, claude_home: Path | None = None,
     cursor_home: Path | None = None, cursor_user_dir: Path | None = None, state_path: Path | None = None,
+    phone_token: str | None = None, lan_hosts: tuple[str, ...] = (),
 ) -> FastAPI:
+    """`phone_token` with `lan_hosts`: also answer on those LAN addresses, but only to a client that shows the token."""
     app = FastAPI(title="Your Turn", docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=LOOPBACK_HOSTS)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*LOOPBACK_HOSTS, *lan_hosts])
+    origins = {"127.0.0.1", "localhost", "::1", *lan_hosts}
     hub = SessionHub.for_codex_home(codex_home, claude_home=claude_home, cursor_home=cursor_home, cursor_user_dir=cursor_user_dir)
     state = InboxState(state_path) if state_path else InboxState()
 
@@ -50,8 +62,27 @@ def create_app(
         response.headers["Content-Security-Policy"] = PAGE_POLICY
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Cache-Control"] = "no-store"
+        # Chat data is never stored; pages and shipped files revalidate instead, so switching views stays fast and
+        # the browser can keep the previous page in memory for Back.
+        response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+    if phone_token:
+        @app.middleware("http")
+        async def phone_gate(request: Request, call_next: Any) -> Response:
+            """Loopback and `/assets/` pass; a LAN client needs the token from the QR (`?t=`) once, then its cookie.
+
+            `/assets/` holds only shipped files, and Chrome's installer fetches the manifest icons without the cookie.
+            """
+            if request.client and request.client.host in ("127.0.0.1", "::1") or request.url.path.startswith("/assets/"):
+                return await call_next(request)
+            offered = request.query_params.get("t")
+            if not secrets.compare_digest(offered or request.cookies.get("yt", ""), phone_token):
+                return Response("Scan the QR code that `your-turn serve --phone` prints.", status_code=403)
+            response: Response = await call_next(request)
+            if offered:
+                response.set_cookie("yt", phone_token, max_age=400 * 86400, httponly=True, samesite="lax")
+            return response
 
     served = {Harness(adapter.name) for adapter in hub.adapters}
 
@@ -71,16 +102,28 @@ def create_app(
             raise HTTPException(status_code=400, detail="thread must be a session key or Codex thread id")
         return key
 
+    @app.get("/deck", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
-    def index() -> str:
-        return _static("index.html").replace("{{APP_VERSION}}", __version__).replace("{{HISTORY_DAYS}}", str(history_days))
+    def index() -> HTMLResponse:
+        page = _static("index.html").replace("{{APP_VERSION}}", __version__).replace("{{HISTORY_DAYS}}", str(history_days))
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+    @app.get("/fullscreen", response_class=HTMLResponse)
+    def fullscreen() -> HTMLResponse:
+        return HTMLResponse(_static("fullscreen.html"), headers={"Cache-Control": "no-cache"})
 
     @app.get("/assets/{name}")
-    def asset(name: str) -> Response:
+    def asset(name: str, request: Request) -> Response:
         media_type = ASSET_TYPES.get(Path(name).suffix)
         if media_type is None or name not in {entry.name for entry in files("yourturn").joinpath("static").iterdir()}:
             raise HTTPException(status_code=404)
-        return Response(files("yourturn").joinpath("static", name).read_bytes(), media_type=media_type)
+        body = files("yourturn").joinpath("static", name).read_bytes()
+        # Revalidated on every load (an update or a local edit shows at once), answered 304 when unchanged.
+        tag = f'"{hashlib.sha256(body).hexdigest()[:16]}"'
+        headers = {"Cache-Control": "no-cache", "ETag": tag}
+        if request.headers.get("if-none-match") == tag:
+            return Response(status_code=304, headers=headers)
+        return Response(body, media_type=media_type, headers=headers)
 
     @app.get("/api/inbox")
     def inbox() -> list[dict[str, Any]]:
@@ -93,14 +136,35 @@ def create_app(
             raise HTTPException(status_code=404, detail="no session file for this thread")
         return data
 
+    def from_this_page(request: Request) -> None:
+        """JSON from this page only: a cross-site form cannot send JSON, and a cross-site fetch carries its Origin."""
+        origin = request.headers.get("origin")
+        if not request.headers.get("content-type", "").startswith("application/json") or (
+                origin and urlsplit(origin).hostname not in origins):
+            raise HTTPException(status_code=403)
+
+    if phone_token:
+        @app.post("/api/open/{thread}", status_code=204)
+        async def open_on_host(thread: str, request: Request) -> None:
+            """A phone or tablet opens the chat in its app on this computer: only the chat's own link, never a URL it sends."""
+            from_this_page(request)
+            key = checked(thread)
+            data = await asyncio.to_thread(hub.detail_dict, key)
+            if data is None:
+                raise HTTPException(status_code=404, detail="no session file for this thread")
+            uri = f"codex://threads/{key.native_id}" if key.harness == Harness.CODEX else (data.get("handoff") or {}).get("open_uri")
+            if not uri:
+                raise HTTPException(status_code=404, detail="this chat has no app link")
+            try:
+                await asyncio.to_thread(subprocess.run, ["open" if sys.platform == "darwin" else "xdg-open", uri],
+                                        check=True, capture_output=True, timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                raise HTTPException(status_code=502, detail="could not open the app on this computer") from None
+
     @app.post("/api/state", status_code=204)
     async def write_state(request: Request) -> None:
         """Mark results seen or reminders dismissed for every browser; streams push the change to the others."""
-        # JSON from this page only: a cross-site form cannot send JSON, and a cross-site fetch carries its Origin.
-        origin = request.headers.get("origin")
-        if not request.headers.get("content-type", "").startswith("application/json") or (
-                origin and urlsplit(origin).hostname not in {"127.0.0.1", "localhost", "::1"}):
-            raise HTTPException(status_code=403)
+        from_this_page(request)
         try:
             body = await request.json()
         except ValueError:

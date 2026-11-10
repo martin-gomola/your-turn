@@ -1,0 +1,13 @@
+html, body { height: 100%; margin: 0; background: #fcfbfa; }
+@media (prefers-color-scheme: dark) { html, body { background: #151515; } }
+#app { display: block; width: 100%; height: 100%; border: 0; }
+.enter {
+  position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 20px;
+  background: rgb(0 0 0 / .55); font: 16px/1.4 system-ui, sans-serif;
+}
+.enter[hidden] { display: none; }
+.enter button {
+  min-height: 52px; padding: 0 28px; border: 0; border-radius: 12px;
+  background: #1a7f37; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.enter a { color: #fff; }

@@ -18,6 +18,7 @@ Commands, flags, the handoff install, and the handoff format. What each app reco
 | Flag | Commands | Default | Environment |
 | --- | --- | --- | --- |
 | `--port` | `serve` | `8787` | `PORT` for `make up` |
+| `--phone` | `serve` | off | Also serves on the Tailscale, Wi-Fi or iPhone USB-hotspot address (Tailscale first), behind a token: scan the printed QR code. The token stays in `~/.your-turn/phone-token`; delete that file to lock out paired phones. In a clone: `make phone`. |
 | `--codex-home` | all but `cursor-rule` | `~/.codex` | `CODEX_HOME` |
 | `--claude-home` | all but `cursor-rule` | `~/.claude` | `CLAUDE_CONFIG_DIR` |
 | `--cursor-home` | all but `cursor-rule` | `~/.cursor` | none |

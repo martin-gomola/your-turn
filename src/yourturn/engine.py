@@ -54,6 +54,7 @@ from yourturn.harness.codex import (
 )
 from yourturn.harness.claude import ClaudeAdapter
 from yourturn.harness.cursor import CursorAdapter
+from yourturn import usage
 from yourturn.heuristics import (
     ACTION_KINDS,
     check_key,
@@ -70,6 +71,7 @@ from yourturn.heuristics import (
     parse_answer,
     parse_decisions,
     parse_recap,
+    prompt_text,
 )
 from yourturn.model import (
     Check,
@@ -82,6 +84,12 @@ from yourturn.model import (
 
 MAX_STEPS = 300
 MAX_TURNS = 30
+MAX_LAPS = 12
+MAX_TOOLS = 6  # tools a Deck card ranks
+MAX_LOG = 12  # recorded steps a Working card shows; its log box fills the card on wide screens
+# Which sector a step's preceding time belongs to; other kinds (turn, user, question) are not agent time.
+SECTORS = {"thinking": "think", "message": "think", "answer": "think",
+           "command": "run", "tool": "run", "agent": "run", "edit": "edit"}
 DEFAULT_TAIL_BYTES = 8 * 1024 * 1024
 ASK_TOOLS = frozenset({ASK_USER_TOOL})
 
@@ -123,9 +131,13 @@ class TurnFolder:
         self.summary = ""
         self.context_used = 0
         self.context_window = 0
+        self.rate_limits: list[dict[str, Any]] = []
+        self.rate_limits_at = ""
         self.token_usage: dict[str, int] = {}
         self.last_token_usage: dict[str, int] = {}
         self.token_usage_at = ""
+        self.usage_minutes: deque[list[Any]] = deque(maxlen=2880)
+        self.message_minutes: deque[str] = deque(maxlen=301)
         self.model = ""
         self.reasoning_effort = ""
         self.model_provider = ""
@@ -154,6 +166,8 @@ class TurnFolder:
         self._attention_before = ""
         # The latest tool call still without a result (Claude Code), shown when the chat goes quiet.
         self.pending_tool = ""
+        # (turn index, time, kind) of the latest step, for sector times.
+        self._lap_clock: tuple[int, datetime | None, str] = (-1, None, "")
 
     @property
     def id(self) -> str:
@@ -168,8 +182,19 @@ class TurnFolder:
             self.status = "working"
         return self.turns[-1]
 
+    def _lap(self, turn: Turn, at: str, kind: str) -> None:
+        """Credit the time since the turn's previous step to this step's sector; a wait on the user is not agent time."""
+        ts = parse_ts(at)
+        index, previous, after = self._lap_clock
+        sector = SECTORS.get(kind)
+        if sector and index == turn.index and previous and ts and after != "question" and ts > previous:
+            turn.sectors[sector] = turn.sectors.get(sector, 0.0) + (ts - previous).total_seconds()
+        self._lap_clock = (turn.index, (ts or previous) if index == turn.index else ts, kind)
+
     def _step(self, at: str, kind: str, title: str, detail: str = "", status: str = "done") -> Step:
-        step = Step(at, kind, clip(title), clip(detail), status, self._turn(at).index)
+        turn = self._turn(at)
+        self._lap(turn, at, kind)
+        step = Step(at, kind, clip(title), clip(detail), status, turn.index)
         self.steps.append(step)
         if kind not in {"turn", "user"}:
             self.activity = clip(title, 120)
@@ -196,6 +221,8 @@ class TurnFolder:
         self._last_message = None
         self.status = "working"
         self.pending_tool = ""
+        self.activity = ""
+        self.activity_summary = ""
         if self.content_available:  # A chat whose turns are unknown cannot number this one.
             self._step(at, "turn", f"Turn {index} started" + (" by a background task" if trigger == "task-notification" else ""))
 
@@ -203,6 +230,7 @@ class TurnFolder:
         """End the current turn: `stopped` is the abort reason, or None for a completed turn."""
         turn = self._turn(at)
         turn.ended_at, self._ended = at, True
+        turn.context_end = self.context_used
         self.pending_tool = ""
         if stopped is not None:
             turn.status = "interrupted"
@@ -227,7 +255,7 @@ class TurnFolder:
     def _prompt(self, at: str, turn: Turn, text: str) -> None:
         for decision in self._pending():
             decision.chosen = normalize_text(text)
-        turn.prompt = turn.prompt or clip(text, 160)
+        turn.prompt = turn.prompt or clip(prompt_text(text), 160)
         self._step(at, "user", "You", text)
 
     def _owns(self, turn: Turn, event: CommandRun) -> bool:
@@ -308,6 +336,10 @@ class TurnFolder:
         self.version += 1
         ts = event.ts
         at = format_ts(ts)
+        if at and isinstance(event, (UserMessage, AgentMessage)):
+            minute = at[:16] + ":00Z"
+            if not self.message_minutes or minute != self.message_minutes[-1]:
+                self.message_minutes.append(minute)
         if ts is not None and (self._updated_ts is None or ts >= self._updated_ts):
             self._updated_ts, self.updated_at = ts, at
         if isinstance(event, Meta):
@@ -323,9 +355,11 @@ class TurnFolder:
         elif isinstance(event, AgentMessage):
             self._agent(at, event)
         elif isinstance(event, Reasoning):
-            self._turn(at)
+            turn = self._turn(at)
             if event.text:
                 self._step(at, "thinking", event.text)
+            else:
+                self._lap(turn, at, "thinking")
         elif isinstance(event, ContextCompacted):
             self._step(at, "turn", "Context compacted")
         elif isinstance(event, ApprovalPending):
@@ -494,6 +528,16 @@ class TurnFolder:
             }
         )
         if total:
+            current = total.get("total_tokens", 0)
+            previous = self.token_usage.get("total_tokens")
+            # A tail's first cumulative total includes old history; count only its reported request.
+            delta = max(0, current - previous) if previous is not None and current >= previous else (event.last or {}).get("total_tokens", 0)
+            if at and delta:
+                minute = at[:16] + ":00Z"
+                if self.usage_minutes and self.usage_minutes[-1][0] == minute:
+                    self.usage_minutes[-1][1] += delta
+                else:
+                    self.usage_minutes.append([minute, delta])
             self.token_usage, self.token_usage_at = total, at
         if event.last:
             self.last_token_usage = dict(event.last)
@@ -501,6 +545,8 @@ class TurnFolder:
                 self.context_used = event.last["total_tokens"]
         if event.window is not None:
             self.context_window = event.window
+        if event.limits is not None:
+            self.rate_limits, self.rate_limits_at = list(event.limits), at
 
     def _tool(self, at: str, event: ToolCall) -> None:
         turn = self._turn(at)
@@ -543,6 +589,23 @@ class TurnFolder:
             "recap": next((t.recap for t in reversed(self.turns) if t.recap), ""),
             "decisions": [asdict(d) for d in self.decisions],
             "changed_files": list(dict.fromkeys(path for t in self.turns for path in t.files)),
+            "context_used": self.context_used,
+            "context_window": self.context_window,
+            "git_branch": self.git_branch,
+            "rate_limits": list(self.rate_limits),
+            "rate_limits_at": self.rate_limits_at,
+            "usage_minutes": list(self.usage_minutes),
+            "message_minutes": list(self.message_minutes),
+            "laps": [
+                {"turn": t.index, "started_at": t.started_at, "ended_at": t.ended_at, "status": t.status,
+                 "sectors": {name: round(seconds) for name, seconds in t.sectors.items()}, "context": t.context_end}
+                for t in list(self.turns)[-MAX_LAPS:]
+            ],
+            "tool_calls": self._tool_calls(),
+            # The Working card's setup line: what is driving the run and how much input the cache served.
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
+            "cache_hit": self._cache_hit(),
         }
         row["needs_you"] = needs_you(row)
         return row
@@ -590,6 +653,22 @@ class TurnFolder:
             "decisions": [asdict(decision) for decision in self.decisions],
             "needs_you": needs_you({**last, "status": self._status()}),
         }
+
+    def _cache_hit(self) -> int | None:
+        """Cached share of the session's input tokens, in whole percent; None when not reported."""
+        total = self.token_usage.get("input_tokens") or 0
+        cached = self.token_usage.get("cached_input_tokens") or 0
+        return round(cached / total * 100) if total > 0 and cached > 0 else None
+
+    def _tool_calls(self) -> list[dict[str, Any]]:
+        """Tool use for the Deck (built-in and MCP): the most-called tools with their count and latest call."""
+        calls: dict[str, dict[str, Any]] = {}
+        for step in self.steps:
+            if step.kind == "tool":
+                entry = calls.setdefault(step.title, {"name": step.title, "count": 0, "last_at": ""})
+                entry["count"] += 1
+                entry["last_at"] = max(entry["last_at"], step.at or "")
+        return sorted(calls.values(), key=lambda entry: -entry["count"])[:MAX_TOOLS]
 
     def _first_prompt(self) -> str:
         return next((clip(turn.prompt, 80) for turn in self.turns if turn.prompt), "")
@@ -762,6 +841,12 @@ class SessionHub:
         data["project"] = folder.project
         data["quiet"] = tracked.quiet(data["status"], mtime)
         data["harness"] = ref.harness
+        if ref.harness == "claude" and not detail:
+            # Plan usage is per account and lives outside the transcript (see usage.py); every Claude row
+            # carries the latest capture, so the Deck reads it like Codex's own rate_limits.
+            limits, captured_at = usage.read()
+            if limits:
+                data["rate_limits"], data["rate_limits_at"] = limits, captured_at
         data["key"] = str(ref.key)
         data["handoff"] = asdict(adapter.handoff(ref, folder.cwd or None))
         # What the source can record, so the UI can say what is missing instead of guessing.
@@ -770,6 +855,12 @@ class SessionHub:
             pending = folder.pending_tool
             data["activity_summary"] = (command_caption(pending[6:]) if pending.startswith("Bash: ")
                                         else clip(pending or folder.activity_summary or folder.activity, 120))
+            turn = folder.turns[-1] if folder.turns else None
+            data["activity_log"] = [
+                {"at": step.at, "kind": step.kind, "title": step.title}
+                for step in folder.steps
+                if turn and step.turn == turn.index and step.kind in {"command", "edit", "tool", "thinking", "agent"}
+            ][-MAX_LOG:]
         if detail:
             data["history_truncated"] = bool(tracked.cursor and tracked.cursor.skipped_bytes)
         return data

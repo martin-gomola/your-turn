@@ -59,6 +59,26 @@ def _token_counts(value: object) -> dict[str, int]:
     return {key: value[key] for key in TOKEN_FIELDS if type(value.get(key)) is int and value[key] >= 0}
 
 
+def _rate_windows(value: object) -> list[dict[str, Any]] | None:
+    """The account's quota windows from a `rate_limits` block; None when absent or scoped to one model."""
+    if not isinstance(value, dict) or value.get("limit_name") is not None:
+        return None
+    windows = []
+    for raw in (value.get("primary"), value.get("secondary")):
+        if not isinstance(raw, dict):
+            continue
+        used, minutes, resets = raw.get("used_percent"), raw.get("window_minutes"), raw.get("resets_at")
+        if type(used) not in (int, float) or type(minutes) is not int or minutes <= 0:
+            continue
+        windows.append({
+            "used_percent": max(0.0, min(100.0, float(used))),
+            "window_minutes": minutes,
+            "resets_at": datetime.fromtimestamp(resets, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if type(resets) is int and resets > 0 else "",
+        })
+    return windows
+
+
 def _texts(content: object) -> str:
     if not isinstance(content, list):
         return ""
@@ -215,6 +235,7 @@ def record_to_events(record: dict[str, Any]) -> list[Event]:
                 total=total,
                 last=_token_counts(info.get("last_token_usage")),
                 window=window if type(window) is int and window >= 0 else None,
+                limits=_rate_windows(payload.get("rate_limits")),
             )
         ]
     if event == "item_completed" and isinstance(payload.get("item"), dict):

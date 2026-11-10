@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 import pytest
@@ -45,9 +46,13 @@ def test_no_subcommand_serves(argv: list[str], monkeypatch: pytest.MonkeyPatch, 
     import uvicorn
 
     ports: list[int] = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level: ports.append(port))
+    shutdown: list[object] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port, log_level, timeout_graceful_shutdown:
+                        (ports.append(port), shutdown.append(timeout_graceful_shutdown)))
     main(argv)
     assert ports == [9000 if argv else 8787]
+    # Open event streams never end on their own: without a timeout, Ctrl+C would hang and pages stay "Live".
+    assert shutdown == [2]
     assert "Starting Your Turn at http://localhost:" in capsys.readouterr().out
 
 
@@ -70,3 +75,18 @@ def test_usage_names_the_your_turn_command(capsys: pytest.CaptureFixture[str]) -
     with pytest.raises(SystemExit):
         main(["nope"])
     assert capsys.readouterr().err.startswith("usage: your-turn ")
+
+
+def test_phone_token_replaces_empty_file_and_keeps_it_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from yourturn import cli
+
+    path = tmp_path / ".your-turn" / "phone-token"
+    path.parent.mkdir()
+    path.write_text(" \n")
+    monkeypatch.setattr(cli, "TOKEN_PATH", path)
+
+    token = cli._phone_token()
+
+    assert token and path.read_text() == token
+    assert cli._phone_token() == token
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600

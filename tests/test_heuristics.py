@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from conftest import Parser
 
-from yourturn.heuristics import check_name, check_result, check_state, is_check_command, parse_answer, parse_decisions, parse_recap
+from yourturn.heuristics import check_name, check_result, check_state, is_check_command, parse_answer, parse_decisions, parse_recap, prompt_text
 from yourturn.model import Check, Harness, SessionKey, Turn
 
 UUID = "019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
@@ -313,3 +313,9 @@ def test_handoff_lines_inside_code_blocks_are_ignored() -> None:
 
 def test_markdown_links_keep_only_their_text() -> None:
     assert parse_answer("Updated [routes/web.md](routes/web.md) and ![shot](docs/a.png).")[0] == "Updated routes/web.md and shot."
+
+
+def test_prompt_text_drops_paste_wrapper_and_heading_mark_only():
+    assert prompt_text('<pasted_content id="b3c3">\n### Mission: Deck\n\nBody\n</pasted_content id="b3c3">').startswith("Mission: Deck\n")
+    assert prompt_text("Why does <div> collapse?") == "Why does <div> collapse?"
+    assert prompt_text("Plain prompt") == "Plain prompt"
