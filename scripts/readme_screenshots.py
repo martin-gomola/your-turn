@@ -342,15 +342,51 @@ def demo_gif(browser, base: str, chat: Chat, path: Path) -> None:
         page.hover("#open-codex")
         film(2.5)
         page.close()
-        # Each frame lasts until the next one was taken, so the GIF keeps real time.
-        script = Path(tmp) / "frames.txt"
-        lines = [f"file '{shot}'\nduration {following[1] - taken:.3f}\n"
-                 for (shot, taken), following in zip(frames, frames[1:])]
-        script.write_text("".join(lines) + f"file '{frames[-1][0]}'\nduration 2\nfile '{frames[-1][0]}'\n")
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(script), "-vf",
-                        "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];"
-                        "[b][p]paletteuse=dither=bayer:bayer_scale=5", str(OUT / "demo.gif")], check=True)
-    print("wrote docs/images/demo.gif")
+        write_gif(frames, Path(tmp), "demo.gif")
+
+
+def write_gif(frames: list[tuple[Path, float]], tmp: Path, name: str, hold: float = 2) -> None:
+    """Each frame lasts until the next one was taken, so the GIF keeps real time; the last one holds for `hold`."""
+    script = tmp / "frames.txt"
+    lines = [f"file '{shot}'\nduration {following[1] - taken:.3f}\n"
+             for (shot, taken), following in zip(frames, frames[1:])]
+    script.write_text("".join(lines) + f"file '{frames[-1][0]}'\nduration {hold}\nfile '{frames[-1][0]}'\n")
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(script), "-vf",
+                    "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];"
+                    "[b][p]paletteuse=dither=bayer:bayer_scale=5", str(OUT / name)], check=True)
+    print(f"wrote docs/images/{name}")
+
+
+def deck_gif(browser) -> None:
+    """Film the Deck on its running Codex chat: the spinning status icon, live timers and the recorded log."""
+    port = free_port()
+    # The Deck demo serves its own made-up plan usage, so no real usage capture is read.
+    server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "python"), "scripts/deck_demo.py", str(port)], cwd=ROOT,
+                              stdout=subprocess.DEVNULL)
+    try:
+        base = f"http://127.0.0.1:{port}"
+        wait_for(base + "/deck", server)
+        page = browser.new_page(viewport={"width": 1440, "height": 900}, color_scheme="dark")
+        page.add_init_script("localStorage.setItem('theme', 'dark')")
+        page.goto(base + "/deck")
+        page.wait_for_selector('.deck-mini[data-kind="working"]')
+        page.locator('.deck-mini[data-kind="working"]').first.click()
+        page.wait_for_selector('.deck-card[data-kind="working"]')
+        page.mouse.move(0, 0)
+        page.wait_for_timeout(800)
+        with tempfile.TemporaryDirectory() as tmp:
+            frames: list[tuple[Path, float]] = []
+            end = time.monotonic() + 4
+            while time.monotonic() < end:
+                shot = Path(tmp) / f"{len(frames):04d}.png"
+                taken = time.monotonic()
+                page.screenshot(path=str(shot))
+                frames.append((shot, taken))
+            page.close()
+            write_gif(frames, Path(tmp), "deck.gif", hold=0.1)
+    finally:
+        server.terminate()
+        server.wait()
 
 
 def free_port() -> int:
@@ -456,6 +492,7 @@ def main() -> None:
         live = demo_chats(reminders_started=4)
         with demo_server(live, ANSWER_RECORDS) as (base, path):
             demo_gif(browser, base, live[0], path)
+        deck_gif(browser)
         browser.close()
 
 if __name__ == "__main__":
