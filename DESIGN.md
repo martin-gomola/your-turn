@@ -243,7 +243,7 @@ are centred on the whole strip in the reset button's row, and count dividers sit
 continues to consume the scoped Deck tokens.
 From 1200px in Multi-Telemetry (on a touch tablet too: there the card body, hero and evidence together, is the
 card's one scrolling area above the pinned footer, since inner scroll boxes with hidden scrollbars swallow swipes;
-the Working log is a fixed ten-line terminal that scrolls on its own, newest line at the bottom, and a swipe at
+the Working log fills the card's free space, never below ten lines, and scrolls on its own, newest line at the bottom, and a swipe at
 either end carries on to the card; live renders wait while a touch scroll
 and its fling run, and then keep the scroll position), the hero takes about 70% of the stage and a
 single-column queue dock the rest. The dock lists every other queued chat (Needs you,

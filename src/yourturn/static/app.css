@@ -1003,7 +1003,7 @@ body[data-view="deck"] .deck-cockpit .bar { top: var(--space-1); left: auto; rig
 .deck-mini[data-kind="working"] { --deck-tone: var(--deck-purple); }
 .deck-mini[data-kind="new"] { --deck-tone: var(--deck-green); }
 /* Quiet Working chats take the amber attention tone, as in the Inbox, with "QUIET"/"Quiet 18h" in words. */
-:is(.deck-mini, .deck-row)[data-quiet="true"], .deck-status[data-quiet="true"] { --deck-tone: var(--deck-amber); }
+:is(.deck-mini, .deck-row)[data-quiet="true"], .deck-status[data-quiet="true"], .deck-card[data-quiet="true"] .deck-identity > .deck-icon { --deck-tone: var(--deck-amber); }
 .deck-mini:hover { background: #1b2027; border-color: var(--deck-tone); }
 .deck-mini:focus-visible { outline: 2px solid var(--deck-tone); outline-offset: -3px; }
 .deck-mini-head { display: flex; gap: var(--space-2); align-items: start; min-width: 0; }
@@ -1708,7 +1708,10 @@ body[data-view="deck"] .connection .connection-dot { background: currentColor; }
   /* The log is a fixed-height terminal that scrolls on its own, newest line at the bottom, so a long run never
      stretches the card; at either end a swipe carries on to the card (overscroll-behavior above). */
   /* Same selector as the desktop "grow into free space" rule, so this later one wins on touch. */
-  #deck-view[data-docked="true"] .deck-card[data-kind="working"] .deck-terminal-body { flex: none; height: calc(10 * 1.5em); min-height: 0; overflow-y: auto; }
+  /* The hero takes the card's free space and the log fills it, never below ten lines; flex-basis 0 means a
+     long log scrolls inside instead of growing the card. */
+  #deck-view[data-docked="true"] .deck-card-body > .deck-hero { flex: 1 0 auto; }
+  #deck-view[data-docked="true"] .deck-card[data-kind="working"] .deck-terminal-body { flex: 1 1 0; height: auto; min-height: calc(10 * 1.5em); overflow-y: auto; }
   /* A tablet is a wall display: version and GitHub links only take height from the card. Earlier chats stay
      one tap away through the rail's Inbox. */
   body[data-view="deck"]:has(#deck-view[data-docked="true"]) .footer { display: none; }
