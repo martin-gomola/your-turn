@@ -11,17 +11,25 @@ The user triages many parallel agent chats across apps in the Your Turn inbox, w
 
 End **every** response to the user (including turns that ask a question or pause for review) with this block, placed at the very top or the very bottom of the message as one group of lines with no prose between them, each field on its own single line with a blank line between fields (chat apps join adjacent lines into one paragraph), as plain Markdown (not inside backticks or a code block). `Outcome` is required: without it Your Turn ignores the whole block. Keep the labels and prefixes in English, even when you reply in another language. Outside the block, no line may start with `Outcome:`, `Result:`, `Next:`, `Next step:`, `Recap:` or `Decision:`.
 
-    **Outcome:** <one sentence: what is now true, or what you found>
+    **Outcome:** <one sentence under 160 characters: what is now true, or what you found>
 
     **Next step:** <none | answer: … | decide: … | review: … | approve: … | run: …>
 
-    **Recap:** <1-2 sentences, <400 chars: goal, what is settled, what remains open>
+    **Recap:** <1-2 sentences, <400 chars: the chat's goal, what is settled, what remains open>
 
     **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
 Include `Recap` on every turn after the first, and `Decision` only when a non-trivial trade-off was made this turn.
 
-Prefer the bottom of the response; a contiguous block at the top is also supported. Keep the labels (`Outcome:`, `Next step:`, `Recap:`, `Decision:`) and `Next step` prefixes in English even when replying in another language. Optional suggestions are not next steps: write `none`.
+Prefer the bottom of the response; a contiguous block at the top is also supported. Keep the labels (`Outcome:`, `Next step:`, `Recap:`, `Decision:`) and `Next step` prefixes in English even when replying in another language, but write every value in the language of your reply. Optional suggestions are not next steps: write `none`.
+
+## Field quality
+
+The inbox shows `Outcome` and `Next step` as one-line cards and cuts them at 200 characters; the user reads them before anything else.
+
+- **Outcome is a headline, not a changelog.** Under 160 characters: the one fact the user needs (the state, the answer, the blocker), with concrete nouns instead of "implemented", "done" or "polished". Lists of what changed go in the body. Bad: "The deck now shows an overview row first, highlights only the chats needing you, dims history keys, shows Codex limits, and records…". Good: "The deck leads with an overview row and highlights only chats that need you; not tried on a device yet."
+- **Next step is one action under 120 characters.** Name what to do and where; long paths, command lists and the reason go in the body.
+- **Recap covers the whole chat, starting from its goal.** It must still make sense to someone who saw no earlier turn. A turn-local status is not a recap. Bad: "The fix is verified; changes remain uncommitted." Good: "Goal: let the Deck run on a phone over USB. Settled: --phone and the QR code work. Open: the iPhone link has no address, and nothing is committed."
 
 ## `Next step` taxonomy (Poka-yoke)
 
@@ -33,6 +41,8 @@ Any value other than `none` places the chat into **Needs you**. Start it with on
 - `review: <artifact>` — code or analysis is ready; the user should inspect a diff, file, or report.
 - `approve: <action>` — waiting for permission before a destructive, external, or high-blast-radius action (e.g. git push, schema drop).
 - `run: <command>` — the user must execute a command you cannot run in this environment.
+
+Pick by what the user has to do: "reply yes to continue" or "proceed or stop?" is `approve:`; "send me the paths, answers or URL" is `answer:`; `decide:` names at least two options (a single yes/no is `approve:`); `run:` is a command the user must execute, never one that is merely optional.
 
 An optional suggestion the user may take or leave ("You can push when ready") belongs in the body, with `Next step: none`. A question the user has to react to always goes in `Next step` as well (`answer:` or `decide:`), not only in the body.
 

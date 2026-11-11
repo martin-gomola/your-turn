@@ -264,7 +264,8 @@ def test_every_handoff_copy_states_the_same_rules_and_its_own_edit_tool() -> Non
     skills = {"codex": plugin_text("skills/your-turn-handoff/SKILL.md"), "claude": skill_text("claude"), "cursor": skill_text("cursor")}
     cursor_rule = rule_text("cursor")
     rules = ["very top or the very bottom", "no prose between them", "in english", "exactly `", "optional suggestion",
-             "joined with `&&`", "not from the shell"]
+             "joined with `&&`", "not from the shell", "under 160 characters", "under 120 characters",
+             "the whole chat", "language of your reply", "at least two options"]
     for text in (*skills.values(), CLAUDE_BLOCK, cursor_rule, snippet):
         flat = " ".join(text.lower().split())
         assert [rule for rule in rules if rule not in flat] == []

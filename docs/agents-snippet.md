@@ -16,17 +16,20 @@ to me, on every turn, with these lines at the very top or the very bottom, as on
 between them, each on one line with a blank line between them (chat apps join adjacent lines into one
 paragraph), as plain Markdown outside code blocks:
 
-**Outcome:** <one sentence: what is now true, or what you found>
+**Outcome:** <one sentence under 160 characters: what is now true, or what you found>
 
 **Next step:** <none | answer: <question> | decide: <options> | review: <what to look at> | approve: <plan> | run: <command>>
 
-**Recap:** <from the second turn on, 1-2 sentences under 400 characters: the chat's goal, what is settled, what is open>
+**Recap:** <from the second turn on, 1-2 sentences under 400 characters covering the whole chat, not this turn: the chat's goal, what is settled, what is open>
 
 **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
-Keep the labels and prefixes in English, even when you reply in another language, and start no other
-line with them. Any step other than `none` puts the chat under Needs you; start it with one of the
-prefixes above. A question I must react to also goes in the next step. When the task is done, write
+Keep the labels and prefixes in English, even when you reply in another language, write every value in
+the language of your reply, and start no other line with them. The outcome is a headline, not a
+changelog, and the next step is one action under 120 characters; details go in the body. Any step
+other than `none` puts the chat under Needs you; start it with one of the prefixes above. A question I
+must react to also goes in the next step: "reply yes to continue" is `approve:`, a request for
+information is `answer:`, and `decide:` names at least two options. When the task is done, write
 exactly `Next step: none` and stop; an optional suggestion goes in the body, and never close with a
 polite offer such as "Let me know if…" or "Should I also…?". Write a Decision line only for a
 non-trivial trade-off (architecture, edge-case behavior, library or approach), one line each with `->`,

@@ -89,18 +89,20 @@ End every response to the user, on every turn, with this block at the very top o
 group of lines with no prose between them, each on one line with a blank line between them (chat apps
 join adjacent lines into one paragraph), as plain Markdown outside code blocks.
 
-- `**Outcome:**` one sentence: what is now true.
-- `**Next step:**` `none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`. When the task
-  is done, write exactly `**Next step:** none` and stop. A question the user must react to goes here.
-- `**Recap:**` from the second turn on: 1-2 sentences under 400 characters (goal, what is settled, what
-  is open).
+- `**Outcome:**` one sentence under 160 characters: what is now true. A headline, not a changelog;
+  details go in the body.
+- `**Next step:**` `none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`, one action
+  under 120 characters. When the task is done, write exactly `**Next step:** none` and stop. A question
+  the user must react to goes here: "reply yes to continue" is `approve:`, a request for information is
+  `answer:`, and `decide:` names at least two options.
+- `**Recap:**` from the second turn on: 1-2 sentences under 400 characters covering the whole chat, not
+  this turn: the chat's goal, what is settled, what is open.
 - `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a non-trivial trade-off
   (architecture, edge-case behavior, library or approach), one line each.
 
-Keep the labels and prefixes in English, even when you reply in another language, and start no other
-line with them. An optional suggestion goes in the body; never close with a polite offer such as
-"Let me know if…" or "Should I also…?".
-Keep the labels (`Outcome:`, `Next step:`, `Recap:`, `Decision:`) and `Next step` prefixes in English even when replying in another language. Optional suggestions are not next steps: write `none`.
+Keep the labels and prefixes in English, even when you reply in another language, write every value in
+the language of your reply, and start no other line with them. An optional suggestion goes in the body
+with `**Next step:** none`; never close with a polite offer such as "Let me know if…" or "Should I also…?".
 
 Example:
 
@@ -158,9 +160,9 @@ Recaps come from the agent's final answer:
 | `**Outcome:**` without `**Next step:**` | The outcome, marked **No next step** |
 | No handoff lines | The first paragraph as the outcome, and a best-guess next step (Run, Review, or Answer) marked **Inferred**; with none found, **No handoff** |
 
-- `**Outcome:**` is one sentence: what is now true.
-- `**Next step:**` is `none`, `answer: …`, `review: …`, `approve: …`, or `run: …`.
-- `**Recap:**` is added from the second turn on.
+- `**Outcome:**` is one sentence under 160 characters: what is now true.
+- `**Next step:**` is `none`, `answer: …`, `decide: …`, `review: …`, `approve: …`, or `run: …`.
+- `**Recap:**` is added from the second turn on and covers the whole chat.
 - Questions go through the app's question tool (`AskUserQuestion` in Claude Code, `AskQuestion` in
   Cursor) with options, so they show under Needs you until answered.
 
