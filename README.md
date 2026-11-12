@@ -77,6 +77,22 @@ uvx your-turn@latest serve
 
 The server binds to loopback only (`127.0.0.1`). To remove the handoff, run `uvx your-turn@latest uninstall`.
 
+To open the inbox on your phone, run `uvx your-turn@latest serve --phone` (in a clone: `make phone`) and scan the QR code it prints. The phone needs to be on the same Wi-Fi or Tailscale network, and the link carries a token; delete `~/.your-turn/phone-token` to lock out paired phones.
+
+<details>
+<summary>Install only the Codex plugin, without the inbox</summary>
+
+The handoff skill works without the inbox; it only shapes how Codex ends its answers. This needs neither `uv` nor Python:
+
+```bash
+codex plugin marketplace add martin-gomola/your-turn
+codex plugin add your-turn@your-turn
+```
+
+Codex keeps the marketplace at the commit it fetched. To pick up a newer skill, run `codex plugin marketplace upgrade your-turn && codex plugin add your-turn@your-turn`, then restart Codex. To remove it, run `codex plugin remove your-turn@your-turn` and `codex plugin marketplace remove your-turn`.
+
+</details>
+
 <details>
 <summary>Check where a release comes from, or pin one</summary>
 
@@ -154,6 +170,7 @@ make install
 ```bash
 make up        # start the inbox in the background
 make down      # stop it
+make phone     # restart it reachable from your phone: scan the printed QR code
 make doctor    # check the handoff without changing it
 make test      # run the test suite
 make demo      # made-up chats in every Deck state at http://127.0.0.1:8790/deck, for design QA
