@@ -1244,7 +1244,7 @@ $("appearance-form").addEventListener("change", (event) => {
   $("appearance-note").textContent = saved ? "Appearance is saved in this browser. System follows your device."
     : "Applied for this page, but browser storage is unavailable.";
 });
-// Deck (beta): opt-in rail entry and theme, saved per browser and applied without a reload.
+// Deck (beta): rail entry, on by default, and theme, saved per browser and applied without a reload.
 function syncDeckSettings() {
   const root = document.documentElement.dataset;
   $("deck-form").elements["deck-enabled"].checked = root.deckEnabled === "true";
@@ -1253,12 +1253,14 @@ function syncDeckSettings() {
 syncDeckSettings();
 $("deck-form").addEventListener("change", (event) => {
   const root = document.documentElement.dataset;
-  if (event.target.name === "deck-enabled") root.deckEnabled = String(event.target.checked);
-  else if (event.target.name === "deck-theme") root.deckTheme = event.target.value;
-  else return;
   try {
-    localStorage.setItem("your-turn.deck.enabled", root.deckEnabled);
-    localStorage.setItem("your-turn.deck.theme", root.deckTheme);
+    if (event.target.name === "deck-enabled") {
+      root.deckEnabled = String(event.target.checked);
+      localStorage.setItem("your-turn.deck.enabled", root.deckEnabled);
+    } else if (event.target.name === "deck-theme") {
+      root.deckTheme = event.target.value;
+      localStorage.setItem("your-turn.deck.theme", root.deckTheme);
+    }
   } catch { /* Applied to this page; the choice resets when storage is unavailable. */ }
 });
 $("settings-notify").addEventListener("change", async () => {

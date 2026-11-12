@@ -135,8 +135,8 @@ calls in older transcripts still read as decisions.
 
 ## Deck
 
-Deck is in beta and opt-in: Settings → Deck (Beta) shows it in the sidebar (off by default; `/deck` and
-chats opened from it keep the entry so you can return). Settings also offers two Deck themes, saved per
+Deck is in beta and shown in the sidebar by default; Settings → Deck (Beta) hides it (`/deck` and chats
+opened from it keep the entry so you can return). Settings also offers two Deck themes, saved per
 browser and applied before first paint: Dark (charcoal) and Warm (inspired by Monokai Pro: warm charcoal
 canvas with a slight purple-brown tint, faint warm grid, warm-grey frames and bars). Both keep amber attention, purple work
 and emerald ready, so a theme never changes what a colour means.

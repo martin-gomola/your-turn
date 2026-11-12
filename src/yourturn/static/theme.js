@@ -8,13 +8,13 @@ try {
 } catch {
   document.documentElement.dataset.header = "full";
 }
-// Deck is opt-in while in beta; its theme is Dark unless Warm was chosen.
+// Deck shows unless it was turned off; its theme is Dark unless Warm was chosen.
 try {
-  document.documentElement.dataset.deckEnabled = String(localStorage.getItem("your-turn.deck.enabled") === "true");
+  document.documentElement.dataset.deckEnabled = String(localStorage.getItem("your-turn.deck.enabled") !== "false");
   const deckTheme = localStorage.getItem("your-turn.deck.theme");
   document.documentElement.dataset.deckTheme = deckTheme === "warm" ? "warm" : "dark";
 } catch {
-  document.documentElement.dataset.deckEnabled = "false";
+  document.documentElement.dataset.deckEnabled = "true";
   document.documentElement.dataset.deckTheme = "dark";
 }
 
