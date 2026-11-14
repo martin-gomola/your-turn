@@ -85,24 +85,30 @@ a **User Rule**, and paste the text below (GitHub shows a copy button on the blo
 ````markdown
 ## Your Turn handoff
 
-End every response to the user, on every turn, with this block at the very top or the very bottom: one
+End every final response to the user, including questions and review pauses, with this block at the very top or the very bottom: one
 group of lines with no prose between them, each on one line with a blank line between them (chat apps
-join adjacent lines into one paragraph), as plain Markdown outside code blocks.
+join adjacent lines into one paragraph), as plain Markdown outside code blocks. Progress updates need no block.
 
-- `**Outcome:**` one sentence under 160 characters: what is now true. A headline, not a changelog;
-  details go in the body.
+- `**Outcome:**` one sentence under 160 characters: the precise result, recommendation or explicit
+  hypothesis, including any material limitation. Use a headline; put the essential reason and concise
+  verification evidence in the body, referencing artifacts instead of raw logs or file inventories.
 - `**Next step:**` `none`, `answer: …`, `decide: …`, `review: …`, `approve: …` or `run: …`, one action
-  under 120 characters. When the task is done, write exactly `**Next step:** none` and stop. A question
-  the user must react to goes here: "reply yes to continue" is `approve:`, a request for information is
-  `answer:`, and `decide:` names at least two options.
+  under 120 characters. Complete the authorized work you can perform before handing off. Write
+  exactly `**Next step:** none` when no required human action remains; advice and disclosed
+  uncertainty can also use `none`. Use `answer:` for necessary missing information; `decide:` names
+  at least two options awaiting a choice; `review:` names a prepared artifact and the judgment
+  actually needed; `approve:` requests genuinely pending permission, respecting prior authorization;
+  `run:` names a necessary command only the user can run. Uncertainty alone does not require review.
 - `**Recap:**` from the second turn on: 1-2 sentences under 400 characters covering the whole chat, not
-  this turn: the chat's goal, what is settled, what is open.
-- `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` only for a non-trivial trade-off
-  (architecture, edge-case behavior, library or approach), one line each.
+  this turn: the goal, what is settled and why, and what is open. Keep relevant earlier choices and
+  their reasons; make any superseding choice explicit.
+- `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` records an actual consequential
+  choice made this turn, one line each. A pending choice belongs in `Next step`, not a settled Decision.
 
-Keep the labels and prefixes in English, even when you reply in another language, write every value in
-the language of your reply, and start no other line with them. An optional suggestion goes in the body
-with `**Next step:** none`; never close with a polite offer such as "Let me know if…" or "Should I also…?".
+Keep labels, prefixes, `->` and the literal `(over …)` syntax in English; write prose values in the
+language of your reply and use these labels only in the block. Separate alternatives with commas
+inside `(over …)`. An optional suggestion goes in the body with `**Next step:** none`. End the
+response after a bottom block.
 
 Example:
 
@@ -118,7 +124,8 @@ While working:
 
 - Edit files with `StrReplace`, `Write` or `ApplyPatch`, not from the shell, so Your Turn sees them.
 - After your last code edit, run the check that covers it, alone or last in a chain joined with `&&`;
-  if you cannot, make the next step `run: <command>`.
+  keep fixing failures when possible. State remaining failures or limits in Outcome; use `run:` only
+  when necessary verification requires the user's environment.
 - Ask the user to choose with `AskQuestion`. The `your-turn` skill has the details.
 ````
 
@@ -160,9 +167,17 @@ Recaps come from the agent's final answer:
 | `**Outcome:**` without `**Next step:**` | The outcome, marked **No next step** |
 | No handoff lines | The first paragraph as the outcome, and a best-guess next step (Run, Review, or Answer) marked **Inferred**; with none found, **No handoff** |
 
-- `**Outcome:**` is one sentence under 160 characters: what is now true.
+- `**Outcome:**` is one sentence under 160 characters: the precise result, recommendation or explicit
+  hypothesis, including any material limitation.
 - `**Next step:**` is `none`, `answer: …`, `decide: …`, `review: …`, `approve: …`, or `run: …`.
-- `**Recap:**` is added from the second turn on and covers the whole chat.
+  `none` means no required human action remains after the agent completes the authorized work it can
+  perform. Advice and disclosed uncertainty can also use `none`; review needs a prepared artifact and
+  a specific judgment that actually waits on the user.
+- `**Recap:**` is added from the second turn on and covers the whole chat, keeping relevant earlier
+  choices and their reasons and making any superseding choice explicit.
+- `**Decision:**` records a consequential choice actually made, while pending choices stay in
+  `Next step: decide:`. Keep `(over …)` in English even when the prose uses another language, and
+  separate alternatives with commas.
 - Questions go through the app's question tool (`AskUserQuestion` in Claude Code, `AskQuestion` in
   Cursor) with options, so they show under Needs you until answered.
 

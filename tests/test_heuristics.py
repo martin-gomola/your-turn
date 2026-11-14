@@ -203,6 +203,9 @@ def test_session_key_rejects(raw: str) -> None:
         ("- Decision: Cache the index? -> no. Reads are cheap.", ("Cache the index?", ["no"], "no", "Reads are cheap.")),
         ("Decision: Pin uv -> 0.9.2", ("Pin uv?", ["0.9.2"], "0.9.2", "")),
         ("decision: `fetch` or `httpx`? -> `httpx` (over `fetch`)", ("fetch or httpx?", ["httpx", "fetch"], "httpx", "")),
+        ("**Decision:** Chybný riadok? -> preskočiť a zaznamenať (over prerušiť import, ignorovať chybu). Platné riadky sa zachovajú.",
+         ("Chybný riadok?", ["preskočiť a zaznamenať", "prerušiť import", "ignorovať chybu"],
+          "preskočiť a zaznamenať", "Platné riadky sa zachovajú.")),
     ],
 )
 def test_decision_lines_parse(line: str, expected: tuple[str, list[str], str, str]) -> None:
@@ -233,14 +236,15 @@ def test_skill_examples_parse_as_documented() -> None:
     examples = plugin_text("skills/your-turn-handoff/SKILL.md").split("## Examples", 1)[1]
     done, needs, choice = re.findall(r"```\n(.*?)```", examples, re.DOTALL)
     assert parse_answer(done) == ("The last page now shows its final row.", "none", "", True)
-    assert parse_recap(done) == "Goal: correct pagination. Settled: the final row is visible. Open: nothing."
+    assert parse_recap(done) == ""
     assert parse_decisions(done) == []
-    assert parse_answer(needs)[1:] == ("review", "the skipped-row log format in importer.py", True)
-    assert parse_recap(needs) == "Goal: make imports tolerate bad rows. Settled: skip and log. Open: the log format."
+    assert parse_answer(needs)[1:] == ("review", "confirm the skipped-row log format in importer.py", True)
+    assert parse_recap(needs) == "Goal: tolerate bad rows. Settled: skip and log to keep valid rows. Open: your log-format review."
     assert parse_decisions(needs) == [{"question": "Skip or abort on a malformed row?", "options": ["skip and log", "abort", "silent skip"],
                                        "chosen": "skip and log", "reason": "One bad row should not lose a whole import."}]
     assert parse_answer(choice)[1:] == ("decide", "Redis with a 60 s TTL, or an in-process LRU per worker?", True)
     assert parse_recap(choice) == "Goal: faster dashboard. Settled: queries are the bottleneck. Open: which cache."
+    assert parse_decisions(choice) == []
 
 
 def test_every_next_step_kind_is_documented_wherever_the_handoff_is_installed() -> None:

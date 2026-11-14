@@ -1,17 +1,17 @@
 ---
 name: your-turn-handoff
-description: End every response to the user with the Your Turn handoff (Outcome and Next step lines, plus Recap on multi-turn chats and Decision for real trade-offs), and run checks after your last code edit. Always active for every task and every turn in Codex so the user can triage chats across apps at a glance.
+description: End every final user-facing answer with the Your Turn handoff (Outcome and Next step, plus Recap on multi-turn chats and Decision for settled trade-offs), and check your last code edit. Always active for every task and every turn in Codex so the user can triage chats across apps at a glance.
 metadata:
-  version: "0.6.1"
+  version: "0.7.0"
 ---
 
 # Your Turn handoff
 
-The user triages many parallel agent chats across apps in the Your Turn inbox, which parses the end of your final message on every turn.
+The user triages parallel agent chats in the Your Turn inbox. Each card should explain the result and whether anything actually waits on the user.
 
-End **every** response to the user (including turns that ask a question or pause for review) with this block, placed at the very top or the very bottom of the message as one group of lines with no prose between them, each field on its own single line with a blank line between fields (chat apps join adjacent lines into one paragraph), as plain Markdown (not inside backticks or a code block). `Outcome` is required: without it Your Turn ignores the whole block. Keep the labels and prefixes in English, even when you reply in another language. Outside the block, no line may start with `Outcome:`, `Result:`, `Next:`, `Next step:`, `Recap:` or `Decision:`.
+Put this block in every final user-facing answer, including questions and pauses for review. Progress commentary needs no block. Place it at the very top or the very bottom as one group with no prose between them, each field on one line with a blank line between fields (chat apps join adjacent lines into one paragraph), as plain Markdown outside code blocks. Always include `Outcome` and `Next step`.
 
-    **Outcome:** <one sentence under 160 characters: what is now true, or what you found>
+    **Outcome:** <one sentence under 160 characters: the result, recommendation, finding or blocker>
 
     **Next step:** <none | answer: … | decide: … | review: … | approve: … | run: …>
 
@@ -19,44 +19,39 @@ End **every** response to the user (including turns that ask a question or pause
 
     **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
-Include `Recap` on every turn after the first, and `Decision` only when a non-trivial trade-off was made this turn.
-
-Prefer the bottom of the response; a contiguous block at the top is also supported. Keep the labels (`Outcome:`, `Next step:`, `Recap:`, `Decision:`) and `Next step` prefixes in English even when replying in another language, but write every value in the language of your reply. Optional suggestions are not next steps: write `none`.
+Prefer the bottom. Keep labels, action prefixes, `none`, `->` and the literal `(over …)` in English; write the prose in the language of your reply. Use those field labels only inside the handoff block, so other lines cannot be mistaken for fields.
 
 ## Field quality
 
-The inbox shows `Outcome` and `Next step` as one-line cards and cuts them at 200 characters; the user reads them before anything else.
+The inbox shows `Outcome` and `Next step` as one-line cards and cuts them at 200 characters.
 
-- **Outcome is a headline, not a changelog.** Under 160 characters: the one fact the user needs (the state, the answer, the blocker), with concrete nouns instead of "implemented", "done" or "polished". Lists of what changed go in the body. Bad: "The deck now shows an overview row first, highlights only the chats needing you, dims history keys, shows Codex limits, and records…". Good: "The deck leads with an overview row and highlights only chats that need you; not tried on a device yet."
-- **Next step is one action under 120 characters.** Name what to do and where; long paths, command lists and the reason go in the body.
-- **Recap covers the whole chat, starting from its goal.** It must still make sense to someone who saw no earlier turn. A turn-local status is not a recap. Bad: "The fix is verified; changes remain uncommitted." Good: "Goal: let the Deck run on a phone over USB. Settled: --phone and the QR code work. Open: the iPhone link has no address, and nothing is committed."
+- **Outcome:** name the concrete result, recommendation or finding in familiar project terms. Mark a hypothesis as tentative. Include a limit here when it changes the meaning of the result; put supporting evidence and smaller limits in the body. For example: "The deck highlights chats needing you; phone layout is unverified."
+- **Next step:** one action under 120 characters, naming what the user must do and where. Explain the reason and longer commands in the body.
+- **Recap:** from the second turn on, cover the whole chat: goal, settled direction and open work. Preserve earlier choices and their essential reason while they still constrain the task; update them when superseded.
+- **Decision:** record a consequential choice actually made this turn, with `->` and its reason. Use `(over …)` for meaningful alternatives, separated with commas. A choice still waiting on the user belongs in `Next step`; omit `Decision` when no trade-off was settled.
 
-## `Next step` taxonomy (Poka-yoke)
+## Choose the user's next step
 
-Any value other than `none` places the chat into **Needs you**. Start it with one of these prefixes; text without a prefix still lands there as a generic "To do", so always pick the closest prefix:
+Complete the necessary authorized work you can perform before giving a final handoff. If progress really needs the user, prepare the artifact or diagnosis first and name the single action that unblocks it. Existing authorization remains valid.
 
-- `none` — task is complete and verified; nothing waits on the user. Write exactly `none`, not "no further action".
-- `answer: <question>` — blocked on missing requirements, reproduction steps, or ambiguous specs.
-- `decide: <options>` — blocked on an architectural or product choice between valid options.
-- `review: <artifact>` — code or analysis is ready; the user should inspect a diff, file, or report.
-- `approve: <action>` — waiting for permission before a destructive, external, or high-blast-radius action (e.g. git push, schema drop).
-- `run: <command>` — the user must execute a command you cannot run in this environment.
+Any value other than `none` places the chat into **Needs you**. Choose by the actual human dependency:
 
-Pick by what the user has to do: "reply yes to continue" or "proceed or stop?" is `approve:`; "send me the paths, answers or URL" is `answer:`; `decide:` names at least two options (a single yes/no is `approve:`); `run:` is a command the user must execute, never one that is merely optional.
+- `none` — no required action waits on the user. This also fits delivered advice or a finding with an explicitly stated limit. Write exactly `none`.
+- `answer: <question>` — required information is missing and the user must supply it.
+- `decide: <options>` — a choice belongs to the user; name at least two options, with your recommendation and their consequences in the body.
+- `review: <artifact and judgment>` — the workflow actually waits for the user's assessment of a prepared artifact. A finished result or uncertainty alone does not require review.
+- `approve: <action>` — a necessary action needs permission the user has not already given. A yes/no request to proceed belongs here.
+- `run: <command>` — a necessary command must be run by the user because you cannot execute it.
 
-An optional suggestion the user may take or leave ("You can push when ready") belongs in the body, with `Next step: none`. A question the user has to react to always goes in `Next step` as well (`answer:` or `decide:`), not only in the body.
+An optional suggestion belongs in the body, with `Next step: none`. Put every question requiring a user response in `Next step` as well. Keep the answer complete without a trailing polite offer such as "Should I also…?".
 
-With the block at the bottom, stop generating right after it. When `Next step` is `none`, do not add trailing polite questions ("Let me know if...", "Should I also...?").
-
-## High-signal `Decision` & `Recap`
-
-- **Decisions:** Log only trade-offs a human reviewer needs to know (architecture, edge-case policy, library choice). Skip routine edits. Keep each on one line with `->` between question and choice (without it the line is dropped), one line per independent trade-off. Separate alternatives in `(over …)` with commas and omit it if none is worth naming.
-- **Recap as state, not history:** On one line, compress the whole session into current state (Goal + Settled + Open) so the user (and you, after context compaction) can resume with zero scrolling.
-- **No duplication:** Keep the body above the handoff brief. Do not list changed files or raw test outputs—Your Turn extracts those directly from the session logs.
+With the block at the bottom, stop generating right after it. Keep the body useful: explain the premise needed to understand the result, cite existing artifacts, and summarize relevant verification rather than repeating file inventories or raw logs.
 
 ## Verification before handoff
 
-Your Turn automatically flags **Edits unchecked** if you modify code without running a check afterwards, and **Check failed** if the last check failed. After your final code edit, run the test, lint, type check, or build that covers it (for example `pytest`, `ruff`, `mypy`, `npm test`, `node --test`, `tsc`, `cargo test`, `go test`, `swift test`, `make check`). Documentation-only edits (`.md`, `.rst`, `.txt`, `docs/`) and scratch files (the project's top-level `tmp/`, system temp folders) need no check. Run a check as its own command, or as the last step of a chain joined with `&&`: one followed by `;` or `||`, or piped into another command, does not prove it passed. If a check still fails, say so in `Outcome`; if you cannot run it, make the next step `run: <command>`.
+After your last code edit, run the relevant test, lint, type check or build. Finish available authorized repairs and rerun a failed check before handing off. Your Turn flags **Edits unchecked** or **Check failed** from those events. Documentation-only edits (`.md`, `.rst`, `.txt`, `docs/`) and scratch files (the project's top-level `tmp/`, system temp folders) need no check.
+
+Run the check alone or last in a chain joined with `&&`; a later command or a pipe can hide its failure. Report any remaining failure in `Outcome`. When a necessary check is outside your reach, state the limit and select the action that actually unblocks it; use `run:` only for a command the user must execute. Verification claims must match the evidence.
 
 Edit files with Codex's native edit tool (`apply_patch`), not from the shell (heredocs or `write_text`): Your Turn sees edits only through that tool, so a file written from the shell is missing from the chat's file list and never raises **Edits unchecked**.
 
@@ -70,23 +65,21 @@ Fixed the off-by-one in the pager.
 **Outcome:** The last page now shows its final row.
 
 **Next step:** none
-
-**Recap:** Goal: correct pagination. Settled: the final row is visible. Open: nothing.
 ```
 
-Later turn, ready for review, with a trade-off:
+Later turn: the user chose skip-and-log and requested a log-format review before rollout. The artifact is ready:
 
 ```
 **Outcome:** The importer skips malformed rows instead of aborting the file.
 
-**Next step:** review: the skipped-row log format in importer.py
+**Next step:** review: confirm the skipped-row log format in importer.py
 
-**Recap:** Goal: make imports tolerate bad rows. Settled: skip and log. Open: the log format.
+**Recap:** Goal: tolerate bad rows. Settled: skip and log to keep valid rows. Open: your log-format review.
 
 **Decision:** Skip or abort on a malformed row? -> skip and log (over abort, silent skip). One bad row should not lose a whole import.
 ```
 
-Blocked on a choice:
+The user reserved the cache choice. Both options were benchmarked; the choice remains open:
 
 ```
 **Outcome:** Both caches cut dashboard latency below 200 ms; they differ in how stale data can get.

@@ -112,7 +112,9 @@ def test_block_is_replaced_in_place_and_files_it_created_are_removed(tmp_path: P
 
 def _stale(text: str) -> str:
     """An older copy: same version line, different wording."""
-    return text.replace("End every response", "Finish each reply", 1)
+    heading = "Your Turn handoff\n"
+    assert heading in text
+    return text.replace(heading, heading + "\nOld handoff wording.\n", 1)
 
 
 def test_install_rewrites_owned_text_that_differs_under_the_same_version(tmp_path: Path, no_clis: Path) -> None:
@@ -123,13 +125,18 @@ def test_install_rewrites_owned_text_that_differs_under_the_same_version(tmp_pat
         path.parent.mkdir(parents=True)
         path.write_text(_stale(skill_text(app)))
     memory.write_text(f"{MINE}\n{_stale(CLAUDE_BLOCK)}\nAfter.\n")
+    cursor_rule = homes["cursor"] / "rules" / "your-turn.mdc"
+    cursor_rule.parent.mkdir()
+    old_header = "---\ndescription: Your Turn handoff at the end of every response\nalwaysApply: true\n---\n\n"
+    cursor_rule.write_text(old_header + _stale(rule_text("cursor")))
     assert _stale(skill_text("claude")) != skill_text("claude") and 'version: "' in _stale(skill_text("claude"))
     assert {state for _, artifact, state, _ in check(["claude", "cursor"], homes)
-            if artifact in ("skill", "CLAUDE.md block")} == {"content mismatch"}
+            if artifact in ("skill", "CLAUDE.md block", "rule")} == {"content mismatch"}
 
     install(["claude", "cursor"], homes)
     assert claude_skill.read_text() == skill_text("claude") and cursor_skill.read_text() == skill_text("cursor")
     assert memory.read_text() == f"{MINE}\n{CLAUDE_BLOCK}\nAfter.\n"
+    assert cursor_rule.read_text() == old_header + rule_text("cursor")
     first = _tree(tmp_path)
     install(["claude", "cursor"], homes)
     assert _tree(tmp_path) == first

@@ -11,32 +11,38 @@ next steps.
 ```markdown
 ## Your Turn handoff
 
-I run many agent chats at once, across apps, and triage them in the Your Turn inbox. End every response
-to me, on every turn, with these lines at the very top or the very bottom, as one group with no prose
-between them, each on one line with a blank line between them (chat apps join adjacent lines into one
-paragraph), as plain Markdown outside code blocks:
+I run many agent chats at once, across apps, and triage them in the Your Turn inbox. End every final
+response to me, including questions and review pauses, with these lines at the very top or the very bottom,
+as one group with no prose between them, each on one line with a blank line between them (chat apps join
+adjacent lines into one paragraph), as plain Markdown outside code blocks. Progress updates need no block.
 
-**Outcome:** <one sentence under 160 characters: what is now true, or what you found>
+**Outcome:** <one sentence under 160 characters: the precise result, recommendation or explicit hypothesis, including any material limitation>
 
 **Next step:** <none | answer: <question> | decide: <options> | review: <what to look at> | approve: <plan> | run: <command>>
 
-**Recap:** <from the second turn on, 1-2 sentences under 400 characters covering the whole chat, not this turn: the chat's goal, what is settled, what is open>
+**Recap:** <from the second turn on, 1-2 sentences under 400 characters covering the whole chat, not this turn: the goal, what is settled and why, what is open>
 
 **Decision:** <question> -> <chosen> (over <alternatives>). <reason>
 
-Keep the labels and prefixes in English, even when you reply in another language, write every value in
-the language of your reply, and start no other line with them. The outcome is a headline, not a
-changelog, and the next step is one action under 120 characters; details go in the body. Any step
-other than `none` puts the chat under Needs you; start it with one of the prefixes above. A question I
-must react to also goes in the next step: "reply yes to continue" is `approve:`, a request for
-information is `answer:`, and `decide:` names at least two options. When the task is done, write
-exactly `Next step: none` and stop; an optional suggestion goes in the body, and never close with a
-polite offer such as "Let me know if…" or "Should I also…?". Write a Decision line only for a
-non-trivial trade-off (architecture, edge-case behavior, library or approach), one line each with `->`,
-not for routine edits.
+Keep labels, prefixes, `->` and the literal `(over …)` syntax in English; write prose values in the
+language of your reply and use these labels only in the block. Separate alternatives with commas
+inside `(over …)`. The outcome is a headline and the next step is one action under 120 characters;
+details go in the body. Any step other than `none` puts the
+chat under Needs you. Complete the authorized work you can perform before handing off. Write
+exactly `Next step: none` when no required human action remains; advice and disclosed uncertainty
+can also use `none`. An optional suggestion goes in the body. End the response after a bottom block.
 
-Keep the details short. Do not repeat the outcome or list changed files and test results. Edit files
-with your app's native edit tool, not from the shell, so Your Turn sees them. Run the checks that cover
-your last code edit (documentation-only edits need none), alone or last in a chain joined with `&&`; if
-one fails, say so in the outcome, and if you cannot run it, make the next step `run: <command>`.
+Use `answer:` for necessary missing information; `decide:` names at least two options awaiting a
+choice; `review:` names a prepared artifact and the judgment actually needed; `approve:` requests
+genuinely pending permission, respecting prior authorization; `run:` names a necessary command only
+the user can run. Uncertainty alone does not require review. Decision records an actual consequential
+choice made this turn; pending choices belong in Next step. Recap keeps relevant earlier choices and
+their reasons, making any superseding choice explicit.
+
+Use familiar task language, the essential reason and concise verification evidence. Reference
+artifacts instead of repeating raw logs or file inventories. Edit files with your app's native edit
+tool, not from the shell, so Your Turn sees them. Run the checks that cover your last code edit
+(documentation-only edits need none), alone or last in a chain joined with `&&`; keep fixing failures
+when possible. State remaining failures or limits in Outcome; use `run:` only when necessary
+verification requires the user's environment.
 ```
