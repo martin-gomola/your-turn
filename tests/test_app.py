@@ -19,6 +19,35 @@ def client(codex_home: Path) -> TestClient:
     return TestClient(create_app(codex_home), base_url="http://127.0.0.1")
 
 
+def test_launcher_renders_two_pages_and_escapes_configured_names(codex_home: Path, tmp_path: Path) -> None:
+    (tmp_path / "launcher.env").write_text('YOUR_TURN_LAUNCHER_5="Ghostty & Tools"\nYOUR_TURN_LAUNCHER_9=Ghostty\n')
+    app = TestClient(create_app(codex_home, state_path=tmp_path / "state.json"), base_url="http://127.0.0.1")
+    page = app.get("/deck").text
+    assert page.count('class="deck-launch-grid deck-launch-page"') == 2
+    assert page.count('class="deck-launch-card deck-launch-placeholder"') == 10
+    assert 'data-open-app="slot-5" aria-label="Open Ghostty &amp; Tools on this Mac"' in page
+    assert 'data-open-app="slot-9"' in page
+    assert '{{LAUNCHER_PAGES}}' not in page
+
+
+def test_only_configured_app_keys_can_launch_and_keep_origin_checks(codex_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "launcher.env").write_text('YOUR_TURN_LAUNCHER_5=Ghostty\n')
+    calls = []
+    monkeypatch.setattr("yourturn.app.sys.platform", "darwin")
+    monkeypatch.setattr("yourturn.app.subprocess.run", lambda args, **kwargs: calls.append((args, kwargs)))
+    app = TestClient(create_app(codex_home, state_path=tmp_path / "state.json"), base_url="http://127.0.0.1")
+    assert app.post("/api/open-app/slot-5", json={}).status_code == 204
+    assert calls == [(["open", "-a", "Ghostty"], {"check": True, "capture_output": True, "timeout": 10})]
+    for key in ["slot-6", "Ghostty", "Terminal", "command"]:
+        assert app.post(f"/api/open-app/{key}", json={}).status_code == 404
+    assert app.post("/api/open-app/slot-5", json={}, headers={"Origin": "https://example.com"}).status_code == 403
+    assert app.post("/api/open-app/slot-5", data={}).status_code == 403
+    assert len(calls) == 1
+    monkeypatch.setattr("yourturn.app.sys.platform", "linux")
+    assert app.post("/api/open-app/slot-5", json={}).status_code == 501
+    assert len(calls) == 1
+
+
 def test_inbox_lists_chats_without_subagents_or_exec_runs(codex_home: Path) -> None:
     write_rollout(codex_home, SUBAGENT, [meta(SUBAGENT, {"subagent": {"thread_spawn": {}}})])
     # `codex exec` runs are scripted, headless sessions with no chat in Codex.

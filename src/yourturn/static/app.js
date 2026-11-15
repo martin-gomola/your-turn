@@ -1367,12 +1367,21 @@ document.addEventListener("keydown", (event) => {
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 });
 // Settings and Help dock beside the rail without a backdrop; on phones the panel covers the page instead.
+function syncContextHelp() {
+  const view = document.body.dataset.view === "deck" ? $("deck-view").dataset.mode === "simple" ? "launcher" : "dashboard" : "inbox";
+  for (const section of document.querySelectorAll("[data-help-view]")) section.hidden = section.dataset.helpView !== view;
+}
 function showAside(name, restoreFocus = true) {
   const current = document.body.dataset.aside || "";
   for (const button of document.querySelectorAll("[data-aside]")) button.setAttribute("aria-expanded", String(button.dataset.aside === name));
   for (const panel of document.querySelectorAll(".aside-panel")) panel.hidden = panel.id !== name;
   if (name) document.body.dataset.aside = name;
   else delete document.body.dataset.aside;
+  if (name === "help") syncContextHelp();
+  if (name === "settings") {
+    if (document.body.dataset.view === "deck") $("settings").insertBefore($("deck-form"), $("appearance-form"));
+    else $("settings").append($("deck-form"));
+  }
   const covered = Boolean(name) && drawer.matches;
   $("main-content").inert = covered;
   document.querySelector(".bar").inert = covered;
@@ -2117,8 +2126,10 @@ $("deck-layout").addEventListener("click", (event) => {
 });
 function setDeckMode(mode, persist = true) {
   deckMode = mode === "simple" ? "simple" : "dashboard";
+  $("deck-mode-switch").hidden = !deckView || Boolean(threadId);
   $("deck-view").dataset.mode = deckMode;
   $("deck-launcher").hidden = deckMode !== "simple";
+  if (document.body.dataset.aside === "help") syncContextHelp();
   for (const button of $("deck-mode-switch").querySelectorAll("button")) {
     button.setAttribute("aria-pressed", String(button.dataset.deckMode === deckMode));
   }
@@ -2127,13 +2138,59 @@ function setDeckMode(mode, persist = true) {
 setDeckMode(deckMode, false);
 $("deck-mode-switch").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-deck-mode]");
-  if (button) setDeckMode(button.dataset.deckMode);
+  if (!button) return;
+  setDeckMode(button.dataset.deckMode);
+  if (drawer.matches) closeNavigation();
 });
 
 const deckLaunchApps = $("deck-launch-apps");
 const deckAppsAvailable = deckLaunchApps.dataset.available === "true";
 $("deck-launch-unavailable").hidden = deckAppsAvailable;
-if (!deckAppsAvailable) for (const button of deckLaunchApps.querySelectorAll("[data-open-app]")) button.hidden = true;
+if (!deckAppsAvailable) for (const button of deckLaunchApps.querySelectorAll("[data-open-app]")) {
+  button.disabled = true;
+  button.setAttribute("aria-describedby", "deck-launch-unavailable");
+}
+const deckLaunchPages = [...deckLaunchApps.querySelectorAll(".deck-launch-page")];
+const deckLaunchPagination = $("deck-launch-pagination");
+let deckLaunchPage = 0;
+function syncDeckLaunchPage(index) {
+  deckLaunchPage = Math.max(0, Math.min(index, deckLaunchPages.length - 1));
+  deckLaunchPages.forEach((page, i) => { page.inert = i !== deckLaunchPage; });
+  for (const button of deckLaunchPagination.querySelectorAll("[data-launch-page]")) {
+    if (Number(button.dataset.launchPage) === deckLaunchPage) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+  $("deck-launch-position").textContent = `Shortcuts page ${deckLaunchPage + 1} of ${deckLaunchPages.length}`;
+}
+function showDeckLaunchPage(index, behavior = calm.matches ? "instant" : "smooth") {
+  syncDeckLaunchPage(index);
+  const left = deckLaunchPages[deckLaunchPage].offsetLeft - deckLaunchPages[0].offsetLeft;
+  deckLaunchApps.scrollTo({ left, behavior });
+}
+syncDeckLaunchPage(0);
+deckLaunchPagination.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-launch-page]");
+  if (!button) return;
+  showDeckLaunchPage(Number(button.dataset.launchPage));
+});
+deckLaunchApps.addEventListener("keydown", (event) => {
+  const index = { ArrowLeft: deckLaunchPage - 1, ArrowRight: deckLaunchPage + 1, Home: 0, End: deckLaunchPages.length - 1 }[event.key];
+  if (index === undefined || event.altKey || event.ctrlKey || event.metaKey) return;
+  event.preventDefault();
+  showDeckLaunchPage(index);
+  deckLaunchApps.focus({ preventScroll: true });
+});
+let deckLaunchScrollTimer;
+deckLaunchApps.addEventListener("scroll", () => {
+  clearTimeout(deckLaunchScrollTimer);
+  deckLaunchScrollTimer = setTimeout(() => {
+    const width = deckLaunchPages[1].offsetLeft - deckLaunchPages[0].offsetLeft;
+    if (width) syncDeckLaunchPage(Math.round(deckLaunchApps.scrollLeft / width));
+  }, 100);
+}, { passive: true });
+new ResizeObserver(() => {
+  if (deckLaunchApps.clientWidth) showDeckLaunchPage(deckLaunchPage, "instant");
+}).observe(deckLaunchApps);
 $("deck-launcher").addEventListener("click", async (event) => {
   if (event.target.closest("[data-open-settings]")) { showAside("settings"); return; }
   const button = event.target.closest("button[data-open-app]");
@@ -2894,6 +2951,7 @@ function renderDeck(chats) {
     const focusedKey = document.activeElement.closest(".deck-card")?.dataset.key;
     const focusedReview = document.activeElement.hasAttribute("data-review");
     const focusedSupporting = document.activeElement.matches(".deck-supporting > summary");
+    const focusedLog = document.activeElement.matches(".deck-supporting .deck-terminal-body");
     // Wide docked cards have room for the evidence, so it starts open there instead of leaving the card
     // half empty; elsewhere it starts closed. A user's open or closed choice holds for the selected chat.
     // Every card starts with its evidence closed and opens it on request; the choice holds for the selected chat.
@@ -2915,9 +2973,26 @@ function renderDeck(chats) {
       const summary = el("summary");
       const collapse = el("span", "deck-supporting-collapse", "Collapse");
       collapse.setAttribute("aria-hidden", "true");
-      summary.append(el("span", "", "Supporting evidence · files, tools & history"), collapse);
+      summary.append(el("span", "", "Supporting evidence · logs, files & history"), collapse);
       supporting.append(summary);
       supporting.append(...card.querySelectorAll(".deck-files-panel, .deck-traces, .deck-tools, .deck-unreported"));
+      const terminal = card.querySelector(".deck-terminal");
+      if (terminal) {
+        const history = terminal.cloneNode(true);
+        const log = history.querySelector(".deck-terminal-body");
+        log.tabIndex = 0;
+        log.setAttribute("role", "region");
+        log.setAttribute("aria-label", "Recorded activity log");
+        supporting.append(history);
+      }
+      if (kind === "working") {
+        const instruments = card.querySelector(".deck-readout").cloneNode(true);
+        instruments.className = "deck-mobile-telemetry";
+        instruments.setAttribute("aria-label", "Run telemetry");
+        const setup = card.querySelector(".deck-setup");
+        if (setup) instruments.prepend(setup.cloneNode(true));
+        supporting.append(instruments);
+      }
       const decisions = (chat.decisions || []).filter((d) => d.chosen !== null);
       // Historical decisions support the current handoff without competing with its next action.
       if (decisions.length) {
@@ -2997,7 +3072,7 @@ function renderDeck(chats) {
       }
       if (focusedKey && focusedCarouselStep === null) {
         const card = cards.find((item) => item.dataset.key === focusedKey);
-        (card?.querySelector(focusedSupporting ? ".deck-supporting > summary" : focusedReview ? "button" : "a") || cards[0].querySelector("a")).focus({ preventScroll: true });
+        (card?.querySelector(focusedLog ? ".deck-supporting .deck-terminal-body" : focusedSupporting ? ".deck-supporting > summary" : focusedReview ? "button" : "a") || cards[0].querySelector("a")).focus({ preventScroll: true });
       }
     }
   } else {
@@ -3081,8 +3156,8 @@ function renderDeck(chats) {
   standby.hidden = fallback !== "standby";
   const connected = $("connection").dataset.state === "live";
   standby.dataset.connected = String(connected);
-  const headline = connected ? "FLEET STANDBY · ALL SYSTEMS CLEAR" : "FLEET STANDBY · WAITING FOR CONNECTION";
-  const description = connected ? "No blocking tasks. All parallel agent streams are synchronized." : "Local telemetry is reconnecting. The last known queue is empty.";
+  const headline = connected ? "No active chats in this view" : "Waiting for connection";
+  const description = connected ? "Open Inbox to see other chats and earlier results." : "Local telemetry is reconnecting. The last recorded view has no active chats.";
   if ($("deck-standby-title").textContent !== headline) $("deck-standby-title").textContent = headline;
   if ($("deck-standby-description").textContent !== description) $("deck-standby-description").textContent = description;
   const earlier = groups.get("earlier").length;

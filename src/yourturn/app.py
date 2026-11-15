@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from html import escape
 import json
 import os
 import secrets
@@ -20,7 +21,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from yourturn import __version__
-from yourturn.config import DEFAULT_HISTORY_DAYS
+from yourturn.config import DEFAULT_HISTORY_DAYS, load_launcher_apps
 from yourturn.engine import SessionHub
 from yourturn.model import UUID, Harness, SessionKey
 from yourturn.state import InboxState
@@ -58,6 +59,23 @@ def create_app(
     origins = {"127.0.0.1", "localhost", "::1", *lan_hosts}
     hub = SessionHub.for_codex_home(codex_home, claude_home=claude_home, cursor_home=cursor_home, cursor_user_dir=cursor_user_dir)
     state = InboxState(state_path) if state_path else InboxState()
+    launcher_apps = load_launcher_apps(state.path.parent / "launcher.env")
+    launcher_cards = []
+    for slot in range(1, 17):
+        key = {1: "codex", 2: "claude", 3: "cursor"}.get(slot, f"slot-{slot}")
+        name = launcher_apps.get(key)
+        if slot == 4 or name:
+            label = "Your Turn Settings" if slot == 4 else "Claude Code" if slot == 2 else name
+            icon = "i-settings" if slot == 4 else f"i-harness-{key}" if slot <= 3 else "i-command"
+            action = "data-open-settings" if slot == 4 else f'data-open-app="{key}"'
+            accessible = "Open Your Turn settings" if slot == 4 else f"Open {label} on this Mac"
+            launcher_cards.append(f'<button class="deck-launch-card" type="button" {action} aria-label="{escape(accessible, quote=True)}">'
+                                  f'<svg aria-hidden="true"><use href="#{icon}"/></svg><span>{escape(label)}</span></button>')
+        else:
+            launcher_cards.append('<div class="deck-launch-card deck-launch-placeholder" aria-hidden="true">'
+                                  '<span class="deck-launch-placeholder-mark">+</span><span>Empty</span></div>')
+    launcher_pages = "".join(f'<div class="deck-launch-grid deck-launch-page" {"inert" if page else ""} role="group" aria-label="Shortcuts page {page + 1} of 2">'
+                             + "".join(launcher_cards[page * 8:(page + 1) * 8]) + '</div>' for page in range(2))
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -122,6 +140,7 @@ def create_app(
     def index() -> HTMLResponse:
         page = (_static("index.html").replace("{{APP_VERSION}}", __version__)
                 .replace("{{HISTORY_DAYS}}", str(history_days))
+                .replace("{{LAUNCHER_PAGES}}", launcher_pages)
                 .replace("{{APP_LAUNCH_AVAILABLE}}", str(sys.platform == "darwin").lower()))
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
@@ -180,9 +199,9 @@ def create_app(
 
     @app.post("/api/open-app/{app}", status_code=204)
     async def open_app(app: str, request: Request) -> None:
-        """Open one built-in app target on this Mac; never accept a command or URL from the browser."""
+        """Resolve a built-in or locally configured key; the browser never supplies an app name or command."""
         from_this_page(request)
-        app_name = {"codex": "Codex", "claude": "Claude", "cursor": "Cursor"}.get(app)
+        app_name = launcher_apps.get(app)
         if app_name is None:
             raise HTTPException(status_code=404, detail="unknown app")
         if sys.platform != "darwin":

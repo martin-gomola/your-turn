@@ -141,12 +141,31 @@ browser and applied before first paint: Dark (charcoal) and Warm (inspired by Mo
 canvas with a slight purple-brown tint, faint warm grid, warm-grey frames and bars). Both keep amber attention, purple work
 and emerald ready, so a theme never changes what a colour means.
 
-Deck also has a browser-local Dashboard / Simple mode switch. Dashboard remains the live, read-only
-monitor. Simple mode is a fixed quick-launch grid for Codex, Claude Code, Cursor and Your Turn Settings.
+Deck also has a browser-local Dashboard / Launcher mode switch. Dashboard remains the live, read-only
+monitor. Launcher starts with Codex, Claude Code, Cursor and Your Turn Settings, plus empty slots.
 App cards open the named app on the computer running Your Turn; they do not start, answer or control an
-agent chat. The server accepts only the three built-in app keys, launches them with macOS `open -a`,
-and rejects arbitrary commands or URLs. On other host systems, app cards are unavailable; Your Turn
-Settings remains available. Dashboard is the default.
+agent chat. The server accepts only built-in or locally configured slot keys, launches their named apps
+with macOS `open -a`, and rejects browser-supplied app names, commands or URLs. On other host systems,
+app cards are disabled with an explanation; Your Turn
+Settings remains available. Dashboard is the default. The history/version footer appears only in
+Dashboard so Launcher devotes its space to shortcuts.
+
+The mode group lives directly below Deck in the navigation rail, only on the Deck page; it adds no
+header row. Dashboard uses the outline metrics glyph and Launcher the terminal glyph. The collapsed
+rail names both on hover and keyboard focus; the narrow-screen drawer shows their full labels.
+Native pressed buttons support Tab and Enter/Space. Selection has a neutral fill and the shared chamfered HUD frame,
+keeping navigation quieter than attention states. Choosing a mode closes the drawer and returns focus
+to its menu button. Dashboard keeps overview → attention → detail/action order and comparable metrics;
+Launcher remains quick access to the three apps and Settings, starting directly with its cards;
+its section heading is available to screen readers without a visible introduction.
+Launcher uses the same centered icons, readable names and chamfered frames at every size. Two
+horizontally scrollable pages each hold eight slots: two rows of four in landscape, four rows of two
+in portrait. Empty slots are quiet, non-interactive placeholders. Native touch scrolling snaps to a
+page; two clickable page bars with 44px hit areas and Left/Right/Home/End provide alternatives. Only the
+current page is focusable, page changes are announced, and rotation retains the selected page.
+Cards grow for enlarged text rather than clipping; feedback stays in its live region below.
+Slots 5–16 can name installed macOS apps in `launcher.env` in the state directory (environment
+variables override file values), read at server start. No shell arguments, commands or URLs.
 
 ### Primary contract — glanceable industrial telemetry (2026-11-06)
 
@@ -160,6 +179,16 @@ Industrial cyberpunk is the visual vocabulary; comprehension is the acceptance t
 - Needs you leads with the complete next action in an amber inset. Ready leads with
   the outcome; Working leads with the recorded current-turn log and source freshness.
   A Needs you state is not automatically a blocked agent.
+- Below 960px, Working previews only the latest recorded activity on one line, keeping its state and
+  source labels. Long commands truncate in this preview; the full recorded log is available under
+  Supporting evidence, with a keyboard-focusable scrolling region. Desktop keeps its multi-line log.
+- Below 1024px, Working keeps the agent, latest activity, checks, file/decision counts and context in
+  its overview. Model setup, elapsed time, laps, pulse and file names are available in Supporting
+  evidence. Quiet retains its labelled no-activity duration in the overview. The layout toggle hides
+  where both layouts resolve to the same single card; the saved desktop choice stays intact.
+- Short landscape windows (600–1023px wide, at most 500px high) use a bounded Working-card exception
+  to the single-column rule: identity/activity/checks on the left, context on the right, detail and
+  actions below. Text still wraps and long content scrolls; no fixed card height or clipped instructions.
 - Status sits beside the title. Elapsed time has an explicit label and subordinate
   size. Titles and handoff prose wrap; essential instructions never require hover.
 - Check state, file count and decision count stay visible. File paths, tool rankings,
@@ -527,6 +556,13 @@ Inbox/chat scale in `tokens.css`.
   so common repository names remain visible alongside the app badge and folder icon.
 
 ## Settings and Help
+
+- Appearance explicitly names Inbox and chat; Settings opened from Deck places its Dark/Warm theme
+  group first. Help leads with the active Inbox, Dashboard or Launcher workflow and updates when
+  the Deck mode changes. Launcher Help explains page bars, swipe, keyboard, host-app opening and
+  the local `launcher.env` configuration without adding copy above its tiles.
+- An empty Deck reports “No active chats in this view” with an Inbox link. Offline is explicitly
+  “Waiting for connection”; neither empty state claims that all agents are healthy or synchronized.
 
 - Settings exposes System/Light/Dark and the existing notification permission/preference behavior.
   Appearance controls and quick toggle share one resolver. Storage failure applies a page-local choice

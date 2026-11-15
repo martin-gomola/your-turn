@@ -48,6 +48,28 @@ history_days = 14
 The inbox shows chats whose session file changed in that many days. Direct chat links still open
 older chats.
 
+### Launcher shortcuts
+
+Launcher has two pages of eight shortcuts, arranged as two rows of four in landscape and four rows
+of two in portrait. Swipe horizontally, use the page buttons, or focus the shortcut area and press
+Left/Right, Home or End. Unassigned slots stay empty and cannot launch anything.
+
+The first four slots remain Codex, Claude Code, Cursor and Your Turn Settings. To fill slots 5–16,
+copy [launcher.env.example](../launcher.env.example) to `~/.your-turn/launcher.env` (or your selected
+`--state-dir`) and restart Your Turn. For example:
+
+```dotenv
+YOUR_TURN_LAUNCHER_5=Ghostty
+YOUR_TURN_LAUNCHER_9="Activity Monitor"
+```
+
+Use installed macOS app names, quoted when they contain spaces. Empty or omitted values leave a
+placeholder. Blank lines and `#` comments are supported; shell expansion, commands, arguments, paths
+and URLs are not. Matching environment variables override file values, including an empty value.
+The browser sends only a configured slot key; the server runs `open -a` with the saved name as a
+single argument. Shortcuts open apps on the computer hosting Your Turn. Other operating systems
+show disabled app shortcuts; Your Turn Settings still works.
+
 ### State and control files
 
 `~/.your-turn/state.json` keeps which results you have seen and which reminders you dismissed, so
