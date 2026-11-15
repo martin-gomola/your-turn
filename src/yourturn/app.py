@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -48,6 +49,8 @@ def create_app(
     history_days: int = DEFAULT_HISTORY_DAYS, claude_home: Path | None = None,
     cursor_home: Path | None = None, cursor_user_dir: Path | None = None, state_path: Path | None = None,
     phone_token: str | None = None, lan_hosts: tuple[str, ...] = (),
+    instance_id: str | None = None, shutdown_token: str | None = None,
+    request_shutdown: Callable[[], None] | None = None,
 ) -> FastAPI:
     """`phone_token` with `lan_hosts`: also answer on those LAN addresses, but only to a client that shows the token."""
     app = FastAPI(title="Your Turn", docs_url=None, redoc_url=None, openapi_url=None)
@@ -102,10 +105,24 @@ def create_app(
             raise HTTPException(status_code=400, detail="thread must be a session key or Codex thread id")
         return key
 
+    @app.get("/api/health")
+    def health() -> dict[str, Any]:
+        return {"app": "your-turn", "version": __version__, "pid": os.getpid(), "instance": instance_id}
+
+    if shutdown_token and request_shutdown:
+        @app.post("/api/shutdown", status_code=204)
+        async def shutdown(request: Request) -> None:
+            if (not request.client or request.client.host not in ("127.0.0.1", "::1")
+                    or not secrets.compare_digest(request.headers.get("X-Your-Turn-Token", "").encode(), shutdown_token.encode())):
+                raise HTTPException(status_code=403)
+            request_shutdown()
+
     @app.get("/deck", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:
-        page = _static("index.html").replace("{{APP_VERSION}}", __version__).replace("{{HISTORY_DAYS}}", str(history_days))
+        page = (_static("index.html").replace("{{APP_VERSION}}", __version__)
+                .replace("{{HISTORY_DAYS}}", str(history_days))
+                .replace("{{APP_LAUNCH_AVAILABLE}}", str(sys.platform == "darwin").lower()))
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     @app.get("/fullscreen", response_class=HTMLResponse)
@@ -160,6 +177,20 @@ def create_app(
                                         check=True, capture_output=True, timeout=10)
             except (OSError, subprocess.SubprocessError):
                 raise HTTPException(status_code=502, detail="could not open the app on this computer") from None
+
+    @app.post("/api/open-app/{app}", status_code=204)
+    async def open_app(app: str, request: Request) -> None:
+        """Open one built-in app target on this Mac; never accept a command or URL from the browser."""
+        from_this_page(request)
+        app_name = {"codex": "Codex", "claude": "Claude", "cursor": "Cursor"}.get(app)
+        if app_name is None:
+            raise HTTPException(status_code=404, detail="unknown app")
+        if sys.platform != "darwin":
+            raise HTTPException(status_code=501, detail="app shortcuts are available on macOS")
+        try:
+            await asyncio.to_thread(subprocess.run, ["open", "-a", app_name], check=True, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            raise HTTPException(status_code=502, detail="could not open the app on this Mac") from None
 
     @app.post("/api/state", status_code=204)
     async def write_state(request: Request) -> None:

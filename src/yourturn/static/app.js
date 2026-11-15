@@ -1929,6 +1929,7 @@ let deckDirection = 0;
 let deckMomentum = 0;
 let deckEarlierLimit = SECTION_LIMIT;
 let deckLayout = readPreference("your-turn.deck.layout") === "focus" ? "focus" : "multi";
+let deckMode = readPreference("your-turn.deck.mode") === "simple" ? "simple" : "dashboard";
 const deckDismissals = new Map();
 const deckGroupOpen = new Map();
 // Narrow portrait (phone, split pane) starts queues collapsed; a tap or fleet filter opens one.
@@ -2113,6 +2114,49 @@ $("deck-layout").addEventListener("click", (event) => {
   deckLayout = button.dataset.layout;
   try { localStorage.setItem("your-turn.deck.layout", deckLayout); } catch { /* Page-local layout still works. */ }
   if (deckData) renderDeck(deckData);
+});
+function setDeckMode(mode, persist = true) {
+  deckMode = mode === "simple" ? "simple" : "dashboard";
+  $("deck-view").dataset.mode = deckMode;
+  $("deck-launcher").hidden = deckMode !== "simple";
+  for (const button of $("deck-mode-switch").querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.deckMode === deckMode));
+  }
+  if (persist) try { localStorage.setItem("your-turn.deck.mode", deckMode); } catch { /* Keep this page's selection. */ }
+}
+setDeckMode(deckMode, false);
+$("deck-mode-switch").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-deck-mode]");
+  if (button) setDeckMode(button.dataset.deckMode);
+});
+
+const deckLaunchApps = $("deck-launch-apps");
+const deckAppsAvailable = deckLaunchApps.dataset.available === "true";
+$("deck-launch-unavailable").hidden = deckAppsAvailable;
+if (!deckAppsAvailable) for (const button of deckLaunchApps.querySelectorAll("[data-open-app]")) button.hidden = true;
+$("deck-launcher").addEventListener("click", async (event) => {
+  if (event.target.closest("[data-open-settings]")) { showAside("settings"); return; }
+  const button = event.target.closest("button[data-open-app]");
+  if (!button || button.disabled) return;
+  const app = button.dataset.openApp;
+  const name = button.querySelector("span").textContent;
+  const status = $("deck-launch-status");
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  status.textContent = `Opening ${name} on this Mac…`;
+  try {
+    const response = await fetch(`/api/open-app/${encodeURIComponent(app)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    status.textContent = response.ok ? `Opened ${name} on this Mac.`
+      : response.status === 501 ? "App shortcuts are available when Your Turn runs on macOS."
+        : `Could not open ${name} on this Mac. Check that the app is installed, then try again.`;
+  } catch {
+    status.textContent = `Could not reach the Mac to open ${name}. Try again when it is online.`;
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+  }
 });
 $("deck-carousel").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-step]");

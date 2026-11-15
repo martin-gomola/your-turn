@@ -13,7 +13,6 @@ import re
 import secrets
 import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
 from yourturn import usage
@@ -80,11 +79,12 @@ def _interactive() -> bool:
 
 
 def _inbox_running(port: int) -> bool:
-    """Whether Your Turn already answers on the port, as `make up` checks it."""
+    """Reuse only a server that identifies itself as Your Turn."""
+    from yourturn.server import probe
+
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/inbox", timeout=1):
-            return True
-    except OSError:
+        return probe(port) is not None
+    except RuntimeError:
         return False
 
 
@@ -96,14 +96,19 @@ def main(argv: list[str] | None = None) -> int | None:
     parser = argparse.ArgumentParser(prog="your-turn")
     commands = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (("serve", "Run the dashboard on localhost"),
+                            ("start", "Start or reuse the inbox in the background"),
                             ("install", "Set up the handoff for Codex, Claude Code and Cursor, then start the dashboard"),
                             ("uninstall", "Remove the handoff that install set up"),
                             ("doctor", "Check, without changing anything, whether the installed handoff is current")):
         command = commands.add_parser(name, help=help_text)
-        if name == "serve":
+        if name in ("serve", "start"):
             command.add_argument("--port", type=int, default=PORT)
+            command.add_argument("--state-dir", type=Path, default=None,
+                                 help="Directory for inbox state and background-server control files")
             command.add_argument("--phone", action="store_true",
                                  help="Also serve on this Mac's Wi-Fi or USB-hotspot address, behind a token in a QR code")
+            if name == "serve":
+                command.add_argument("--managed", action="store_true", help=argparse.SUPPRESS)
             command.add_argument("--cursor-user-dir", type=Path, default=None,
                                  help="Cursor user data folder holding globalStorage/state.vscdb (default: per OS)")
         else:
@@ -120,7 +125,54 @@ def main(argv: list[str] | None = None) -> int | None:
         command.add_argument("--cursor-home", type=Path, default=Path.home() / ".cursor",
                              help="Cursor home holding projects/*/agent-transcripts (default: ~/.cursor)")
     commands.add_parser("cursor-rule", help="Print the Cursor User Rule to paste into Customize → Rules")
+    for name, help_text in (("stop", "Stop only an inbox owned by the background launcher"),
+                            ("status", "Check the identity of the local inbox")):
+        command = commands.add_parser(name, help=help_text)
+        if name == "stop":
+            command.add_argument("--state-dir", type=Path, default=None)
+        else:
+            command.add_argument("--port", type=int, default=PORT)
+    autostart = commands.add_parser("autostart", help="Enable, disable, or inspect optional Codex session startup")
+    autostart.add_argument("action", choices=("enable", "disable", "status"))
+    autostart.add_argument("--codex-home", type=Path,
+                           default=Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")))
+    autostart.add_argument("--state-dir", type=Path, default=None)
+    autostart.add_argument("--port", type=int, default=PORT)
     args = parser.parse_args(argv)
+
+    if args.command == "autostart":
+        from yourturn import autostart as hooks
+
+        try:
+            result = (hooks.enable(args.codex_home, args.state_dir, args.port) if args.action == "enable"
+                      else getattr(hooks, args.action)(args.codex_home))
+        except (OSError, ValueError, RuntimeError) as error:
+            parser.exit(1, f"Autostart not changed: {error}\n")
+        print(result)
+        return
+
+    if args.command in ("start", "stop", "status"):
+        from yourturn import server
+
+        try:
+            if args.command == "start":
+                serve_args = []
+                for option, path in (("--codex-home", args.codex_home), ("--claude-home", args.claude_home),
+                                     ("--cursor-home", args.cursor_home), ("--cursor-user-dir", args.cursor_user_dir)):
+                    if path is not None:
+                        serve_args.extend((option, str(path.expanduser().absolute())))
+                if args.phone:
+                    serve_args.append("--phone")
+                instance = server.start(args.port, args.state_dir, serve_args)
+                print(f"Your Turn running at {_url(args.port)} (pid {instance['pid']}).")
+            elif args.command == "stop":
+                print("Stopped Your Turn." if server.stop(args.state_dir) else "No owned Your Turn server to stop.")
+            else:
+                instance = server.probe(args.port)
+                print(f"Your Turn running at {_url(args.port)} (pid {instance['pid']})." if instance else "Your Turn is not running.")
+        except (OSError, ValueError, RuntimeError) as error:
+            parser.exit(1, f"Your Turn {args.command} failed: {error}\n")
+        return
 
     if args.command == "cursor-rule":
         print(rule_text("cursor"), end="", flush=True)
@@ -142,6 +194,13 @@ def main(argv: list[str] | None = None) -> int | None:
             except (OSError, ValueError) as error:
                 parser.exit(1, f"Claude Code plan usage capture not changed: {error}\n")
         if args.command == "uninstall":
+            if "codex" in harnesses:
+                from yourturn.autostart import disable
+
+                try:
+                    print(disable(args.codex_home))
+                except (OSError, ValueError, RuntimeError) as error:
+                    parser.exit(1, f"Handoff removed, but autostart was not changed: {error}\n")
             return
         names = [APPS[harness] for harness in done]
         apps = ", ".join(names[:-1]) + f" and {names[-1]}" if len(names) > 1 else "".join(names)
@@ -191,12 +250,27 @@ def main(argv: list[str] | None = None) -> int | None:
         elif ipaddress.ip_address(lan[0]) not in HOTSPOT:
             print("This is the Wi-Fi address: the iPhone must be on the same Wi-Fi. Over the USB cable instead, "
                   "turn on Personal Hotspot on the iPhone, then run this again.", flush=True)
+    managed = getattr(args, "managed", False)
+    instance_id = os.environ.get("YOUR_TURN_INSTANCE") if managed else None
+    shutdown_token = os.environ.get("YOUR_TURN_STOP_TOKEN") if managed else None
+    state_dir = getattr(args, "state_dir", None)
+    if managed:
+        if not instance_id or not shutdown_token or not os.environ.get("YOUR_TURN_STATE_DIR"):
+            parser.error("--managed requires the background launcher's control environment")
+        state_dir = Path(os.environ["YOUR_TURN_STATE_DIR"])
     print(f"Starting Your Turn at {_url(args.port)}. Press Ctrl+C to stop it.", flush=True)
     try:
-        uvicorn.run(create_app(args.codex_home, history_days=history_days, claude_home=args.claude_home,
-                               cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir,
-                               phone_token=token, lan_hosts=lan),
-                    host=host, port=args.port, log_level="warning", timeout_graceful_shutdown=SHUTDOWN_SECONDS)
+        app = create_app(args.codex_home, history_days=history_days, claude_home=args.claude_home,
+                         cursor_home=args.cursor_home, cursor_user_dir=args.cursor_user_dir,
+                         phone_token=token, lan_hosts=lan, state_path=state_dir / "state.json" if state_dir else None,
+                         instance_id=instance_id, shutdown_token=shutdown_token,
+                         request_shutdown=(lambda: setattr(server_process, "should_exit", True)) if managed else None)
+        options = dict(host=host, port=args.port, log_level="warning", timeout_graceful_shutdown=SHUTDOWN_SECONDS)
+        if managed:
+            server_process = uvicorn.Server(uvicorn.Config(app, **options))
+            server_process.run()
+        else:
+            uvicorn.run(app, **options)
     except SystemExit as error:
         if error.code not in (None, 0):
             print(

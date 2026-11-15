@@ -180,6 +180,10 @@ SOFTWARE.
           <button type="button" data-layout="multi" aria-label="Multi-Telemetry" title="Multi-Telemetry" aria-pressed="true"><svg aria-hidden="true"><use href="#i-grid"/></svg></button>
         </div>
       </div>
+      <div class="deck-mode-switch" id="deck-mode-switch" role="group" aria-label="Deck mode">
+        <button type="button" data-deck-mode="dashboard" aria-pressed="true">Dashboard</button>
+        <button type="button" data-deck-mode="simple" aria-pressed="false">Simple</button>
+      </div>
       <div class="deck-fleet" id="deck-fleet"></div>
     </section>
     <div class="deck-stage" id="deck-stage" hidden>
@@ -200,6 +204,26 @@ SOFTWARE.
       <span class="deck-standby-mark" aria-hidden="true"><svg><use href="#i-pulse"/></svg></span>
       <h2 id="deck-standby-title">FLEET STANDBY · ALL SYSTEMS CLEAR</h2>
       <p id="deck-standby-description">No blocking tasks. All parallel agent streams are synchronized.</p>
+    </section>
+    <section class="deck-launcher" id="deck-launcher" aria-labelledby="deck-launcher-title" hidden>
+      <h2 id="deck-launcher-title">Quick launch</h2>
+      <p class="deck-launcher-note">Apps open on the computer running Your Turn.</p>
+      <div class="deck-launch-grid" id="deck-launch-apps" data-available="{{APP_LAUNCH_AVAILABLE}}">
+        <button class="deck-launch-card" type="button" data-open-app="codex" aria-label="Open Codex on this Mac">
+          <svg aria-hidden="true"><use href="#i-harness-codex"/></svg><span>Codex</span><span class="deck-launch-arrow" aria-hidden="true">↗</span>
+        </button>
+        <button class="deck-launch-card" type="button" data-open-app="claude" aria-label="Open Claude Code on this Mac">
+          <svg aria-hidden="true"><use href="#i-harness-claude"/></svg><span>Claude Code</span><span class="deck-launch-arrow" aria-hidden="true">↗</span>
+        </button>
+        <button class="deck-launch-card" type="button" data-open-app="cursor" aria-label="Open Cursor on this Mac">
+          <svg aria-hidden="true"><use href="#i-harness-cursor"/></svg><span>Cursor</span><span class="deck-launch-arrow" aria-hidden="true">↗</span>
+        </button>
+        <button class="deck-launch-card" type="button" data-open-settings aria-label="Open Your Turn settings">
+          <svg aria-hidden="true"><use href="#i-settings"/></svg><span>Your Turn Settings</span><span class="deck-launch-arrow" aria-hidden="true">↗</span>
+        </button>
+      </div>
+      <p class="deck-launcher-note" id="deck-launch-unavailable" hidden>App shortcuts are available when Your Turn runs on macOS.</p>
+      <p class="deck-launch-status" id="deck-launch-status" role="status" aria-live="polite" aria-atomic="true"></p>
     </section>
   </div>
 

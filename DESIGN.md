@@ -141,6 +141,13 @@ browser and applied before first paint: Dark (charcoal) and Warm (inspired by Mo
 canvas with a slight purple-brown tint, faint warm grid, warm-grey frames and bars). Both keep amber attention, purple work
 and emerald ready, so a theme never changes what a colour means.
 
+Deck also has a browser-local Dashboard / Simple mode switch. Dashboard remains the live, read-only
+monitor. Simple mode is a fixed quick-launch grid for Codex, Claude Code, Cursor and Your Turn Settings.
+App cards open the named app on the computer running Your Turn; they do not start, answer or control an
+agent chat. The server accepts only the three built-in app keys, launches them with macOS `open -a`,
+and rejects arbitrary commands or URLs. On other host systems, app cards are unavailable; Your Turn
+Settings remains available. Dashboard is the default.
+
 ### Primary contract — glanceable industrial telemetry (2026-11-06)
 
 This contract supersedes older Deck rules below wherever they conflict. Deck is an
