@@ -11,3 +11,10 @@ Write anything produced while working, rather than shipped, to an ignored folder
 Never create reports like `design-qa.md` or `ux-qa.md` at the repository root. Committed files
 must not link to anything under `docs/design/` or `tmp/`, because those paths do not exist in
 other checkouts. Images shown in `README.md` belong in `docs/images/`.
+
+## Handoff source
+
+`plugin/skills/your-turn-handoff/` is a generated, pinned snapshot of the canonical
+skill in `my-agent-skills`. Update it with `scripts/sync-handoff.py --source <checkout>`;
+do not hand-edit it. The snapshot and `handoff-source.json` must ship together so
+PyPI builds and installs work without the source repository. See `docs/handoff-source.md`.

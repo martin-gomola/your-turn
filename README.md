@@ -201,6 +201,7 @@ The inbox runs on your machine. It does not take over agent processes or send ch
 | [docs/configuration.md](./docs/configuration.md) | CLI commands and flags, app setup, handoff format, and development |
 | [DESIGN.md](./DESIGN.md) | UI design contract and references |
 | [docs/agents-snippet.md](./docs/agents-snippet.md) | Handoff format to add to agent instructions by hand |
+| [docs/handoff-source.md](./docs/handoff-source.md) | Canonical handoff source, pinned snapshot and package checks |
 
 ## Run from a clone
 

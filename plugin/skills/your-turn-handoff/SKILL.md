@@ -1,6 +1,6 @@
 ---
 name: your-turn-handoff
-description: End every final user-facing answer with the Your Turn handoff (Outcome and Next step, plus Recap on multi-turn chats and Decision for settled trade-offs), and check your last code edit. Always active for every task and every turn in Codex so the user can triage chats across apps at a glance.
+description: End every final user-facing answer with the Your Turn handoff (Outcome and Next step, plus Recap on multi-turn chats and Decision for settled trade-offs), and check your last code edit. Always active for every task and every turn; supports coding agents with or without the Your Turn inbox.
 metadata:
   version: "0.7.0"
 ---
@@ -53,7 +53,7 @@ After your last code edit, run the relevant test, lint, type check or build. Fin
 
 Run the check alone or last in a chain joined with `&&`; a later command or a pipe can hide its failure. Report any remaining failure in `Outcome`. When a necessary check is outside your reach, state the limit and select the action that actually unblocks it; use `run:` only for a command the user must execute. Verification claims must match the evidence.
 
-Edit files with Codex's native edit tool (`apply_patch`), not from the shell (heredocs or `write_text`): Your Turn sees edits only through that tool, so a file written from the shell is missing from the chat's file list and never raises **Edits unchecked**.
+Edit files with your app's native edit tool (`apply_patch` in Codex, `Edit` or `Write` in Claude Code, `StrReplace`, `Write` or `ApplyPatch` in Cursor), not from the shell: Your Turn observes native edit events for its file list and verification badges. Use the equivalent native editor in other agents.
 
 ## Examples
 

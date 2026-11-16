@@ -123,6 +123,7 @@ def skill_text(harness: str) -> str:
     text = plugin_text("skills/your-turn-handoff/SKILL.md")
     text = text.replace("name: your-turn-handoff", f"name: {NAME}").replace("Codex", APPS[harness])
     text = text.replace("`apply_patch`", EDIT_TOOLS[harness])
+    text = re.sub(r"Edit files with your app's native edit tool[^\n]+", f"Edit files with {APPS[harness]}'s native edit tool ({EDIT_TOOLS[harness]}), not from the shell, so Your Turn observes the edit events.", text)
     return text.rstrip("\n") + "\n" + QUESTIONS.format(tool=ASK_TOOLS[harness])
 
 
@@ -239,6 +240,21 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Skill {skill} (Codex CLI not found, so no plugin)", agents_home() / "skills")
         return skill in ("written", "unchanged")
     env = {**os.environ, "CODEX_HOME": str(home)} if home is not None else None
+    inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env)
+    try:
+        entries = json.loads(inventory.stdout).get("installed", []) if inventory.returncode == 0 else []
+    except (ValueError, AttributeError):
+        entries = []
+    if not isinstance(entries, list):
+        entries = []
+    standalone = "your-turn-handoff@my-agent-skills"
+    if any(isinstance(entry, dict) and entry.get("pluginId") == standalone and entry.get("installed") and entry.get("enabled") for entry in entries):
+        if any(isinstance(entry, dict) and entry.get("pluginId") == PLUGIN and entry.get("installed") for entry in entries):
+            _codex(["plugin", "remove", PLUGIN], home, check=False)
+        if _shared_skill():
+            _remove_skill(agents_home())
+        _install_result("codex", f"Using installed handoff {standalone}")
+        return True
     listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env)
     if not any(line.split()[:1] == [MARKETPLACE] for line in listed.stdout.splitlines()):
         _codex(["plugin", "marketplace", "add", MARKETPLACE_SOURCE], home)

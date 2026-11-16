@@ -273,7 +273,7 @@ def test_every_handoff_copy_states_the_same_rules_and_its_own_edit_tool() -> Non
     for text in (*skills.values(), CLAUDE_BLOCK, cursor_rule, snippet):
         flat = " ".join(text.lower().split())
         assert [rule for rule in rules if rule not in flat] == []
-    assert "Codex's native edit tool (`apply_patch`)" in skills["codex"]
+    assert "`apply_patch` in Codex" in skills["codex"]
     assert "Claude Code's native edit tool (`Edit` or `Write`)" in skills["claude"] and "`Edit` or `Write`" in CLAUDE_BLOCK
     cursor_tools = "`StrReplace`, `Write` or `ApplyPatch`"
     assert f"Cursor's native edit tool ({cursor_tools})" in skills["cursor"] and cursor_tools in cursor_rule

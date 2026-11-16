@@ -11,6 +11,26 @@ import pytest
 from yourturn.cli import main
 from yourturn.install import CLAUDE_BLOCK, END, LEGACY_MANIFEST, START, check, install, rule_text, skill_text, uninstall
 
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_existing_standalone_handoff_prevents_second_codex_install(tmp_path, monkeypatch, legacy):
+    import subprocess
+    import yourturn.install as installer
+    calls = []
+    entries = [{"pluginId": "your-turn-handoff@my-agent-skills", "installed": True, "enabled": True}]
+    if legacy:
+        entries.append({"pluginId": installer.PLUGIN, "installed": True, "enabled": True})
+    def run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps({"installed": entries}), stderr="")
+    monkeypatch.setattr(installer.shutil, "which", lambda name: "codex")
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    monkeypatch.setattr(installer, "agents_home", lambda: tmp_path / "agents")
+    assert installer.install_plugin(tmp_path / "codex")
+    assert not any("add" in call or "upgrade" in call for call in calls)
+    assert (["codex", "plugin", "remove", installer.PLUGIN] in calls) == legacy
+    assert not any("remove" in call and "your-turn-handoff@my-agent-skills" in call for call in calls)
+
 MINE = "# My rules\n\nKeep answers short.\n"
 OTHER = {"mcpServers": {"context7": {"command": "npx", "args": ["context7"]}}}
 # What an earlier version added to Cursor's mcp.json.
