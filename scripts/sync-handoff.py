@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = "plugins/your-turn-handoff/skills/your-turn-handoff"
+SOURCE = "skills/your-turn-handoff"
 DESTINATION = Path("plugin/skills/your-turn-handoff")
 FILES = ("SKILL.md", "LICENSE")
 

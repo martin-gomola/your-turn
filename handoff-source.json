@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/martin-gomola/my-agent-skills.git",
-  "commit": "c221a1efb8ba79253a01bf924a018229f4a5298d",
-  "path": "plugins/your-turn-handoff/skills/your-turn-handoff",
+  "commit": "6cb62733a67f9e3b8aae7cecb74c238fb05f2f2a",
+  "path": "skills/your-turn-handoff",
   "files": {
     "SKILL.md": "ef8345f9f246ee361fb16a805d73810c550e8669b4e2edfb5503d4009a52ffcf",
     "LICENSE": "83bfc3c5dbb0abde2c5ba3a2af509b4a3b89095a487e0f04416b5d4b740bd18e"
