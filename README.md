@@ -24,7 +24,7 @@
 
 ## Quick start
 
-Choose [Full setup](#full-setup) for the inbox and handoff skill, or [Skill only](#skill-only-no-server) for handoffs in your existing chats.
+Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats.
 
 ### Full setup
 
@@ -58,7 +58,7 @@ your-turn autostart enable
 
 Review the hook in `/hooks` in the Codex CLI or **Settings → Hooks** in the desktop app. Enabling autostart does not grant hook trust or verify that Codex loaded it. On `SessionStart`, the hook starts or reuses one background inbox without opening a browser.
 
-The default plugin stays instruction-only. Disable the hook with `your-turn autostart disable`; the shared inbox keeps running until you stop it with `your-turn stop`. See [autostart setup and diagnostics](./docs/configuration.md#optional-codex-autostart), including what to do if the installed Python environment changes.
+The handoff stays instruction-only. Disable the hook with `your-turn autostart disable`; the shared inbox keeps running until you stop it with `your-turn stop`. See [autostart setup and diagnostics](./docs/configuration.md#optional-codex-autostart), including what to do if the installed Python environment changes.
 
 </details>
 
@@ -95,30 +95,27 @@ Only `install` and `uninstall` change agent app folders. To see what `install` w
 
 ### Skill only (no server)
 
-These instruction-only paths need no running inbox, `uv` or Python.
+Install **your-turn-handoff** from
+[the my-agent-skills installer](https://martin-gomola.github.io/my-agent-skills/).
+Select the skill, your coding agents, and project or global scope, then copy and
+run the generated command. Installation uses the Skills CLI and requires Node.js
+22.20+ and Git; no inbox, `uv` or Python is needed. Generated commands disable
+Skills CLI telemetry for that run.
 
-#### Codex
+Start a new agent chat and ask:
 
-Requires the Codex CLI. Install the instruction-only plugin, then restart Codex:
-
-```bash
-codex plugin marketplace add martin-gomola/your-turn
-codex plugin add your-turn@your-turn
+```text
+Use your-turn-handoff for the final answers in this chat.
 ```
 
-<details>
-<summary>Update or remove the Codex plugin</summary>
+The skill is maintained in
+[my-agent-skills](https://github.com/martin-gomola/my-agent-skills/tree/main/skills/your-turn-handoff).
+Follow its [update and removal instructions](https://github.com/martin-gomola/my-agent-skills/blob/main/docs/install.md)
+to manage that installation. Agent behavior determines when the skill loads.
 
-Codex keeps the marketplace at the commit it fetched. To pick up a newer skill, run `codex plugin marketplace upgrade your-turn && codex plugin add your-turn@your-turn`, then restart Codex. To remove it, run `codex plugin remove your-turn@your-turn` and `codex plugin marketplace remove your-turn`.
-
-</details>
-
-#### Claude Code and Cursor
-
-- **Claude Code:** append the [manual handoff block](./docs/agents-snippet.md) to `~/.claude/CLAUDE.md`.
-- **Cursor:** open **Customize → Rules**, add a **User Rule**, and paste the [Cursor rule](./docs/configuration.md#cursor-user-rule).
-
-Start a new chat to load the instructions. The [manual block](./docs/agents-snippet.md) also works in an instruction file your agent reads if you prefer to set up Codex by hand.
+If you later want the inbox, run `uvx your-turn@latest serve`. Keep your existing
+skill installation; you do not need to run `install` again. Full setup already
+includes a bundled handoff, so choose one installation route to avoid duplicates.
 
 <a id="why-install-the-handoff"></a>
 
