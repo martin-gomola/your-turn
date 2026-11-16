@@ -8,7 +8,14 @@ Your Turn GitHub plugin and the PyPI package both include the files.
 To refresh it from a reviewed, committed local checkout:
 
 ```bash
-python scripts/sync-handoff.py --source ../my-agent-skills
+make update-handoff
+```
+
+The default source is `../my-agent-skills`. Update that checkout first to pick up
+remote changes. For a checkout elsewhere:
+
+```bash
+make update-handoff HANDOFF_SOURCE=/path/to/my-agent-skills
 ```
 
 Commit the generated snapshot and `handoff-source.json` together. The record pins

@@ -2,8 +2,12 @@ PORT ?= 8787
 STATE_DIR ?= $(HOME)/.your-turn
 LOG_FILE := $(STATE_DIR)/server.log
 MARKETPLACE := your-turn
+HANDOFF_SOURCE ?= ../my-agent-skills
 
-.PHONY: install doctor up down restart phone status logs test screenshots demo
+.PHONY: install doctor up down restart phone status logs test screenshots demo update-handoff
+
+update-handoff:
+	@uv run --quiet python scripts/sync-handoff.py --source "$(HANDOFF_SOURCE)"
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
