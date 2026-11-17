@@ -24,7 +24,7 @@
 
 ## Quick start
 
-Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats.
+Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats. To pick your options and copy the commands in one click, use the [install page](https://martin-gomola.github.io/your-turn/).
 
 ### Full setup
 

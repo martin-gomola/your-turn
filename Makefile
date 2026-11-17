@@ -4,7 +4,12 @@ LOG_FILE := $(STATE_DIR)/server.log
 MARKETPLACE := your-turn
 HANDOFF_SOURCE ?= ../my-agent-skills
 
-.PHONY: install doctor up down restart phone status logs test screenshots demo update-skill
+.PHONY: install doctor up down restart phone status logs test screenshots demo update-skill site
+
+# Copy the README screenshots into the install page (site/images is ignored); preview with python3 -m http.server -d site.
+site:
+	@mkdir -p site/images
+	@cp docs/images/desktop.png docs/images/deck.gif src/yourturn/static/icon.svg site/images/
 
 update-skill:
 	@uv run --quiet python scripts/sync-handoff.py --source "$(HANDOFF_SOURCE)"

@@ -17,3 +17,6 @@ docs/verification.md
 .agentsroom/fork-context-*.txt
 .agentsroom/transfer-context-*.txt
 result
+
+# Install page images, copied by make site
+site/images/
