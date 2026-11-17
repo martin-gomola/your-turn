@@ -2651,7 +2651,9 @@ function deckTrace(label, values, { reading = "", max, tone = () => "", title = 
 // context at each lap's end, and the chat's token flow.
 function deckTraces(chat, kind, { supporting = false } = {}) {
   const traces = [];
-  const minimumSamples = supporting ? 1 : 2;
+  // A trace needs two samples everywhere: a single lap's "best" and "avg" are the same number over one full bar,
+  // which compares nothing (and contradicted the "does not record per-step times" note beside it).
+  const minimumSamples = 2;
   const laps = (chat.laps || []).filter((lap) => lapSeconds(lap) > 0);
   const live = laps.length > 0 && !laps.at(-1).ended_at;
   if (laps.length >= minimumSamples) {
@@ -2722,7 +2724,15 @@ function deckChangedFiles(chat) {
     const slash = relative.lastIndexOf("/");
     const item = el("li");
     item.title = relative;
-    if (slash > 0) item.append(el("span", "deck-files-dir", relative.slice(0, slash + 1)));
+    // The directory shortens from its start ("…/ingestion/"), so the part next to the file name stays readable;
+    // the inner left-to-right span keeps the path's own order inside the right-to-left box that does it.
+    if (slash > 0) {
+      const dir = el("span", "deck-files-dir");
+      const text = el("span", "", relative.slice(0, slash + 1));
+      text.dir = "ltr";
+      dir.append(text);
+      item.append(dir);
+    }
     item.append(el("span", "deck-files-name", relative.slice(slash + 1)));
     list.append(item);
   }

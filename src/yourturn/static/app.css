@@ -1577,8 +1577,9 @@ body[data-origin="deck"] :is(.open-codex, .open-claude-desktop) { min-height: 44
 .deck-history .deck-history-earlier::before { content: none; }
 /* Telemetry traces: neutral bars, purple for a best lap, amber/red past the context marks, and a
    flowing stripe plus sweep only on what is live right now. */
-.deck-traces { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); grid-auto-rows: auto; gap: var(--space-3); margin-top: var(--space-4); }
-.deck-trace { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; min-height: 0; padding: var(--space-2) var(--space-3); border: 1px solid rgb(255 255 255 / .15); color: var(--deck-muted); font: 500 12px / 1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
+/* Unframed panels need whitespace to read as separate: a 32px gutter between columns, 16px between rows. */
+.deck-traces { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); grid-auto-rows: auto; gap: var(--space-4) var(--space-6); margin-top: var(--space-4); }
+.deck-trace { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; min-height: 0; color: var(--deck-muted); font: 500 12px / 1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
 .deck-trace-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-1) var(--space-2); margin: 0; }
 .deck-trace-reading { color: var(--deck-text); }
 .deck-trace-chart { position: relative; display: flex; align-items: flex-end; flex: 1; min-height: 48px; border-bottom: 1px solid var(--deck-line); overflow: hidden; }
@@ -1596,11 +1597,14 @@ body[data-origin="deck"] :is(.open-codex, .open-claude-desktop) { min-height: 44
 body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) { animation: none; }
 @media (max-width: 599px) { .deck-traces { display: none; } }
 /* Changed files on a non-Working card: newest first, folder muted, name bright; fills free space on wide screens. */
-.deck-files-panel { display: grid; align-content: start; gap: var(--space-2); margin-top: var(--space-4); padding: var(--space-2) var(--space-3); border: 1px solid rgb(255 255 255 / .15); color: var(--deck-muted); font: 500 12px / 1.45 var(--font-mono); }
-.deck-files-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-1) var(--space-4); margin: 0; padding: 0; list-style: none; }
+/* Paths without a frame. The folder shortens from its start (right-to-left box), and much faster than the name, so
+   the file name stays whole; that makes two columns safe once each gets 320px (240px cut both parts before). */
+.deck-files-panel { display: grid; align-content: start; gap: var(--space-2); margin-top: var(--space-4); color: var(--deck-muted); font: 500 12px / 1.45 var(--font-mono); }
+.deck-files-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--space-1) var(--space-6); margin: 0; padding: 0; list-style: none; }
 .deck-files-list li { display: flex; min-width: 0; white-space: nowrap; }
-.deck-files-dir { min-width: 0; overflow: hidden; color: var(--deck-muted); text-overflow: ellipsis; }
-.deck-files-name { flex: none; color: var(--deck-text); }
+.deck-files-dir { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--deck-muted); text-overflow: ellipsis; direction: rtl; text-align: left; }
+/* The name never shrinks; only a name longer than the whole column is cut (max-width). */
+.deck-files-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--deck-text); }
 .deck-files-more { color: var(--deck-muted); }
 .deck-unreported { margin: var(--space-3) 0 0; color: var(--deck-muted); font: 500 12px / 1.45 var(--font-mono); }
 @media (max-width: 599px) { .deck-files-panel { display: none; } }
@@ -1728,17 +1732,14 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 /* The first panel sits close under the title: the 44px title row already separates them. */
 .deck-supporting > summary + * { margin-top: var(--space-1); }
 .deck-supporting > summary:focus-visible { outline: 2px solid var(--deck-text); outline-offset: -2px; }
-.deck-supporting-body {
-  position: relative; min-width: 0; padding: var(--space-3);
-  background: color-mix(in srgb, var(--deck-tone) 4%, transparent);
-  clip-path: var(--hud-shape);
-}
-.deck-supporting-body::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: color-mix(in srgb, var(--deck-tone) 45%, var(--deck-line));
-  clip-path: var(--hud-ring);
-}
-.deck-supporting-context { margin-bottom: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--deck-line); }
+/* One frame per card: the evidence body and its panels (laps, context per lap, files) drew frames inside the card's
+   own, three deep. Spacing and each panel's heading now separate them. */
+.deck-supporting-body { position: relative; min-width: 0; padding: var(--space-3); }
+.deck-supporting-context { margin-bottom: var(--space-3); }
+/* The card face already shows the percent and the bar; the evidence adds only what it lacks (exact tokens, what
+   is left, the turns estimate). Docked, the face's context is hidden while the evidence is open, so it keeps all. */
+#deck-view:not([data-docked="true"]) .deck-supporting-context :is(.deck-percent, .deck-gauge) { display: none; }
+#deck-view:not([data-docked="true"]) .deck-supporting-context > .deck-context { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "used left"; }
 .deck-supporting-label { margin: 0 0 var(--space-2); color: var(--deck-muted); font: 600 12px / 1.4 var(--font-mono); letter-spacing: .06em; }
 .deck-supporting-context > .deck-context { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "used gauge left"; align-items: center; gap: var(--space-2) var(--space-5); margin: 0; }
 .deck-supporting-context .deck-context-header { grid-area: used; margin: 0; }
@@ -1751,7 +1752,6 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 .deck-supporting .deck-history { margin-top: var(--space-3); padding-inline: 0; border-top-color: var(--deck-line); }
 .deck-supporting :is(.deck-traces, .deck-files-panel) { display: grid; }
 .deck-files-list li { overflow: hidden; }
-.deck-files-name { flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
 .deck-card-footer .deck-card-open { min-height: 44px; border-color: #c9cdd3; background: #c9cdd3; color: #0d0f12; font-weight: 750; }
 .deck-card-footer .deck-card-open svg { color: inherit; }
 .deck-card-footer .deck-card-open:hover { background: #f5f5f5; color: #0d0f12; }
