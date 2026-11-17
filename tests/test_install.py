@@ -441,7 +441,7 @@ def test_cli_install_failure_stays_visible(tmp_path: Path, monkeypatch: pytest.M
 
 def test_cursor_rule_prints_only_the_rule_and_changes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                                               capsys: pytest.CaptureFixture[str]) -> None:
-    homes = _homes(tmp_path)
+    _homes(tmp_path)  # Creates the folders the command runs in.
     codex_log, claude_log = _fake(tmp_path, "codex", monkeypatch), _fake(tmp_path, "claude", monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.chdir(tmp_path / "cursor")
