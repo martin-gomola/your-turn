@@ -79,7 +79,7 @@ To open the inbox on your phone, run `uvx your-turn@latest serve --phone` (in a 
 <details>
 <summary>Check where a release comes from, or pin one</summary>
 
-`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.6.1`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.6.1 your-turn`.
+`uvx your-turn@latest` runs the newest [PyPI release](https://pypi.org/project/your-turn/), which GitHub Actions builds from a Git tag and PyPI shows with its attestation. Without `@latest`, `uv` keeps reusing the release it downloaded first. To pin a version, use `uvx your-turn@0.7.0`, or install straight from its tag with `uvx --from git+https://github.com/martin-gomola/your-turn@v0.7.0 your-turn`.
 
 </details>
 
@@ -92,7 +92,7 @@ The repository is a flake, with dependencies pinned in `flake.lock`. This starts
 nix run github:martin-gomola/your-turn
 ```
 
-Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.6.1`.
+Only `install` and `uninstall` change agent app folders. To see what `install` would touch, run `nix run github:martin-gomola/your-turn -- doctor` first. To skip it, add the handoff by hand from [docs/agents-snippet.md](./docs/agents-snippet.md), or print the Cursor rule with `nix run github:martin-gomola/your-turn -- cursor-rule`. `nix profile install github:martin-gomola/your-turn` puts `your-turn` on your `PATH`. To pin a release, use `github:martin-gomola/your-turn/v0.7.0`.
 
 </details>
 
