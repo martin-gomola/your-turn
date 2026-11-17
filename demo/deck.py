@@ -161,6 +161,10 @@ def main() -> None:
         # The demo's own Claude capture, so the real one in ~/.your-turn is never read.
         plan_usage.CAPTURE_PATH = Path(tmp) / "claude-usage.json"
         plan_usage.CAPTURE_PATH.write_text(json.dumps(CLAUDE_USAGE), encoding="utf-8")
+        # The demo's own launcher (served from this temp folder): the example's built-ins, an app and a command tile.
+        launcher = (Path(__file__).resolve().parent.parent / "launcher.toml.example").read_text(encoding="utf-8")
+        launcher += '\n[[shortcut]]\nslot = 6\nlabel = "Run tests"\ncommand = ["make", "test"]\nicon = "tool"\n'
+        (Path(tmp) / "launcher.toml").write_text(launcher, encoding="utf-8")
         print(f"Deck QA demo: http://127.0.0.1:{port}/deck (made-up chats; Ctrl-C to stop)", flush=True)
         serve_demo(Path(tmp), port)
 

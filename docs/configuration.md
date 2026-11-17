@@ -54,21 +54,46 @@ Launcher has two pages of eight shortcuts, arranged as two rows of four in lands
 of two in portrait. Swipe horizontally, use the page buttons, or focus the shortcut area and press
 Left/Right, Home or End. Unassigned slots stay empty and cannot launch anything.
 
-The first four slots remain Codex, Claude Code, Cursor and Your Turn Settings. To fill slots 5–16,
-copy [launcher.env.example](../launcher.env.example) to `~/.your-turn/launcher.env` (or your selected
-`--state-dir`) and restart Your Turn. For example:
+One file defines every tile: copy [launcher.toml.example](../launcher.toml.example) to
+`~/.your-turn/launcher.toml` (or your selected `--state-dir`) and restart Your Turn. Without it the
+launcher shows Codex, Claude Code, Cursor and Your Turn Settings; with it, the file defines all 16
+slots, the first four included, and the slots it leaves out stay empty.
 
-```dotenv
-YOUR_TURN_LAUNCHER_5=Ghostty
-YOUR_TURN_LAUNCHER_9="Activity Monitor"
+```toml
+[[shortcut]]
+slot = 5
+label = "Ghostty"
+app = "Ghostty"
+
+[[shortcut]]
+slot = 6
+label = "Restart inbox"
+command = ["make", "restart"]
+cwd = "~/dev/your-turn"
+icon = "tool"
 ```
 
-Use installed macOS app names, quoted when they contain spaces. Empty or omitted values leave a
-placeholder. Blank lines and `#` comments are supported; shell expansion, commands, arguments, paths
-and URLs are not. Matching environment variables override file values, including an empty value.
-The browser sends only a configured slot key; the server runs `open -a` with the saved name as a
-single argument. Shortcuts open apps on the computer hosting Your Turn. Other operating systems
-show disabled app shortcuts; Your Turn Settings still works.
+Each `[[shortcut]]` has a `slot` (1–16), a `label` (up to 40 characters) and exactly one action:
+
+| Key | Does |
+| --- | --- |
+| `app = "Name"` | Opens an installed macOS app with `open -a`; no paths, URLs or arguments |
+| `command = ["arg", ...]` | Opens a new Terminal window that runs the command, in `cwd` when given (an existing folder, absolute or `~/`) |
+| `settings = true` | Opens Your Turn Settings |
+
+`icon` is optional: `app`, `codex`, `claude`, `cursor`, `command`, `inbox`, `settings`, `tool` or
+`workspace`. A mistake (an unknown key, a slot used twice, a missing folder) stops the server at
+start-up with the line to fix, rather than dropping a tile.
+
+A command is a list of arguments, never a shell string. On each press the server writes
+`~/.your-turn/launcher/slot-N.command`, readable and runnable only by you, with every argument
+shell-quoted, and opens it in Terminal; you see its output and stop it with Ctrl+C. The browser
+sends only the slot key, never an app name, command or folder.
+
+Anyone who can open the Deck can press these tiles. That includes a phone that scanned the QR code
+from `make phone`, so only add commands you are happy to start from there. Shortcuts act on the
+computer hosting Your Turn; on other operating systems they are disabled, and Your Turn Settings
+still works.
 
 ### State and control files
 

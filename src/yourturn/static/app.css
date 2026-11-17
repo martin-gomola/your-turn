@@ -1037,9 +1037,9 @@ button.deck-launch-card:not(:disabled):hover::before { background: var(--deck-mu
 .deck-launch-card:focus-visible { outline: 2px solid var(--deck-text); outline-offset: -4px; }
 .deck-launch-card:disabled { cursor: not-allowed; opacity: .65; }
 .deck-launch-card[aria-busy="true"] { cursor: progress; }
-.deck-launch-card[data-open-app="codex"] > svg { color: #9ed2a8; }
-.deck-launch-card[data-open-app="claude"] > svg { color: #e2b58c; }
-.deck-launch-card[data-open-app="cursor"] > svg { color: #b8c1cc; }
+.deck-launch-card[data-icon="codex"] > svg { color: #9ed2a8; }
+.deck-launch-card[data-icon="claude"] > svg { color: #e2b58c; }
+.deck-launch-card[data-icon="cursor"] > svg { color: #b8c1cc; }
 .deck-launch-placeholder { color: var(--deck-muted); font-size: 12px; cursor: default; background: transparent; }
 .deck-launch-placeholder::before { opacity: .45; }
 .deck-launch-placeholder-mark { display: grid; place-items: center; width: clamp(32px, 10dvh, 64px); height: clamp(32px, 10dvh, 64px); font: 24px / 1 var(--font-mono); opacity: .4; }

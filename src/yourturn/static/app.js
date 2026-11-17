@@ -2287,7 +2287,7 @@ $("deck-launcher").addEventListener("click", async (event) => {
     });
     status.textContent = response.ok ? `Opened ${name} on this Mac.`
       : response.status === 501 ? "App shortcuts are available when Your Turn runs on macOS."
-        : `Could not open ${name} on this Mac. Check that the app is installed, then try again.`;
+        : `Could not open ${name} on this Mac. Check its app or command in launcher.toml, then try again.`;
   } catch {
     status.textContent = `Could not reach the Mac to open ${name}. Try again when it is online.`;
   } finally {

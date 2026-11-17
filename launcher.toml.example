@@ -1,0 +1,47 @@
+# Your Turn launcher: every Deck launcher tile in one place.
+# Copy to ~/.your-turn/launcher.toml (or the selected --state-dir), then restart Your Turn.
+# Without this file the launcher shows the first four tiles below. With it, this file defines all
+# 16 slots (two pages of eight); slots it leaves out stay empty.
+#
+# Each [[shortcut]] has a slot (1-16), a label, an optional icon, and exactly one action:
+#   app = "Name"              opens an installed macOS app (no paths, URLs or arguments)
+#   command = ["arg", ...]    runs in a new Terminal window, optionally in cwd; a list, never a shell string
+#   settings = true           opens Your Turn Settings
+# Icons: app, codex, claude, cursor, command, inbox, settings, tool, workspace.
+#
+# Anyone who can open the Deck can press these tiles, including a phone with the QR token from
+# `make phone`, so only add commands you are happy to start from there.
+
+[[shortcut]]
+slot = 1
+label = "Codex"
+app = "Codex"
+icon = "codex"
+
+[[shortcut]]
+slot = 2
+label = "Claude Code"
+app = "Claude"
+icon = "claude"
+
+[[shortcut]]
+slot = 3
+label = "Cursor"
+app = "Cursor"
+icon = "cursor"
+
+[[shortcut]]
+slot = 4
+label = "Your Turn Settings"
+settings = true
+
+[[shortcut]]
+slot = 5
+label = "Ghostty"
+app = "Ghostty"
+
+# [[shortcut]]
+# slot = 6
+# label = "Restart inbox"
+# command = ["make", "restart"]
+# cwd = "~/dev/your-turn"

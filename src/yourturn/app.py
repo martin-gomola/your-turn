@@ -8,6 +8,7 @@ from html import escape
 import json
 import os
 import secrets
+import shlex
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -21,7 +22,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from yourturn import __version__
-from yourturn.config import DEFAULT_HISTORY_DAYS, load_launcher_apps
+from yourturn.config import DEFAULT_HISTORY_DAYS, LAUNCHER_ICONS, Shortcut, load_launcher
 from yourturn.engine import SessionHub
 from yourturn.model import UUID, Harness, SessionKey
 from yourturn.state import InboxState
@@ -34,6 +35,20 @@ PAGE_POLICY = (
     "frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 )
 ASSET_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json"}
+
+
+def write_launch_script(folder: Path, shortcut: Shortcut) -> Path:
+    """A `.command` file Terminal runs in a new window: every argument shell-quoted, so the file never splices text
+    into a shell line. Rewritten on each launch from the loaded config, readable and runnable only by its owner."""
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / f"{shortcut.key}.command"
+    lines = ["#!/bin/zsh -l", f"# Your Turn launcher: {shortcut.label}"]
+    if shortcut.cwd:
+        lines.append(f"cd {shlex.quote(shortcut.cwd)} || exit 1")
+    lines.append(shlex.join(shortcut.command))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o700)
+    return path
 
 
 def _static(name: str) -> str:
@@ -59,18 +74,20 @@ def create_app(
     origins = {"127.0.0.1", "localhost", "::1", *lan_hosts}
     hub = SessionHub.for_codex_home(codex_home, claude_home=claude_home, cursor_home=cursor_home, cursor_user_dir=cursor_user_dir)
     state = InboxState(state_path) if state_path else InboxState()
-    launcher_apps = load_launcher_apps(state.path.parent / "launcher.env")
+    # One file defines every launcher tile (apps, commands, settings); see load_launcher.
+    launcher = load_launcher(state.path.parent / "launcher.toml")
+    shortcuts = {shortcut.key: shortcut for shortcut in launcher if shortcut and not shortcut.settings}
+    launcher_scripts = state.path.parent / "launcher"
     launcher_cards = []
-    for slot in range(1, 17):
-        key = {1: "codex", 2: "claude", 3: "cursor"}.get(slot, f"slot-{slot}")
-        name = launcher_apps.get(key)
-        if slot == 4 or name:
-            label = "Your Turn Settings" if slot == 4 else "Claude Code" if slot == 2 else name
-            icon = "i-settings" if slot == 4 else f"i-harness-{key}" if slot <= 3 else "i-command"
-            action = "data-open-settings" if slot == 4 else f'data-open-app="{key}"'
-            accessible = "Open Your Turn settings" if slot == 4 else f"Open {label} on this Mac"
-            launcher_cards.append(f'<button class="deck-launch-card" type="button" {action} aria-label="{escape(accessible, quote=True)}">'
-                                  f'<svg aria-hidden="true"><use href="#{icon}"/></svg><span>{escape(label)}</span></button>')
+    for shortcut in launcher:
+        if shortcut:
+            label = shortcut.label
+            action = "data-open-settings" if shortcut.settings else f'data-open-app="{shortcut.key}"'
+            accessible = ("Open Your Turn settings" if shortcut.settings
+                          else f"{label}: run in Terminal on this Mac" if shortcut.command else f"Open {label} on this Mac")
+            # data-icon carries the brand tint (Codex green, Claude orange), whichever slot the file puts it in.
+            launcher_cards.append(f'<button class="deck-launch-card" type="button" {action} data-icon="{shortcut.icon}" aria-label="{escape(accessible, quote=True)}">'
+                                  f'<svg aria-hidden="true"><use href="#{LAUNCHER_ICONS[shortcut.icon]}"/></svg><span>{escape(label)}</span></button>')
         else:
             launcher_cards.append('<div class="deck-launch-card deck-launch-placeholder" aria-hidden="true">'
                                   '<span class="deck-launch-placeholder-mark">+</span><span>Empty</span></div>')
@@ -199,17 +216,18 @@ def create_app(
 
     @app.post("/api/open-app/{app}", status_code=204)
     async def open_app(app: str, request: Request) -> None:
-        """Resolve a built-in or locally configured key; the browser never supplies an app name or command."""
+        """Resolve a configured slot key; the browser never supplies an app name, command or folder."""
         from_this_page(request)
-        app_name = launcher_apps.get(app)
-        if app_name is None:
-            raise HTTPException(status_code=404, detail="unknown app")
+        shortcut = shortcuts.get(app)
+        if shortcut is None:
+            raise HTTPException(status_code=404, detail="unknown shortcut")
         if sys.platform != "darwin":
             raise HTTPException(status_code=501, detail="app shortcuts are available on macOS")
+        args = ["open", "-a", "Terminal", str(write_launch_script(launcher_scripts, shortcut))] if shortcut.command else ["open", "-a", shortcut.app]
         try:
-            await asyncio.to_thread(subprocess.run, ["open", "-a", app_name], check=True, capture_output=True, timeout=10)
+            await asyncio.to_thread(subprocess.run, args, check=True, capture_output=True, timeout=10)
         except (OSError, subprocess.SubprocessError):
-            raise HTTPException(status_code=502, detail="could not open the app on this Mac") from None
+            raise HTTPException(status_code=502, detail="could not open the shortcut on this Mac") from None
 
     @app.post("/api/state", status_code=204)
     async def write_state(request: Request) -> None:

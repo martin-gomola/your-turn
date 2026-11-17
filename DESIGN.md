@@ -173,8 +173,10 @@ in portrait. Empty slots are quiet, non-interactive placeholders. Native touch s
 page; two clickable page bars with 44px hit areas and Left/Right/Home/End provide alternatives. Only the
 current page is focusable, page changes are announced, and rotation retains the selected page.
 Cards grow for enlarged text rather than clipping; feedback stays in its live region below.
-Slots 5–16 can name installed macOS apps in `launcher.env` in the state directory (environment
-variables override file values), read at server start. No shell arguments, commands or URLs.
+All 16 slots come from one file, `launcher.toml` in the state directory, read at server start; without it
+the first four are Codex, Claude Code, Cursor and Settings. A tile opens an installed macOS app, opens
+Settings, or runs an argument-list command in a new Terminal window (never a shell string, never hidden
+in the background). The browser sends only the slot key.
 
 ### Primary contract — glanceable industrial telemetry (2026-11-06)
 
@@ -594,7 +596,7 @@ Inbox/chat scale in `tokens.css`.
 - Appearance explicitly names Inbox and chat; Settings opened from Deck places its Dark/Warm theme
   group first. Help leads with the active Inbox, Dashboard or Launcher workflow and updates when
   the Deck mode changes. Launcher Help explains page bars, swipe, keyboard, host-app opening and
-  the local `launcher.env` configuration without adding copy above its tiles.
+  the local `launcher.toml` configuration without adding copy above its tiles.
 - An empty Deck reports “No active chats in this view” with an Inbox link. Offline is explicitly
   “Waiting for connection”; neither empty state claims that all agents are healthy or synchronized.
 
