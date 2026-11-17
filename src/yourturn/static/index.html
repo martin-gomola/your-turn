@@ -236,16 +236,20 @@ SOFTWARE.
           <h2 id="status-title">Loading…</h2>
           <button type="button" class="icon-button" id="reminder-toggle" aria-label="Dismiss reminder" hidden><svg aria-hidden="true"><use id="reminder-icon" href="#i-bell-off"/></svg></button>
         </div>
-        <a class="open-codex open-codex--primary" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
-        <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="Open project in Claude Desktop" title="Starts a new Code session using this project folder." hidden>Open project in Claude Desktop<svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
       <div class="status-body" id="status-body" data-kind="unknown" hidden>
         <p class="status-kind" id="next-kind" hidden></p>
         <div class="status-text" id="status-text" aria-live="polite"></div>
         <div class="pending-step" id="pending-step" hidden><p class="recap-label">Last recorded step</p><div id="pending-step-text"></div></div>
+        <div class="pending-step failed-check" id="failed-check" hidden><p class="recap-label" id="failed-check-label">Failed check</p><div id="failed-check-text"></div></div>
         <p class="quiet-note" id="quiet-note" hidden></p>
         <ul class="options" id="next-options" hidden></ul>
         <p id="reminder-note" role="status"></p>
+      </div>
+      <!-- After the question: read the decision first, then act on it. -->
+      <div class="status-actions">
+        <a class="open-codex open-codex--primary" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
+        <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="Open project in Claude Desktop" title="Starts a new Code session using this project folder." hidden>Open project in Claude Desktop<svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
     </section>
 

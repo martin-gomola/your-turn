@@ -86,6 +86,13 @@ const CHECK_TAGS = {
   unchecked: { label: "Edits unchecked", className: "tag--idle" },
 };
 const NEXT_LABEL = { answer: "Answer", review: "Review", approve: "Approve", run: "Run", decide: "Decide", do: "To do" };
+// The primary action names the step it completes ("Approve in Codex"), so a waiting step is never a generic "Open".
+function stepVerb(chat, waiting) {
+  if (!waiting) return "Open";
+  if (chat.next_kind === "approve") return "Approve";
+  if (chat.question || chat.next_kind === "answer") return "Answer";
+  return chat.next_kind === "run" ? "Run" : "Open";
+}
 const STEP_LABEL = {
   command: "Ran a command", edit: "Edited files", tool: "Called a tool", thinking: "Reasoning", agent: "Delegated work",
   decision: "Made a decision", message: "Progress update", answer: "Wrote a response", question: "Asked a question",
@@ -572,6 +579,9 @@ function renderRow(chat) {
   link.dataset.status = state;
   link.dataset.id = chatKey(chat);
   link.dataset.unread = String(unread);
+  // Exceptions the row marks on its own; everything else is carried by the section heading.
+  if (chat.check_state === "failed") link.dataset.check = "failed";
+  if (state === "working" && chat.quiet) link.dataset.quiet = "true";
   if (isChat(chat, openId)) link.setAttribute("aria-current", "true");
   const glyph = el("span", "glyph");
   glyph.append(icon(status.icon));
@@ -587,6 +597,9 @@ function renderRow(chat) {
   const summary = chatSummary(chat);
   const description = el("span", "row-description");
   const summaryNode = el("span", "row-text", summary || "");
+  // The tooltip carries the full step and options, since the step text is clamped to one line.
+  const options = state === "waiting" && chat.question && chat.options?.length ? chat.options.join(" · ") : "";
+  if (summary) summaryNode.title = options ? `${summary}\n${options}` : summary;
   const meta = el("span", "row-tags");
   const action = chat.question ? "Answer" : NEXT_LABEL[chat.next_kind];
   const tag = state === "waiting" ? action || status.label : ["done", "idle", "dismissed"].includes(state) ? "" : status.label;
@@ -610,13 +623,28 @@ function renderRow(chat) {
     meta.append(node);
   }
   if (unread && sectionOf(chat) !== "new") meta.append(el("span", "tag tag--new", "New"));
+  // Exception readings, shown only past a threshold, the same ones the Deck uses: a context window past 75%,
+  // and a running turn clearly slower than this chat's own average (Δ over +20%).
+  const fill = contextFill(chat.context_used, contextSize(chat));
+  if (fill && fill.percent >= 75) {
+    const ctx = el("span", "tag tag--reading", `CTX ${fill.percent}%`);
+    ctx.dataset.tone = fill.percent >= 90 ? "red" : "amber";
+    ctx.title = "Context window used";
+    meta.append(ctx);
+  }
+  const lap = state === "working" ? deckLapDelta(chat) : null;
+  if (lap) {
+    const delta = deckDeltaMark(lap, "tag tag--reading");
+    delta.textContent = `Δ ${delta.textContent}`;
+    if (["amber", "red"].includes(delta.dataset.tone)) meta.append(delta);
+  }
   // A Run step already says the check is still to do.
   const check = state === "working" || (chat.check_state === "unchecked" && chat.next_kind === "run") ? "" : CHECK_TAGS[chat.check_state];
   if (check) meta.append(el("span", `tag ${check.className}`, check.label));
   if (meta.childNodes.length) description.append(meta);
   description.append(summaryNode);
   body.append(description);
-  if (state === "waiting" && chat.question && chat.options?.length) body.append(el("span", "row-options", chat.options.join(" · ")));
+  if (options) body.append(el("span", "row-options", options));
   const project = el("span", "row-project");
   if (HARNESS_LABEL[chat.harness]) {
     project.append(harnessPill(chat.harness, HARNESS_LABEL[chat.harness]));
@@ -735,9 +763,14 @@ function renderSection({ key, label }, chats, fold = "") {
   if (chats.length === 0) list.append(el("li", "empty column-empty", "No chats"));
   wrap.append(list);
   if (chats.length > limit) {
-    const more = el("button", "button load-more", "Load more");
+    // Says what the click adds and how much is still hidden, not just "Load more".
+    const hidden = chats.length - limit;
+    const next = Math.min(SECTION_LIMIT, hidden);
+    const more = el("button", "button load-more", `Show ${next} more`);
+    // The count only adds news when one click will not show everything.
+    if (hidden > next) more.append(el("span", "load-more-count", `${hidden} left`));
     more.type = "button";
-    more.setAttribute("aria-label", `Load more ${label.toLowerCase()} chats`);
+    more.setAttribute("aria-label", `Show ${next} more ${label.toLowerCase()} chats${hidden > next ? `, ${hidden} not shown` : ""}`);
     more.addEventListener("click", () => {
       visibleRows.set(key, limit + SECTION_LIMIT);
       renderInbox(inboxData);
@@ -752,8 +785,9 @@ function groupChats(chats) {
   const groups = new Map(SECTIONS.map(({ key }) => [key, []]));
   for (const chat of chats) groups.get(sectionOf(chat)).push(chat);
   for (const list of groups.values()) list.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  // Longest wait first: the chat that has been blocked on you the longest is the one you are most likely to have missed.
-  groups.get("waiting").sort((a, b) => waitingSince(a).localeCompare(waitingSince(b)));
+  // A failed check leads (the exception outranks the queue); then longest wait first, the one you most likely missed.
+  const failed = (chat) => Number(chat.check_state === "failed");
+  groups.get("waiting").sort((a, b) => failed(b) - failed(a) || waitingSince(a).localeCompare(waitingSince(b)));
   groups.get("working").sort((a, b) => Number(b.quiet) - Number(a.quiet) || (a.quiet ? a.updated_at.localeCompare(b.updated_at) : 0));
   return groups;
 }
@@ -1123,12 +1157,12 @@ function renderStatus(thread, turn) {
   const resume = thread.harness === "claude" ? thread.handoff?.resume_command || "" : "";
   const link = thread.harness === "cursor" ? thread.handoff?.open_uri || "" : `codex://threads/${encodeURIComponent(thread.id)}`;
   const desktopLink = thread.harness === "claude" ? thread.handoff?.open_uri || "" : "";
-  const action = resume ? "Copy resume command" : `Open in ${appName(thread)}`;
+  const action = resume ? "Copy resume command" : `${stepVerb(chat, state === "waiting")} in ${appName(thread)}`;
   // Keep "Resume command copied" visible until its timeout restores the label.
   if (!$("open-codex").dataset.copied) $("open-codex").firstChild.textContent = action;
   $("open-codex").dataset.copy = resume;
   $("open-codex").href = resume ? "#" : link;
-  $("open-codex").setAttribute("aria-label", resume ? `${action}: ${resume}` : thread.harness === "cursor" ? "Open the project in Cursor" : "Open in Codex (full chat)");
+  $("open-codex").setAttribute("aria-label", resume ? `${action}: ${resume}` : thread.harness === "cursor" ? `${action} (opens the project)` : `${action} (full chat)`);
   $("open-codex").title = resume;
   $("open-codex").hidden = !resume && !link;
   setOpenKey($("open-codex"), !resume && link ? chatKey(thread) : "");
@@ -1179,6 +1213,13 @@ function renderStatus(thread, turn) {
   if (lastStep) {
     const text = lastStep.kind === "edit" ? `${lastStep.title}: ${lastStep.detail}` : lastStep.title;
     if ($("pending-step-text").textContent !== text) $("pending-step-text").replaceChildren(lastStep.kind === "command" ? commandCode(text) : el("p", "", text));
+  }
+  // A failed check is the reason behind the request, so it sits in the box with it instead of only under Checks.
+  const failedCheck = failed ? [...turn.checks].reverse().find((check) => check.exit_code !== null && check.exit_code !== 0) : null;
+  $("failed-check").hidden = !failedCheck;
+  if (failedCheck) {
+    $("failed-check-label").textContent = `Failed check · exit ${failedCheck.exit_code}`;
+    if ($("failed-check-text").textContent !== failedCheck.command) $("failed-check-text").replaceChildren(commandCode(failedCheck.command));
   }
   $("status-body").dataset.kind = kind;
   $("status-body").dataset.check = failed && (kind === "none" || kind === "unknown") ? "failed" : "";
@@ -1481,7 +1522,8 @@ function renderChanges(thread, turn) {
     return item;
   }));
   $("files-wrap").hidden = files.length === 0;
-  rowLabel("files-summary", `${files.length} ${files.length === 1 ? "file" : "files"} changed`);
+  // Scoped like the header chip, so it never reads as a second, different count beside More's "every turn" total.
+  rowLabel("files-summary", `${files.length} ${files.length === 1 ? "file" : "files"} changed in the last turn`);
   $("files").replaceChildren(...renderFileTree(files, thread.cwd, $("files-copy-status")));
 }
 
@@ -1772,8 +1814,15 @@ function metaItems(thread) {
     if (title) node.title = title;
     return node;
   };
-  items.push(item(projectName(thread), thread.cwd, "i-workspace", true));
-  if (thread.git_branch) items.push(item(thread.git_branch, "Recorded Git branch", "i-branch", true));
+  const project = item(projectName(thread), thread.cwd, "i-workspace", true);
+  project.classList.add("meta-item--project");
+  items.push(project);
+  if (thread.git_branch) {
+    // The branch is the first to shorten on a narrow screen, so the meta row stays one line; its tooltip keeps it whole.
+    const branch = item(thread.git_branch, `Recorded Git branch: ${thread.git_branch}`, "i-branch", true);
+    branch.classList.add("meta-item--branch");
+    items.push(branch);
+  }
   items.push(item(ago(thread.updated_at), "Last recorded event"));
   return items;
 }
@@ -1790,26 +1839,40 @@ function renderEvidence(thread, turn) {
   const unknown = count((check) => check.exit_code === null);
   const decisions = thread.decisions.filter((decision) => decision.chosen !== null).length;
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  const chips = [
+  // Each chip says its scope: checks and files are the latest turn's, decisions and context the whole chat's
+  // (the More section's "Files changed" counts every turn, so an unscoped "14" next to its "17" read as a mismatch).
+  const turnChips = [
     failed && [`${failed} failed`, "#checks-wrap", "danger"],
     passed && [`${passed} passed`, "#checks-wrap", "passed"],
     unknown && [`${unknown} ${exitCodes ? "without exit code" : "not recorded"}`, "#checks-wrap", "muted"],
-    files.length && !checks.length && ["No checks after edits", "#checks-wrap", "warning"],
+    // Same words as the inbox tag, and short enough to keep the chip strip on one line in portrait.
+    files.length && !checks.length && ["Edits unchecked", "#checks-wrap", "warning"],
     checks.length && turn.edited_after_check && ["Edited after last check", "#checks-wrap", "warning"],
-    files.length && [`${plural(files.length, "file")} changed`, "#outcome-wrap", ""],
+    files.length && [plural(files.length, "file"), "#outcome-wrap", ""],
+  ].filter(Boolean);
+  // Context is always shown; it is muted while normal, amber past 75% and red past 90%, like the Deck gauge.
+  const fill = contextFill(thread.context_used, contextSize(thread));
+  const chatChips = [
     decisions && [plural(decisions, "decision"), "#decisions-wrap", ""],
+    fill && [`CTX ${fill.percent}%`, "#more", fill.percent >= 90 ? "danger" : fill.percent >= 75 ? "warning" : "muted"],
   ].filter(Boolean);
   const header = threadId ? $("thread-heading") : document.querySelector(".panel-heading");
   header.append($("evidence"));
-  $("evidence").hidden = chips.length === 0;
-  $("evidence-list").replaceChildren(...chips.map(([text, target, tone]) => {
+  $("evidence").hidden = turnChips.length + chatChips.length === 0;
+  // The scope is in each chip's tooltip and accessible name, not a visible label: the chips read on their own, and
+  // a wider gap before the chat group still separates the two.
+  const chip = (scopeLabel) => ([text, target, tone], index) => {
     const link = el("a", "evidence-chip", text);
     link.href = target;
+    link.title = `${scopeLabel}: ${text}`;
+    link.setAttribute("aria-label", `${text}, ${scopeLabel.toLowerCase()}`);
     if (tone) link.dataset.tone = tone;
     const item = el("li");
+    if (index === 0 && scopeLabel === "Whole chat" && turnChips.length) item.className = "evidence-group";
     item.append(link);
     return item;
-  }));
+  };
+  $("evidence-list").replaceChildren(...turnChips.map(chip("Last turn")), ...chatChips.map(chip("Whole chat")));
 }
 
 $("evidence-list").addEventListener("click", (event) => {
@@ -1851,7 +1914,7 @@ function renderThread(thread) {
     $("status-body").dataset.kind = "none";
     $("next-kind").hidden = true;
     setStatusText("It may have been archived. Go back to the inbox.");
-    for (const id of ["open-codex", "next-options", "reminder-toggle", "quiet-note", "pending-step", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "more"]) $(id).hidden = true;
+    for (const id of ["open-codex", "next-options", "reminder-toggle", "quiet-note", "pending-step", "failed-check", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "more"]) $(id).hidden = true;
     if (openingPanel) title.focus({ preventScroll: true });
     return;
   }
@@ -2862,9 +2925,11 @@ function deckHero(chat, kind) {
   telemetry.append(check, count("FILES", chat.changed_files?.length || 0),
     count("DECISIONS", chat.decisions?.filter((d) => d.chosen !== null).length || 0));
   const handoff = el("div", "deck-handoff");
-  const line = (label, value) => {
+  // The next line is labelled with its step type (APPROVE, ANSWER, RUN), so the verb is read before the sentence.
+  const nextLabel = chat.question ? "Answer" : NEXT_LABEL[chat.next_kind] || "Next";
+  const line = (label, value, key = label.toLowerCase()) => {
     const row = el("p");
-    row.dataset.label = label.toLowerCase();
+    row.dataset.label = key;
     row.title = `${label}: ${value}`;
     row.append(el("strong", "", `${label}: `), document.createTextNode(value));
     return row;
@@ -2873,8 +2938,8 @@ function deckHero(chat, kind) {
     handoff.append(deckTerminal(chat));
   } else {
     const text = deckHandoffText(chat, kind);
-    if (kind === "waiting") handoff.append(...[line("Next", text.next), text.outcome && line("Outcome", text.outcome)].filter(Boolean));
-    else handoff.append(line("Outcome", text.outcome), line("Next", text.next));
+    if (kind === "waiting") handoff.append(...[line(nextLabel, text.next, "next"), text.outcome && line("Outcome", text.outcome)].filter(Boolean));
+    else handoff.append(line("Outcome", text.outcome), line(nextLabel, text.next, "next"));
   }
   left.append(handoff, telemetry);
   // Detailed telemetry is moved into Supporting evidence below.
@@ -3108,9 +3173,8 @@ function renderDeck(chats) {
       // Claude chats resume from a terminal command, which the thread view offers to copy.
       const agentLink = chat.harness === "cursor" ? chat.handoff?.open_uri || ""
         : chat.harness === "claude" ? "" : `codex://threads/${encodeURIComponent(chat.id)}`;
-      // An approval names itself on the primary action, so the human-in-the-loop step is never a generic "Open".
-      const verb = kind === "waiting" && chat.next_kind === "approve" ? "Approve" : "Open";
-      const open = el("a", "deck-card-open", agentLink ? `${verb} in ${appName(chat)}` : verb === "Approve" ? "Approve in chat" : "Open chat");
+      // The thread view only shows the chat, so the verb applies only where the agent itself opens.
+      const open = el("a", "deck-card-open", agentLink ? `${stepVerb(chat, kind === "waiting")} in ${appName(chat)}` : "Open chat");
       open.href = agentLink || `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
       open.append(icon(agentLink ? "i-external" : "i-chevron"));
       if (agentLink) open.dataset.openKey = chatKey(chat);

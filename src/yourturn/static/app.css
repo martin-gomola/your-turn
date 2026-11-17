@@ -43,6 +43,13 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 /* Baseline, not center: the pill's smaller text must sit on the same line as its neighbours'. */
 .subtitle:has(.meta-item) { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
 .meta-item { display: inline-flex; align-items: baseline; min-width: 0; }
+/* One line at every width: wrapping cost a whole row in portrait. Only the branch, the least telling item,
+   shortens (its tooltip keeps it whole); flex would otherwise shrink the project alongside it. */
+/* min-width: 0, or as a grid item the row keeps its full content width and pushes the time off-screen. */
+.subtitle:has(.meta-item) { flex-wrap: nowrap; min-width: 0; }
+.subtitle > :is(.meta-item, .harness-pill) { flex: none; }
+.subtitle > .meta-item--branch { flex: 0 1 auto; min-width: 5ch; }
+:is(.meta-item--project, .meta-item--branch) .meta-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .meta-value { min-width: 0; overflow-wrap: anywhere; }
 .meta-value--mono { font-family: var(--font-mono); }
 .meta-icon, .project-icon { width: var(--text-sm); height: var(--text-sm); align-self: center; flex: none; color: var(--color-text-muted); stroke-width: 1.8; }
@@ -57,14 +64,15 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 :root[data-theme="dark"] [data-harness="codex"] { --harness-tone: #42a65f; }
 :root[data-theme="dark"] [data-harness="claude"] { --harness-tone: #f28c48; }
 :root[data-theme="dark"] [data-harness="cursor"] { --harness-tone: #ad7bf9; }
+/* Agent pills stay neutral: their brand hues (orange, green, purple) read as Needs you, Ready and Working at a glance.
+   Only the small agent mark keeps its hue, to tell agents apart up close. */
 .harness-pill[data-harness] {
   display: inline-flex; align-items: center; gap: 3px;
-  color: var(--harness-tone);
-  background: color-mix(in srgb, var(--harness-tone) 12%, var(--color-surface));
-  box-shadow: inset 0 0 0 var(--size-hairline) color-mix(in srgb, var(--harness-tone) 28%, transparent);
+  color: var(--color-text-muted);
+  background: none;
+  box-shadow: var(--edge);
 }
-/* On the light tint, 12px tone text fell to ~4.1:1; a slightly darker mix clears 4.5:1 and keeps the hue. */
-:root:not([data-theme="dark"]) .harness-pill[data-harness] { color: color-mix(in srgb, var(--harness-tone) 82%, #000); }
+.harness-pill[data-harness] .harness-icon { color: var(--harness-tone); }
 .harness-icon { width: 13px; height: 13px; stroke-width: 1.9; }
 @media (prefers-reduced-motion: no-preference) {
   .harness-pill[data-harness="claude"]:hover .harness-icon { animation: claude-dance 480ms ease-in-out; transform-origin: 50% 90%; }
@@ -215,7 +223,10 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 .tag--waiting { color: var(--color-waiting); }
 .tag--working { color: var(--color-working); }
 .tag--new { color: var(--color-new); }
-.tag--interrupted { color: var(--color-danger); }
+/* Exception readings in a row (context past 75%, a slow running turn): amber, red past the second threshold. */
+.tag--reading { font-variant-numeric: tabular-nums; }
+.tag--reading[data-tone="amber"] { color: var(--color-waiting); }
+.tag--reading[data-tone="red"] { color: var(--color-danger); }.tag--interrupted { color: var(--color-danger); }
 .tag--idle, .tag--dismissed, .tag--unknown { color: var(--color-text-muted); }
 
 /* Chat */
@@ -254,8 +265,11 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 }
 .open-codex:active, .open-claude-desktop:active { opacity: 0.8; }
 .open-codex:hover, .open-claude-desktop:hover { background: var(--color-fill); color: var(--color-nav-selected); }
-.open-codex.open-codex--primary { background: var(--color-accent-fill); color: var(--color-on-accent); box-shadow: none; }
-.open-codex.open-codex--primary:hover { background: color-mix(in srgb, var(--color-accent-fill) 88%, black); }
+/* Primary action in ink, not green: green is the Ready status, and the action should not read as a state. */
+.open-codex.open-codex--primary { background: var(--color-text); color: var(--color-bg); box-shadow: none; }
+.open-codex.open-codex--primary:hover { background: color-mix(in srgb, var(--color-text) 85%, var(--color-bg)); color: var(--color-bg); }
+.status-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.status-actions:not(:has(> :not([hidden]))) { display: none; }
 .status-body { display: grid; gap: var(--space-2); min-width: 0; }
 .status-kind, .recap-label { color: var(--color-text-muted); font-size: var(--text-label); font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: 0.02em; }
 [data-status="waiting"] .status-kind, [data-quiet="true"] .status-kind, .quiet-note { color: var(--color-waiting); }
@@ -270,15 +284,23 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 .status-steps { display: grid; gap: var(--space-2); margin: 0; padding-inline-start: var(--space-6); list-style: decimal; }
 .status-steps li { padding-inline-start: var(--space-1); }
 /* At this card width, keeping the action inline can wrap the status title. */
-@container (max-width: 64rem) { .status-head > .open-codex, .status-head > .open-claude-desktop { flex: 1 1 100%; } }
+@container (max-width: 64rem) { .status-actions > :is(.open-codex, .open-claude-desktop) { flex: 1 1 100%; } }
 .status-text .command { display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--color-fill); }
 .options { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); list-style: disc; overflow-wrap: anywhere; }
+/* One secondary button for the inbox and thread (Back, Inbox, Load more, Close): surface, hairline edge (shared rule
+   above), ink text. Accent green is the Ready status, so a control never wears it. The one primary action is
+   .open-codex--primary, in solid ink. */
 .button {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-height: var(--size-control); padding: var(--space-2) var(--inset-control);
   border: 0; border-radius: var(--radius-md);
-  color: var(--color-accent); font: inherit; font-weight: var(--weight-medium); cursor: pointer;
+  color: var(--color-text); font: inherit; font-weight: var(--weight-medium); text-decoration: none; cursor: pointer;
 }
-.button:active { background: var(--color-surface-pressed); }
+.back { color: var(--color-text); }
+.back svg, .button > svg { color: var(--color-text-muted); }
+:is(.button, .back):hover { background: var(--color-fill); }
+:is(.button, .back):active { background: var(--color-surface-pressed); }
+:is(.button, .back):focus-visible { outline: 2px solid var(--color-text); outline-offset: 2px; }
 .icon-button {
   display: grid; place-items: center; flex: none;
   width: var(--size-control); height: var(--size-control); padding: 0; border: 0; border-radius: var(--radius-md);
@@ -303,21 +325,34 @@ p, .status-text, .outcome, .row-text { text-wrap: pretty; }
 .check[data-state="unknown"] > svg { color: var(--color-text-muted); }
 /* Evidence strip: the latest turn's checks and files and the session's decisions; each chip jumps
    to its section. Same role colors as the check rows they summarize. */
-.evidence ul { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; }
+.evidence ul { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); list-style: none; }
+/* The whole-chat chips (decisions, context) start after a wider gap than the last-turn ones (checks, files). */
+.evidence-group { margin-inline-start: var(--space-3); }
 .top .evidence, .panel-heading .evidence { margin-top: var(--space-3); }
 .evidence-chip {
   display: inline-flex; align-items: center; min-height: 32px; padding-inline: var(--space-3);
   border-radius: var(--radius-pill); box-shadow: var(--edge); background: var(--color-surface);
-  color: var(--color-text); font-size: var(--text-sm); font-variant-numeric: tabular-nums; text-decoration: none;
+  color: var(--color-text); font-size: var(--text-sm); font-variant-numeric: tabular-nums; text-decoration: none; white-space: nowrap;
+}
+/* Portrait: the strip stays one line. Chips tighten first; if they still do not fit, the strip scrolls sideways
+   (a few pixels of block padding keep the focus ring from being clipped) rather than adding a row. */
+@media (max-width: 599px) {
+  .evidence ul { flex-wrap: nowrap; gap: var(--space-1); overflow-x: auto; padding-block: 3px; margin-block: -3px; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .evidence ul::-webkit-scrollbar { display: none; }
+  .evidence li { flex: none; }
+  .evidence-chip { padding-inline: var(--space-2); }
+  .evidence-group { margin-inline-start: var(--space-2); }
 }
 .evidence-chip:hover { background: var(--color-fill); }
-.evidence-chip[data-tone="passed"] { color: var(--color-new); }
+/* Passing is the normal case, so it stays neutral; only failures and warnings take colour. */
+.evidence-chip[data-tone="passed"] { color: var(--color-text-muted); }
 .evidence-chip[data-tone="danger"] { color: var(--color-danger); }
 .evidence-chip[data-tone="warning"] { color: var(--color-waiting); }
 .evidence-chip[data-tone="muted"] { color: var(--color-text-muted); }
 /* Jumps land below the sticky chat header, not under it. */
 #outcome-wrap, #checks-wrap, #decisions-wrap { scroll-margin-top: calc(2 * var(--size-control) + var(--space-2)); }
 .pending-step { display: grid; gap: var(--space-1); }
+.failed-check .recap-label { color: var(--color-danger); }
 .command { white-space: pre-wrap; line-height: var(--leading-relaxed); }
 .command-executable { color: var(--color-new); }
 .command-path { color: var(--color-accent); }
@@ -346,6 +381,15 @@ details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
 .file-tree-file { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); }
 .file-tree-item code { overflow-wrap: anywhere; }
 .file-tree-folder > summary { min-height: var(--size-control); color: var(--color-text-muted); cursor: pointer; overflow-wrap: anywhere; }
+/* With a mouse the tree packs like an editor's file list: 28px rows, no gaps, a smaller copy button. Touch keeps
+   44px targets. (14 files took 1108px at the touch size.) */
+@media (pointer: fine) {
+  .file-list, .file-tree { gap: 0; }
+  .file-tree-folder > summary { display: flex; align-items: center; min-height: 28px; }
+  .file-tree-file { min-height: 28px; }
+  .file-tree-file > .icon-button { width: 28px; height: 28px; min-height: 28px; }
+  .file-tree-file > .icon-button svg { width: 16px; height: 16px; }
+}
 
 .decisions { display: grid; }
 .decision { display: grid; gap: var(--space-1); }
@@ -453,7 +497,7 @@ details[open] > summary > .disclosure-chevron { transform: rotate(90deg); }
   .decision-meta { grid-column: 1; }
   .session-groups { grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
   /* Fallback for browsers without container-query support. */
-  .status-head > .open-codex { flex: 1 1 100%; }
+  .status-actions > .open-codex { flex: 1 1 100%; }
 }
 
 /* Approved architecture shell. Artwork is decorative; every control is live HTML. */
@@ -561,8 +605,10 @@ html { --scroll-thumb: color-mix(in srgb, var(--color-text) 22%, transparent); s
 .section-toggle .disclosure-chevron { width: 20px; height: 20px; }
 .section-toggle:hover .disclosure-chevron { color: var(--color-text); }
 .section-toggle[aria-expanded="true"] .disclosure-chevron { transform: rotate(90deg); }
-#sections .tone { width: var(--size-section-glyph); height: var(--size-section-glyph); border-radius: 12px; }
-#sections .tone svg { width: 26px; height: 26px; stroke-width: 1.7; }
+/* Section icons stay smaller than the row icons they head: the heading text carries the hierarchy, and a bigger tile
+   above every group made the section mark the loudest thing on the page. */
+#sections .tone { width: calc(var(--size-section-glyph) * .75); height: calc(var(--size-section-glyph) * .75); border-radius: 9px; }
+#sections .tone svg { width: 18px; height: 18px; stroke-width: 1.8; }
 #sections .list { margin-inline-start: var(--space-3); background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
 body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
 #sections .list > li { background: transparent; }
@@ -579,8 +625,15 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
 .row-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-row); font-weight: var(--weight-regular); letter-spacing: -.025em; line-height: 1.3; }
 .row-description { display: flex; gap: var(--space-2); align-items: baseline; min-width: 0; }
 .row-text { display: -webkit-box; flex: 1; min-width: 0; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-preview); line-height: 1.35; }
+/* A waiting step is the question you must answer, so it keeps two lines; every other summary fits in one. */
 .row[data-status="waiting"] .row-text { -webkit-line-clamp: 2; color: var(--color-text); }
 .row-options { overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); text-overflow: ellipsis; white-space: nowrap; }
+/* Every row keeps its status glyph: in a text list it is the anchor that marks where each chat starts (without it the
+   rows read as one wall of text), and on working rows it spins as the live signal. Exceptions add to it: a quiet run
+   turns amber, and a failed check gets a red edge and an outlined tag. */
+.row[data-quiet="true"] { --row-tone: var(--color-waiting); }
+.row[data-check="failed"] { box-shadow: inset 3px 0 0 var(--color-danger); }
+.row[data-check="failed"] .tag--interrupted { box-shadow: inset 0 0 0 var(--size-hairline) currentColor; }
 .row-tags { display: flex; gap: var(--space-1); flex: none; flex-wrap: wrap; max-width: 40%; }
 .row-tags .tag { font-size: var(--text-label); }
 .row-project { display: flex; align-items: center; gap: var(--space-1); min-width: 0; color: var(--color-text-muted); font-size: var(--text-preview); }
@@ -759,9 +812,6 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   .segments { gap: var(--space-4); }
   .segments .segment { font-size: 16px; padding-inline: var(--space-2); }
 }
-@media (min-width: 960px) {
-  .row[data-status="waiting"] .row-text { -webkit-line-clamp: 1; }
-}
 @media (max-width: 959px) {
   :root { --content-inset: var(--space-4); --sidebar-width: 256px; --page-inset: 20px; --page-inset-end: 20px; --hero-height: 240px; --text-display: 48px; --text-intro: 20px; --text-row: 18px; --text-preview: 15px; --text-section: 20px; --size-row-glyph: 40px; --size-section-glyph: 36px; }
   .sidebar { visibility: hidden; transform: translateX(100%); padding-inline: var(--space-6); }
@@ -787,8 +837,30 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   .segments .segment { font-size: 15px; gap: var(--space-2); padding-inline: var(--space-2); }
   .segments .segment-icon { display: none; }
   #sections .group-title { padding-inline: 0; gap: var(--space-3); }
-  #sections .tone svg { width: 22px; height: 22px; }
-  .row { grid-template-columns: 40px minmax(0, 1fr) 92px 60px 16px; gap: var(--space-3); padding-inline: var(--space-3); }
+  #sections .tone svg { width: 16px; height: 16px; }
+  /* Portrait layout below 960px: a desktop row's project column (92px here) lost the project name behind the agent
+     pill, so the agent and project move to their own line under the step. */
+  .row { grid-template-columns: 36px minmax(0, 1fr) auto 18px; gap: var(--space-2) var(--space-3); padding: var(--space-3); }
+  /* Pinned to the title line: the anchor marks where the chat starts, not the middle of its text block. */
+  .row > .glyph { width: 36px; height: 36px; grid-column: 1; grid-row: 1; align-self: start; }
+  .row > .glyph svg { width: 22px; height: 22px; }
+  .row-body { grid-column: 2; grid-row: 1; }
+  .row-title { white-space: normal; }
+  /* The step tag leads the summary as its first word ("Review paste the description…") and the text wraps under it
+     at full width: a tag alone on its own line cost every row a line, and flex placed the text in a sliver beside it.
+     The clamp moves to the shared block, so tag and text count as one paragraph. */
+  .row-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: var(--text-preview); line-height: 1.35; }
+  .row[data-status="waiting"] .row-description { -webkit-line-clamp: 3; }
+  .row-tags { display: inline; max-width: none; margin-inline-end: var(--space-2); }
+  .row-tags > .tag + .tag { margin-inline-start: var(--space-1); }
+  .row-text { display: inline; }
+  .row-options { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
+  .row-project { grid-column: 2 / 4; grid-row: 2; font-size: var(--text-sm); }
+  /* Time on the title line, top right as in Mail: the bottom line keeps only agent and project, and the age reads
+     with the name it belongs to. Its line box matches the title's so the two share a baseline row. */
+  .row-time { grid-column: 3; grid-row: 1; align-self: start; justify-self: end; font-size: 13px; line-height: calc(var(--text-row) * 1.3); text-align: right; }
+  /* Icon on the title line, chevron centred on the whole row (as list rows do on iOS), so neither floats mid-text. */
+  .row-chevron { grid-column: 4; grid-row: 1 / 3; align-self: center; }
 }
 @media (max-width: 599px) {
   :root { --hero-height: 124px; --hero-pinned: 76px; --text-display: 40px; --text-row: 17px; --text-preview: 16px; }
@@ -804,20 +876,19 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   .segments .segment[aria-current="page"] { flex-grow: 2.2; }
   .segments .segment[aria-current="page"] .segment-label { position: static; width: auto; height: auto; margin: 0; overflow: hidden; clip: auto; font-size: 13px; text-overflow: ellipsis; }
   .sections { gap: var(--space-5); padding-top: var(--space-4); }
-  .row { grid-template-columns: 36px minmax(0, 1fr) auto 18px; gap: var(--space-2) var(--space-3); padding: var(--space-3); }
-  .row > .glyph { width: 36px; height: 36px; grid-column: 1; grid-row: 1; }
-  .row > .glyph svg { width: 22px; height: 22px; }
-  .row-body { grid-column: 2; grid-row: 1; }
-  .row-title { white-space: normal; }
-  .row-description { flex-wrap: wrap; }
-  .row-tags { max-width: none; }
-  /* The summary is the action: on its own line under the tags, never squeezed into a sliver beside them. */
-  .row-text { flex-basis: 100%; -webkit-line-clamp: 2; }
-  .row[data-status="waiting"] .row-text { -webkit-line-clamp: 3; }
-  .row-options { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
-  .row-project { grid-column: 2; grid-row: 2; font-size: 13px; }
-  .row-time { grid-column: 3 / 5; grid-row: 2; justify-self: end; font-size: 13px; text-align: right; }
-  .row-chevron { grid-column: 4; grid-row: 1; }
+  /* Phone rows: the icon sits on the title line and everything under it runs full width, so a 36px icon column no
+     longer indents every line of text. Row gaps live on the items (an absent options line then costs nothing). */
+  .row { grid-template-columns: 24px minmax(0, 1fr) auto 18px; row-gap: 0; column-gap: var(--space-2); }
+  .row > .row-body { display: contents; }
+  .row > .glyph { width: 24px; height: 24px; border-radius: 7px; grid-area: 1 / 1; align-self: start; margin-top: calc((var(--text-row) * 1.3 - 24px) / 2); }
+  .row > .glyph svg { width: 15px; height: 15px; }
+  .row-head { grid-area: 1 / 2; align-self: start; }
+  .row-description { grid-column: 1 / 4; grid-row: 2; margin-top: var(--space-1); }
+  .row-options { grid-column: 1 / 4; grid-row: 3; }
+  .row-project { grid-column: 1 / 4; grid-row: 4; margin-top: var(--space-2); }
+  /* Icon and time sit on the title's first line, so a two-line title does not pull them to its middle. */
+  .row-time { grid-area: 1 / 3; align-self: start; line-height: calc(var(--text-row) * 1.3); }
+  .row-chevron { grid-column: 4; grid-row: 1 / span 4; }
   @media (hover: hover) { .row-dismiss { top: auto; bottom: var(--space-3); translate: none; } }
   .show-all { font-size: 13px; padding-inline: var(--space-2); }
   .connection { padding-inline: var(--space-1); }
@@ -832,7 +903,10 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
   @keyframes aside-open { from { opacity: 0; transform: translateX(8px); } }
 }
 
-.load-more { justify-self: center; margin-top: var(--space-3); border: 1px solid var(--color-separator); }
+/* Load more is the shared secondary .button; only its place and the muted remaining count are its own. */
+.load-more { justify-self: center; margin-top: var(--space-3); }
+.load-more-count { color: var(--color-text-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
+.load-more-count::before { content: "· "; }
 
 .session-identity { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3); }
 .session-identity dl { min-width: 0; }
@@ -892,7 +966,7 @@ body[data-origin="deck"] .evidence-chip {
 body[data-origin="deck"] .evidence-chip:hover { border-color: var(--color-border-strong); background: var(--color-fill); }
 body[data-origin="deck"] .evidence-chip[data-tone] { color: var(--color-text); font-family: var(--font-sans); font-weight: var(--weight-semibold); }
 body[data-origin="deck"] .evidence-chip[data-tone]::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--chip-tone); }
-body[data-origin="deck"] .evidence-chip[data-tone="passed"] { --chip-tone: var(--color-new-fill); }
+body[data-origin="deck"] .evidence-chip[data-tone="passed"] { --chip-tone: var(--color-text-muted); }
 body[data-origin="deck"] .evidence-chip[data-tone="danger"] { --chip-tone: var(--color-danger-fill); }
 body[data-origin="deck"] .evidence-chip[data-tone="warning"] { --chip-tone: var(--color-waiting-fill); }
 body[data-origin="deck"] .evidence-chip[data-tone="muted"] { --chip-tone: var(--color-history-fill); }
@@ -1628,9 +1702,13 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 .deck-time-label { color: var(--deck-muted); font: 600 12px / 1.4 var(--font-mono); letter-spacing: .06em; }
 .deck-readout > .deck-timer { margin-top: var(--space-1); font-size: 24px; font-weight: 600; color: var(--deck-muted); }
 .deck-supporting { flex: none; min-height: 0; border-top: 1px solid var(--deck-line); padding: 0 var(--space-4) var(--space-4); font: 13px / 1.5 var(--font-sans); scrollbar-width: thin; }
-.deck-supporting > summary { --supporting-frame: color-mix(in srgb, var(--deck-tone) 65%, var(--deck-line)); position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-3); clip-path: var(--hud-shape); background: color-mix(in srgb, var(--deck-tone) 7%, #0b0e10); color: var(--deck-text); cursor: pointer; }
-.deck-supporting > summary::after { content: ""; position: absolute; inset: 0; background: var(--supporting-frame); pointer-events: none; clip-path: var(--hud-ring); }
-.deck-supporting > summary:hover { background: color-mix(in srgb, var(--deck-tone) 13%, #0b0e10); }
+/* A plain disclosure row, not a framed, tinted button: the card frame and the border above it already bound it.
+   The opaque background stays, because the summary sticks over the evidence scrolling under it. */
+.deck-supporting > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-3); background: #0d0f12; color: var(--deck-text); cursor: pointer; }
+.deck-supporting > summary:hover { background: #191d23; }
+.deck-supporting > summary:focus-visible { outline: 2px solid var(--deck-tone); outline-offset: -2px; }
+/* No rule above the context strip: the gap between it and the evidence line separates the groups. */
+.deck-hero > .deck-context { border-top: 0; }
 .deck-supporting:not([open]) > :not(summary) { display: none; }
 /* A flex title row drops the native disclosure marker, so draw the open/closed cue explicitly. */
 .deck-supporting > summary { list-style: none; }
@@ -1760,6 +1838,18 @@ body[data-connection="offline"] #deck-view *, body[data-connection="offline"] #d
 .deck-identity .deck-heading > .deck-status { margin: 0; }
 .deck-identity .deck-heading > .deck-meta { grid-column: 1 / -1; }
 .deck-identity .deck-heading > .deck-title { grid-column: 4; margin: 0; font-size: 14px; font-weight: 600; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Wide cards: the agent chip joins the first line ("RUN  YOUR-TURN  Claude  Title") instead of a row of its own;
+   only the model line, when the source reports one, takes a second row. The icon column is empty (the phase code
+   replaced the icon), so the four columns are code, project, agent, title. */
+@media (min-width: 601px) {
+  .deck-identity { grid-template-columns: auto fit-content(35%) auto minmax(0, 1fr); }
+  .deck-identity .deck-heading > .deck-status { grid-area: 1 / 1; }
+  .deck-identity .deck-heading > .deck-repo { grid-area: 1 / 2; }
+  .deck-identity .deck-heading > .deck-meta { display: contents; }
+  .deck-identity .deck-meta > .deck-agent { grid-area: 1 / 3; justify-self: start; padding: 0 var(--space-2); font-size: 12px; line-height: 20px; }
+  .deck-identity .deck-heading > .deck-title { grid-area: 1 / 4; }
+  .deck-identity .deck-meta > .deck-setup { grid-column: 1 / -1; grid-row: 2; margin-top: var(--space-1); }
+}
 @media (max-width: 600px) {
   .deck-identity { grid-template-columns: auto auto minmax(0, 1fr); }
   .deck-identity .deck-heading > .deck-title { grid-column: 1 / -1; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
