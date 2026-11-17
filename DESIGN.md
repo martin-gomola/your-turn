@@ -18,7 +18,7 @@ answer four questions in this order:
 | Notice | Does it need me? | Status, Needs you count, alerts |
 | Understand | What happened? | Recap, outcome, changed files |
 | Judge | Can I trust it? | Checks, Check failed, Edits unchecked |
-| Act | What do I do next? | Next step, the chat's action (Open in Codex, Copy resume command, Open in Cursor) |
+| Act | What do I do next? | Next step, the chat's action named after the step it completes (Approve / Answer / Run in Codex or Cursor, otherwise Open in …; Copy resume command) |
 
 A feature belongs only if it shortens one of these steps. Controlling agents, and dashboards read
 for their own sake, are out of scope.
@@ -60,10 +60,14 @@ calls in older transcripts still read as decisions.
   toggle. A blocked storage write changes only the current page. Chat-only pages omit this control.
 - Without a saved choice, windows shorter than 1100px start with the compact header, so the first
   chats sit above the fold; the artwork stays one toggle away and a saved choice always wins.
-- Below 960px, and beside an open Settings or Help panel, a row's summary takes its own line under
-  the tags (three lines for Needs you) and options wrap to two, so the next action is never cut to a
-  fragment. On phones the selected status filter shows its label; the others show icon and count.
-- The light theme darkens harness pill text slightly so 12px labels clear 4.5:1 on their tint.
+- Below 960px rows stack, so a narrow project column never hides the project name: the step tag leads
+  the summary as its first word and the text wraps under it (three lines for Needs you), options wrap to
+  two, the age sits top right on the title line (as in Mail), and the agent and project share the last
+  line. On phones the status icon shrinks to 24px beside the title and everything under it runs full
+  width; icon, title and age share the title's first line even when the title wraps. The selected status
+  filter shows its label; the others show icon and count.
+- Agent pills are neutral (muted text, hairline edge); only the small agent mark keeps its brand hue.
+  Claude orange, Codex green and Cursor purple would otherwise read as Needs you, Ready and Working.
 - Quiet working chats keep the amber tag: a chat quiet for five minutes notifies, as it may be stuck.
 - Focus density animates in both directions using the existing motion tokens: artwork and title
   fade upward while filters and the inbox move into place. Reduced motion, unsupported browsers,
@@ -100,7 +104,8 @@ calls in older transcripts still read as decisions.
 - Header filters are All, Needs you, Working, New results and Earlier, with a selected underline and
   compact status-colored count badges. A rising New results count briefly turns red and pulses; the
   initial count does not animate, and reduced-motion users receive no pulse.
-- Each section initially shows10 chats at every width and filter. Load more adds10, retaining the expanded count through live updates. Counts always cover the full matching set.
+- Each section initially shows10 chats at every width and filter. "Show 10 more" adds10 and adds
+  "· N left" only when one click will not show everything, retaining the expanded count through live updates. Counts always cover the full matching set.
 - One history_days setting in config.toml defines the inbox window for every status (default14 days, positive integer, read at server start). Older chats remain accessible by direct link; no hidden latest30 exception.
 - Empty sections are not drawn. Needs you therefore only appears with chats, inside a soft orange
   tint and edge, so the color itself means "something is waiting".
@@ -110,14 +115,18 @@ calls in older transcripts still read as decisions.
 - Earlier is history, so it starts folded. It is open when it is the only section, when Earlier
   is the filter, or when the open chat is in it. Once open it stays open, so a new chat never
   folds the list under the reader. A folded section opens when the open chat moves into it.
-- Needs you retains longest-wait-first ordering. Other sections sort by latest change. Existing status, seen and quiet semantics remain unchanged.
-- Each status cue appears once. A desktop row has a pale outline-glyph chip, title/preview/action or
-  check tags, a folder glyph and monospaced project name, age and navigation chevron. Section headings carry no counts;
+- Needs you puts chats with a failed check first (the exception outranks the queue), then longest wait first. Other sections sort by latest change. Existing status, seen and quiet semantics remain unchanged.
+- A row's status glyph stays on every row: in a text list it anchors where each chat starts, and on
+  Working rows it spins as the live signal (amber once quiet). Exceptions add to it: a failed check
+  gets a 3px red edge and an outlined Check failed tag; context past 75% (amber, red past 90%) and a
+  live turn more than 20% slower than the chat's own average (Δ, red past 50%) appear as row readings.
+  A desktop row has the glyph chip, title/preview/action or check tags, a folder glyph and monospaced
+  project name, age and navigation chevron. Section headings carry no counts;
   the filters own them. Rows in New results carry no New tag. Titles and secondary text are neutral
   rather than blue.
 - A Needs you row shows the request in full-strength text, and a pending question adds its recorded
   options as one muted read-only line, so the choice is visible without opening the chat.
-  Normal rows are 72px minimum. Desktop previews use one line; narrow attention previews use two,
+  Normal rows are 72px minimum. Desktop previews use one line, a Needs you request two; narrow attention previews use three,
   and the full request remains available in the chat. Small screens move project and age below the
   title together in one row; long project names truncate in the available space.
 - Preserve Answer/Run/Review, quiet, new, failure and unchecked tags; no data is inferred from titles
@@ -220,12 +229,22 @@ Industrial cyberpunk is the visual vocabulary; comprehension is the acceptance t
   (neutral, or the reading's colour once it signals) with monospace labels; their focus ring draws inside.
   The live indicator matches: a chamfered frame and monospace caps in the state's colour (emerald LIVE,
   red RECONNECTING, muted while connecting); on phones it is a framed 44px square holding the dot.
-- A card's status icon is 24px on the status line, so the title and agent row start at the card's
-  leading edge.
-- The status word sits in a tag sized to it, chamfered like the frames (6px top-right and bottom-left)
-  on a 16% tint, followed by a trail of slanted segments like a split shift light, in the status colour.
-  The project follows the tag on the same line (folder glyph, mono caps in the text colour), so the line
-  reads as one phrase ("WORKING //// YOUR-TURN"); the agent row below holds the agent and its setup.
+- The card's dominant reading is a phase code, like a gear indicator: 28px mono 800 in the phase colour,
+  bare (no tag, stripes or icon beside it). ACK needs you, RUN is working, DONE is ready, IDLE is a quiet
+  run, FAIL is a failed check; the full name is in its tooltip and accessible text. The fleet strip and
+  the queue separators keep the full names, so they work as the legend.
+- One line reads "RUN  YOUR-TURN  Claude  Title": code, project (folder glyph, mono caps), agent chip and
+  title; the model line, when the source reports one, sits on its own row below. Phones move the agent
+  chip beside the clock instead.
+- Colour is for exceptions: RUN and DONE keep a neutral frame and Outcome label (only the code is
+  tinted), ACK and IDLE take amber, FAIL red. Finished chats dim in the fleet lights.
+- Beside the clock a delta block compares this turn with the chat's own average turn: muted within 20%,
+  amber above, red above 50%. It needs per-step times, so Cursor chats show none, and a quiet live turn
+  shows none (silence is not a slow lap).
+- The next line is labelled with its step type (APPROVE:, ANSWER:, RUN:, or NEXT: when there is none), and
+  an approval names itself on the primary action ("Approve in Codex").
+- The card's padding is 28px above the code (set solid, so it needs the optical lift) and 20px below the
+  context bar; phones use 20/16px. No rule sits above the context strip; the gap separates the groups.
 - Quiet is a visible Deck state, as in the Inbox: a quiet Working chat's tag reads amber `QUIET`, its
   icon stops spinning, the timer reads `NO ACTIVITY FOR` since its last write instead of ELAPSED, and
   the live lap drops its delta (silence is not a slow lap). Queue rows and mini-cards take the amber
@@ -292,8 +311,11 @@ the Working log fills the card's free space, never below ten lines, and scrolls 
 either end carries on to the card; live renders wait while a touch scroll
 and its fling run, and then keep the scroll position), the hero takes about 70% of the stage and a
 single-column queue dock the rest. The dock lists every other queued chat (Needs you,
-Working, Ready; only the focused status under a fleet filter) as mini-cards with a 3px
-status strip. Docked, the page is a three-zone grid that fits the window with no page
+Working, Ready; only the focused status under a fleet filter) as mini-cards grouped under category
+separators (the status name in its colour, the category's full count matching the fleet strip, and a
+hairline; none under a fleet filter, whose title names it). Inside a group rows drop the frame, accent
+strip and status icon ("dark cockpit"): only a quiet chat keeps its amber icon, the context bar is the
+reading (exact figures on hover), and Ready ages are muted. Docked, the page is a three-zone grid that fits the window with no page
 scroll (below 640px tall it falls back to scrolling): the telemetry strip on top, the
 active card at about 70% and a permanent single-column queue at about 30%. Nothing
 collapses there: the queue is the dock, so the status lists below are not rendered, and
@@ -599,13 +621,14 @@ Inbox/chat scale in `tokens.css`.
   text sits on the same line. Text slots are dot-separated with the dot trailing its item, so a wrapped
   line never starts with a separator. New metadata joins this row as another slot. The wide-screen
   pane header uses the same row.
-- The status card comes first. Its header shows the status glyph and label and the chat's action:
-  "Open in Codex" (deep link), "Copy resume command" for Claude Code (copies `claude --resume <id>`
-  and briefly confirms), or "Open in Cursor" (opens the project folder). Each action uses an outlined
-  surface with accent text and an icon matching its behavior; placement keeps it easy to find without
-  a filled color block. When the status card
-  is at most 64rem wide, the action moves below the title and spans the card width so the title keeps
-  room on its row. A phone-width fallback covers browsers without container queries.
+- The status card comes first. Its header shows the status glyph and label; the chat's action follows
+  the request and its options, so the decision is read before the button. The action names the step it
+  completes: "Approve in Codex", "Answer in Codex", "Run in Codex", otherwise "Open in Codex" (deep link);
+  "Copy resume command" for Claude Code (copies `claude --resume <id>` and briefly confirms), or the same
+  verbs in Cursor (opens the project folder). It is the one primary button, in solid ink: accent green is
+  the Ready status, so no control wears it. A failed check shows its command and exit code in the card
+  ("Failed check · exit 1"), above the action. When the status card
+  is at most 64rem wide, the action spans the card width. A phone-width fallback covers browsers without container queries.
   Its body depends on state:
   - Needs you: the title adds how long the request has waited ("Needs you · 12d ago"), so fresh and
     stale requests read differently. Then the action label and the request, with recorded options as
@@ -630,12 +653,21 @@ Inbox/chat scale in `tokens.css`.
   - Loading and missing chats hide the handoff.
 - Evidence strip, in the chat header under its title and metadata: chips answering "can I trust it?"
   before the details. Latest turn: N failed, N passed, N without exit code / not recorded
-  (per the app's capabilities), No checks after edits, Edited after last check, N files changed;
-  session: N decisions. Chips use the check rows' role colors, each jumps to its section (Files opens
+  (per the app's capabilities), Edits unchecked, Edited after last check, N files; whole chat:
+  N decisions and CTX N% (always shown; muted, amber past 75%, red past 90%). The scope is in each chip's
+  tooltip and accessible name, with a wider gap before the whole-chat group, not a visible label. A
+  passing check stays neutral; only failures and warnings take colour. In portrait the strip stays one
+  line and scrolls sideways if it must, and the metadata row above it never wraps: only the branch
+  shortens. Chips use the check rows' role colors, each jumps to its section (Files opens
   its disclosure), jumps land below the sticky header, and the strip is hidden when there is no
   evidence at all. Missing evidence is a chip of its own rather than an absence.
-- What happened: the latest turn's outcome, when there is one, and a files row that expands to the
-  latest turn's changed paths relative to the working directory.
+- What happened: the latest turn's outcome, when there is one, and a files row ("N files changed in
+  the last turn", scoped against More's every-turn total) that expands to the latest turn's changed
+  paths relative to the working directory. With a mouse the tree packs into 28px rows with no gaps;
+  touch keeps 44px targets.
+- Secondary controls share one button: surface, hairline edge, ink text, muted icon, one hover fill and
+  focus ring (Back/Inbox, Show N more, Close). Section heading icons are smaller than the row icons they
+  head, so the heading text carries the hierarchy.
 - Decisions appear above Checks; More follows both sections.
 - Checks, as grouped rows: a warning row when files changed after the last check, when edits had no
   check, or when a check has no exit code; and one row per check with its command and Passed,

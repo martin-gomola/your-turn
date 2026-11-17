@@ -43,8 +43,10 @@ status:
 logs:
 	@tail -n 50 -f "$(LOG_FILE)"
 
+# Python suite, then the front-end node tests (tests/*.test.mjs), which pytest does not run.
 test:
 	@uv run pytest -q
+	@node --test tests/*.test.mjs
 
 screenshots:
 	@uv sync --quiet

@@ -1300,7 +1300,9 @@ body[data-connection="offline"] .deck-card[data-checkpoint="true"]::after { anim
 .deck-row-meta { display: flex; align-items: center; flex: none; gap: var(--space-3); font-size: 15px; }
 .deck-row-meta .deck-agent { width: 68px; padding-inline: var(--space-3); }
 .deck-row-meta .deck-repo { width: 180px; min-width: 140px; color: #d1d5db; }
-.deck-age { width: calc(var(--space-6) * 2); overflow: hidden; text-overflow: ellipsis; text-align: right; white-space: nowrap; font: 500 16px / 1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
+/* A minimum, not a fixed width: short ages ("2h") still line up as a column, and "just now" or "Quiet 18h" grows
+   instead of being cut to "ju…". */
+.deck-age { flex: none; min-width: calc(var(--space-6) * 2); text-align: right; white-space: nowrap; font: 500 16px / 1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
 .deck-row-chevron { flex: none; width: 16px; height: 16px; }
 .deck-row[aria-pressed="true"] { background: color-mix(in srgb, var(--deck-tone) 8%, #0d0f12); }
 .deck-row[aria-pressed="true"][data-kind="waiting"] .deck-row-marker { font-size: 0; }
@@ -1395,7 +1397,7 @@ body[data-connection="offline"] .deck-card[data-checkpoint="true"]::after { anim
   .deck-row-meta { grid-column: 2; width: 100%; }
   .deck-row-meta { gap: var(--space-3); }
   .deck-row-meta .deck-repo { width: auto; min-width: 0; flex: 1; }
-  .deck-age { width: var(--space-6); margin-left: auto; }
+  .deck-age { min-width: var(--space-6); margin-left: auto; }
   .deck-row-meta .deck-agent { width: auto; padding-inline: var(--space-2); }
   .deck-fleet-all { width: 44px; min-height: 44px; padding: var(--space-2); }
 }
