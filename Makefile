@@ -53,4 +53,4 @@ screenshots:
 # Made-up chats in every Deck state for design QA at http://127.0.0.1:8790/deck (disposable homes and state).
 demo:
 	@uv sync --quiet
-	@uv run python scripts/deck_demo.py
+	@uv run python -m demo.deck

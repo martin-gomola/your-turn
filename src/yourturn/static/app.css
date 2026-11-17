@@ -1164,8 +1164,12 @@ body[data-connection="offline"] .deck-card[data-checkpoint="true"]::after { anim
 .deck-lap { display: grid; gap: var(--space-2); width: 100%; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px dashed var(--deck-line); color: var(--deck-muted); font: 500 12px / 1.45 var(--font-mono); font-variant-numeric: tabular-nums; }
 .deck-lap-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0; }
 .deck-lap-time { color: var(--deck-text); font-weight: 750; }
-.deck-lap-delta[data-tone="slower"] { color: var(--deck-amber); }
-.deck-lap-delta[data-tone="faster"] { color: var(--deck-green); }
+/* Delta block: within 20% of the chat's own average is normal and stays muted; only a clearly slower turn lights up. */
+:is(.deck-lap-delta, .deck-header-delta) { color: var(--deck-muted); font-variant-numeric: tabular-nums; }
+:is(.deck-lap-delta, .deck-header-delta)[data-tone="amber"] { color: var(--deck-amber); }
+:is(.deck-lap-delta, .deck-header-delta)[data-tone="red"] { color: #f87171; }
+.deck-header-delta { font: 600 12px / 1.2 var(--font-mono); }
+.deck-header-delta::before { content: "Δ "; }
 .deck-runway { margin-left: auto; color: var(--deck-text); }
 .deck-runway[data-low="true"] { color: #f87171; font-weight: 750; }
 .deck-sectors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1); }
@@ -1389,7 +1393,7 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
   .deck-card-header > .deck-identity .deck-heading > .deck-meta { display: contents; }
   .deck-card-header .deck-meta > .deck-agent { grid-column: 1 / 4; grid-row: 3; justify-self: start; }
   .deck-card-header .deck-meta > .deck-setup { grid-column: 1 / -1; grid-row: 4; margin-top: calc(var(--space-2) - var(--space-3)); }
-  .deck-card-header > .deck-identity .deck-heading > .deck-repo { grid-column: 3 / -1; }
+  .deck-card-header > .deck-identity .deck-heading > .deck-repo { grid-column: 2 / -1; }
   .deck-card-header > .deck-header-time { grid-column: 4; grid-row: 3; justify-self: end; }
 }
 .deck-readout::before { display: none; }
@@ -1763,17 +1767,22 @@ body[data-connection="offline"] #deck-view *, body[data-connection="offline"] #d
 /* Project name in the HUD's label voice (mono caps, like "LAP 1" and "9 FILES"), so the line reads as one tag. */
 .deck-identity .deck-heading > .deck-repo { font: 700 12px / 1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--deck-text); }
 .deck-identity .deck-heading > .deck-repo > svg { width: 14px; height: 14px; color: var(--deck-muted); }
-/* Status tag in the HUD's own geometry: sized to its word, chamfered like the frames, with a trail of
-   slanted segments (a split shift light) in the same status colour. Colour still pairs with the word. */
+/* Phase code as the card's gear indicator: the largest reading, bare (no tag, stripes or icon badge beside it),
+   in the phase colour. The status icon would repeat it, so the card drops it. */
+.deck-identity > .deck-icon { display: none; }
 .deck-identity .deck-heading > .deck-status {
-  justify-self: start; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2);
-  background: color-mix(in srgb, var(--deck-tone) 16%, transparent);
-  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  justify-self: start; align-items: center; padding: 0; background: none; clip-path: none;
+  font: 800 28px / 1 var(--font-mono); letter-spacing: .02em;
 }
-.deck-identity .deck-heading > .deck-status::after {
-  content: ""; flex: none; width: 22px; height: 8px; opacity: .7;
-  background: repeating-linear-gradient(-60deg, currentColor 0 3px, transparent 3px 6px);
-}
+.deck-card[data-phase="fail"], .deck-status[data-phase="fail"] { --deck-tone: #f87171; }
+/* A quiet run is an exception too: the whole card takes amber, not just the code (found with the demo's IDLE chat). */
+.deck-card[data-phase="idle"] { --deck-tone: var(--deck-amber); }
+/* Colour is for exceptions: a running or finished chat keeps a neutral frame and label; only its code is tinted. */
+.deck-card[data-selected="true"]:is([data-phase="run"], [data-phase="done"]),
+:root[data-deck-theme="warm"] .deck-card[data-selected="true"]:is([data-phase="run"], [data-phase="done"]) { --hud-frame: rgb(255 255 255 / .22); }
+.deck-card:is([data-phase="run"], [data-phase="done"]) .deck-handoff strong { color: var(--deck-text); }
+/* Fleet lights: finished chats recede so waiting and working ones are what peripheral vision catches. */
+.deck-lights > [data-kind="new"] { opacity: .4; box-shadow: none; }
 /* Deck (beta) is opt-in: the rail entry hides until enabled in Settings (the Deck itself and chats opened
    from it keep it, so you can always get back). */
 :root[data-deck-enabled="false"] body:not([data-view="deck"]):not([data-origin="deck"]) #nav-deck { display: none; }

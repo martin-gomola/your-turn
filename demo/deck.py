@@ -1,16 +1,25 @@
 """Serve made-up chats in every Deck state for design QA: `make demo`, then open http://127.0.0.1:8790/deck.
 
-Reuses the README screenshot fixtures (made-up Codex, Claude Code and Cursor homes, a disposable
-server and inbox state), so no real chat or preference is read or written. The set covers:
+Uses disposable Codex, Claude Code and Cursor homes and inbox state (demo/server.py), so no real chat or
+preference is read or written. Each chat exists to show one state; the card it lands on:
 
-- Needs you: a Codex question at 82% context with many files, decisions and tools; a Claude Code
-  question; a Cursor chat blocked on an approval (Cursor records no laps or token usage).
-- Working: a Codex run on its fourth lap at 92% context with a tool called just now; a Claude Code run.
-- Ready: a Codex result with a long title, and one with no further step.
-- Earlier: a Codex result finished two days ago.
-- Plan usage: Codex 38% / 77% and Claude 18% / 92% (red) in the 5-hour and weekly cards.
+| Chat                                   | Phase code | What it exercises                                              |
+|----------------------------------------|------------|----------------------------------------------------------------|
+| Migrate invoices to the new ledger     | ACK        | question with options, 82% context (amber zone), 14 files, decision, tools, laps |
+| Ship the ledger migration              | ACK        | `approve` step: the primary action reads "Approve in …"        |
+| Fix the flaky checkout test            | FAIL       | latest check failed: red frame and code                       |
+| Fix recipe import (Claude Code)        | ACK        | Claude question                                                |
+| Upgrade Vite to v6 (Cursor)            | ACK        | Cursor approval; no laps or token usage (CTX unknown)          |
+| Speed up the nightly export job        | RUN        | fourth lap at 92% context (red zone), runway under one turn, live tool, Δ delta |
+| Reindex the invoice search             | IDLE       | working but silent for half an hour (quiet)                    |
+| Add hourly forecast chart (Claude Code)| RUN → IDLE | turns quiet about two minutes after start-up                   |
+| Rename every legacy billing setting …  | DONE       | long title; a slow last lap (Δ in amber or red)               |
+| Bump all dependencies                  | DONE       | turn stopped by the user                                       |
+| Add a CSV export button                | DONE       | finished two days ago (Earlier)                                |
+| README chats (demo/chats.py)           | DONE       | a decision, a reply round-trip, a docs-only change            |
 
-Times are relative to start-up, so a working chat turns quiet after a couple of minutes; restart to reset.
+Plan usage: Codex 38% / 77% and Claude 18% / 92% (red) in the 5-hour and weekly cards.
+Times are relative to start-up; restart to reset the quiet and live states.
 """
 
 from __future__ import annotations
@@ -23,7 +32,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.readme_screenshots import Chat, demo_chats, serve_demo, write_demo_homes  # noqa: E402
+from demo.chats import demo_chats  # noqa: E402
+from demo.fixtures import Chat  # noqa: E402
+from demo.server import serve_demo, write_demo_homes  # noqa: E402
 from yourturn import usage as plan_usage  # noqa: E402
 
 PORT = 8790
@@ -64,7 +75,7 @@ def lap(chat: Chat, prompt: str, files: list[str], context: int) -> Chat:
     return chat
 
 
-def qa_chats() -> list[Chat]:
+def needs_you() -> list[Chat]:
     files = [f"src/billing/{name}.py" for name in ("invoice", "ledger", "tax", "currency", "export", "refunds")]
     files += [f"tests/billing/test_{name}.py" for name in ("invoice", "ledger", "tax", "currency", "export")]
     files += ["docs/BILLING.md", "migrations/0042_invoice_totals.sql", "frontend/src/features/billing/InvoiceTable.tsx"]
@@ -76,13 +87,30 @@ def qa_chats() -> list[Chat]:
                .think("**Mapping invoice rows onto ledger entries**")
                .decide("Backfill totals now or lazily?", ["Backfill now", "Lazily on read"], "Backfill now", "One migration, simpler reads"))
     tool(tool(blocked, "context7", "query-docs", 6), "code-review-graph", "query_graph", 9)
-    blocked.edit(*files).run("uv run pytest -q tests/billing", 1).edit("src/billing/ledger.py").run("uv run pytest -q")
+    # A failing run fixed by a rerun of the same check: the latest result passes, so the card stays ACK.
+    blocked.edit(*files).run("uv run pytest -q", 1).edit("src/billing/ledger.py").run("uv run pytest -q")
     blocked.answer("**Outcome:** Invoice totals read from the ledger; 212 tests pass.\n\n"
                    "**Next step:** answer: choose how to handle invoices with mixed currencies.",
                    {"title": "Convert mixed-currency invoices at the invoice date or keep them in their own currency?",
                     "options": ["Convert at invoice date", "Keep original currency"]})
     usage(blocked, 328_000, 400_000, 4_100_000, 0.96)  # after answer(), which reports its own usage
 
+    approve = (Chat(15, "Ship the ledger migration", "billing", 12)
+               .ask("Get the ledger migration ready to merge.")
+               .edit("migrations/0043_ledger_flag.sql", "src/billing/flags.py").run("uv run pytest -q")
+               .answer("**Outcome:** The migration is ready behind a flag; 212 tests pass.\n\n"
+                       "**Next step:** approve: merge the migration PR before tonight's export runs."))
+
+    failed = (Chat(17, "Fix the flaky checkout test", "shop", 25)
+              .ask("checkout.spec fails about one run in five. Fix it.")
+              .think("**Looking for a race in the payment mock**")
+              .edit("frontend/tests/checkout.spec.ts").run("npm test -- checkout.spec", 1)
+              .answer("**Outcome:** The retry fix did not hold; checkout.spec still fails about one run in five.\n\n"
+                      "**Next step:** run: npm test -- checkout.spec --repeat 20 to capture a failing trace."))
+    return [blocked, approve, failed]
+
+
+def working() -> list[Chat]:
     running = Chat(12, "Speed up the nightly export job", "billing", 18)  # ~35 records, 30s apart, end near now
     for turn, context in enumerate((96_000, 214_000, 301_000), 1):
         lap(running, f"Export step {turn}: make it faster.", [f"src/export/stage_{turn}.py"], context)
@@ -92,16 +120,38 @@ def qa_chats() -> list[Chat]:
     usage(running, 368_000, 400_000, 2_300_000, 0.91)
     tool(running, "context7", "query-docs")
 
-    ready = (Chat(13, "Rename every legacy billing setting to the new configuration schema and update the docs", "billing", 40)
-             .ask("Rename the legacy billing settings.")
-             .edit("src/billing/settings.py", "docs/CONFIG.md").run("uv run pytest -q")
-             .answer("**Outcome:** All 14 legacy settings use the new names; old names still load with a warning.\n\n"
-                     "**Next step:** none."))
+    # Still "working", but its last record is about half an hour old: the Deck shows it as IDLE (quiet).
+    idle = Chat(16, "Reindex the invoice search", "billing", 45)
+    lap(idle, "Reindex step 1.", ["src/search/index.py"], 60_000)
+    idle.ask("Rebuild the search index for archived invoices.").think("**Batching the archived rows**")
+    idle.run("uv run python -m billing.reindex --archived")
+    return [running, idle]
+
+
+def ready() -> list[Chat]:
+    # Two quick laps, then a long last one, so the finished card shows a slower-than-usual Δ.
+    renamed = Chat(13, "Rename every legacy billing setting to the new configuration schema and update the docs", "billing", 40)
+    lap(renamed, "Rename the invoice settings.", ["src/billing/settings.py"], 40_000)
+    lap(renamed, "Rename the tax settings.", ["src/billing/tax_settings.py"], 70_000)
+    renamed.ask("Rename the remaining legacy settings and update the docs.").think("**Listing every legacy key**")
+    tool(renamed, "code-review-graph", "query_graph", 6).edit("src/billing/settings.py", "docs/CONFIG.md")
+    tool(renamed, "context7", "query-docs", 4).run("uv run pytest -q")
+    renamed.answer("**Outcome:** All 14 legacy settings use the new names; old names still load with a warning.\n\n"
+                   "**Next step:** none.")
+
+    stopped = Chat(18, "Bump all dependencies", "shop", 60).ask("Bump every dependency to its latest minor.")
+    stopped.edit("package.json", "package-lock.json")
+    stopped._add("event_msg", {"type": "turn_aborted", "turn_id": f"t{stopped.turn}", "reason": "interrupted"})
+
     earlier = (Chat(14, "Add a CSV export button", "billing", 2_880)
                .ask("Add a CSV export to the invoice list.")
                .edit("frontend/src/features/billing/ExportButton.tsx").run("npm test")
                .answer("**Outcome:** The invoice list has a CSV export.\n\n**Next step:** none."))
-    return [blocked, running, ready, earlier, *demo_chats()[1:]]
+    return [renamed, stopped, earlier]
+
+
+def qa_chats() -> list[Chat]:
+    return [*needs_you(), *working(), *ready(), *demo_chats()[1:]]
 
 
 def main() -> None:

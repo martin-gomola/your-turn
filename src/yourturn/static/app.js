@@ -2761,6 +2761,37 @@ function deckRunway(chat) {
   return growth.length >= 2 && left > 0 ? Math.floor(left / mean(growth)) : null;
 }
 
+// The latest turn against this chat's finished turns' average; null when there is no fair comparison.
+function deckLapDelta(chat) {
+  const laps = chat.laps || [];
+  const current = laps.at(-1);
+  // Same bar as deckLap: without per-step times (Cursor's minute stamps) lap times are not meaningful.
+  if (!current?.started_at || !laps.some((lap) => Object.keys(lap.sectors || {}).length)) return null;
+  const live = !current.ended_at;
+  const done = laps.filter((lap) => lap !== current && ["done", "waiting"].includes(lap.status) && lapSeconds(lap) > 0);
+  // A quiet lap is not a slow lap: its running delta would only measure the silence.
+  if (!done.length || (live && chat.quiet)) return null;
+  const average = mean(done.map(lapSeconds));
+  return { delta: lapSeconds(current) - average, average, count: done.length, live };
+}
+
+// F1 delta block: the sign and size against this chat's own average. Only a clearly slower turn takes colour.
+function deckDeltaMark(lap, className) {
+  const mark = el("span", className, `${lap.delta >= 0 ? "+" : "−"}${lapClock(lap.delta)}`);
+  const ratio = lap.average > 0 ? lap.delta / lap.average : 0;
+  mark.dataset.tone = ratio > .5 ? "red" : ratio > .2 ? "amber" : lap.delta > 0 ? "slower" : "faster";
+  mark.title = `${lap.live ? "So far, compared" : "Compared"} with this chat's average turn: ${lapClock(lap.average)} over ${lap.count}`;
+  return mark;
+}
+
+// One dominant phase code per card, like a gear indicator. FAIL and IDLE are the exceptions that outrank the group.
+const DECK_PHASES = { ack: "Needs you", run: "Working", done: "Ready", idle: "Quiet", fail: "Checks failed" };
+function deckPhase(chat, kind) {
+  if (chat.check_state === "failed") return "fail";
+  if (deckQuiet(chat, kind)) return "idle";
+  return { waiting: "ack", working: "run", new: "done" }[kind];
+}
+
 // The latest turn against this chat's finished turns: lap time and delta, and where the time went.
 function deckLap(chat) {
   const laps = chat.laps || [];
@@ -2771,18 +2802,10 @@ function deckLap(chat) {
   const done = laps.filter((lap) => lap !== current && ["done", "waiting"].includes(lap.status) && lapSeconds(lap) > 0);
   const block = el("div", "deck-lap");
   const head = el("p", "deck-lap-head");
-  const seconds = lapSeconds(current);
   head.append(el("span", "deck-vital-label", `LAP ${current.turn}`));
-  if (!live) head.append(el("span", "deck-lap-time", lapClock(seconds)));
-  // A quiet lap is not a slow lap: its running delta would only measure the silence.
-  if (done.length && !(live && chat.quiet)) {
-    const average = mean(done.map(lapSeconds));
-    const delta = seconds - average;
-    const mark = el("span", "deck-lap-delta", `${delta >= 0 ? "+" : "−"}${lapClock(delta)}`);
-    mark.dataset.tone = delta > 0 ? "slower" : "faster";
-    mark.title = `${live ? "So far, compared" : "Compared"} with this chat's average turn: ${lapClock(average)} over ${done.length}`;
-    head.append(mark);
-  }
+  if (!live) head.append(el("span", "deck-lap-time", lapClock(lapSeconds(current))));
+  const lapDelta = deckLapDelta(chat);
+  if (lapDelta) head.append(deckDeltaMark(lapDelta, "deck-lap-delta"));
   block.append(head);
   if (DECK_SECTORS.some(([name]) => current.sectors?.[name])) {
     const sectors = el("div", "deck-sectors");
@@ -2869,13 +2892,20 @@ function deckHero(chat, kind) {
   const quiet = deckQuiet(chat, kind);
   // Quiet, the running clock stops meaning progress: show how long nothing was recorded instead.
   const timer = deckTimer(quiet ? chat.updated_at : deckSince(chat, kind));
-  const status = el("span", "deck-status", quiet ? "QUIET" : DECK_NAMES[kind]);
+  // The phase code is the card's dominant reading (gear indicator); the full name is there for screen readers and hover.
+  const phase = deckPhase(chat, kind);
+  const status = el("span", "deck-status", phase.toUpperCase());
+  status.append(el("span", "sr-only", ` · ${DECK_PHASES[phase]}`));
+  status.title = DECK_PHASES[phase];
   status.dataset.kind = kind;
+  status.dataset.phase = phase;
   if (quiet) status.dataset.quiet = "true";
-  // The repo follows the status so the line reads as one phrase: "WORKING your-turn".
+  // The repo follows the status so the line reads as one phrase: "RUN your-turn".
   heading.prepend(status, deckRepo(chat));
   const time = el("div", "deck-header-time");
   time.append(el("span", "deck-time-label", kind === "waiting" ? "WAITING" : kind === "working" ? quiet ? "NO ACTIVITY FOR" : "ELAPSED" : "SINCE RESULT"), timer);
+  const lapDelta = deckLapDelta(chat);
+  if (lapDelta) time.append(deckDeltaMark(lapDelta, "deck-header-delta"));
   cardHeader.append(time);
   const size = contextSize(chat);
   const fill = contextFill(chat.context_used, size);
@@ -3008,6 +3038,7 @@ function renderDeck(chats) {
       card.dataset.selected = String(chatKey(chat) === deckSelected);
       card.dataset.checkpoint = String(kind === "working" || !chat.outcome?.trim());
       card.dataset.quiet = String(deckQuiet(chat, kind));
+      card.dataset.phase = deckPhase(chat, kind);
       // Hero and evidence share one body: on a touch tablet it is the card's single scrolling area (see app.css).
       const body = el("div", "deck-card-body");
       card.append(body);
@@ -3077,7 +3108,9 @@ function renderDeck(chats) {
       // Claude chats resume from a terminal command, which the thread view offers to copy.
       const agentLink = chat.harness === "cursor" ? chat.handoff?.open_uri || ""
         : chat.harness === "claude" ? "" : `codex://threads/${encodeURIComponent(chat.id)}`;
-      const open = el("a", "deck-card-open", agentLink ? `Open in ${appName(chat)}` : "Open chat");
+      // An approval names itself on the primary action, so the human-in-the-loop step is never a generic "Open".
+      const verb = kind === "waiting" && chat.next_kind === "approve" ? "Approve" : "Open";
+      const open = el("a", "deck-card-open", agentLink ? `${verb} in ${appName(chat)}` : verb === "Approve" ? "Approve in chat" : "Open chat");
       open.href = agentLink || `/?thread=${encodeURIComponent(chatKey(chat))}&view=deck`;
       open.append(icon(agentLink ? "i-external" : "i-chevron"));
       if (agentLink) open.dataset.openKey = chatKey(chat);
