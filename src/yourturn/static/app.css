@@ -1707,8 +1707,14 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 .deck-supporting > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-3); background: #0d0f12; color: var(--deck-text); cursor: pointer; }
 .deck-supporting > summary:hover { background: #191d23; }
 .deck-supporting > summary:focus-visible { outline: 2px solid var(--deck-tone); outline-offset: -2px; }
-/* No rule above the context strip: the gap between it and the evidence line separates the groups. */
-.deck-hero > .deck-context { border-top: 0; }
+/* No rule above the context strip: the gap between it and the evidence line separates the groups. Its padding
+   went with the rule, or the bottom of the card read 16px looser than the top. */
+.deck-hero > .deck-context { border-top: 0; padding-top: 0; }
+/* The phase code is set solid (line-height 1), so its glyphs touch the box; 4px more above it matches the
+   optical space the context bar has below. */
+.deck-hero { padding-top: calc(var(--space-5) + var(--space-1)); padding-bottom: calc(var(--space-5) - var(--space-1)); }
+/* Phones keep their tighter 16px card, with the same 4px optical lift above the code. */
+@media (max-width: 599px) { .deck-hero { padding-top: calc(var(--space-4) + var(--space-1)); padding-bottom: var(--space-4); } }
 .deck-supporting:not([open]) > :not(summary) { display: none; }
 /* A flex title row drops the native disclosure marker, so draw the open/closed cue explicitly. */
 .deck-supporting > summary { list-style: none; }
