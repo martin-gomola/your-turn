@@ -1855,7 +1855,15 @@ body[data-connection="offline"] #deck-view *, body[data-connection="offline"] #d
   .deck-identity .deck-heading > .deck-repo { grid-area: 1 / 2; }
   .deck-identity .deck-heading > .deck-meta { display: contents; }
   .deck-identity .deck-meta > .deck-agent { grid-area: 1 / 3; justify-self: start; padding: 0 var(--space-2); font-size: 12px; line-height: 20px; }
-  .deck-identity .deck-heading > .deck-title { grid-area: 1 / 4; }
+  /* The title is the card's identity, so it wraps to two lines instead of being cut short. Every item then sits on
+     the first line: start-aligned, each lowered by about half the gap between its own line box and the 28px code
+     (project 6px, agent 3px, title 4px; Deck spacing stays on its 4px token scale). */
+  .deck-identity { align-items: start; }
+  .deck-identity .deck-heading > .deck-repo { margin-top: calc(var(--space-1) * 1.5); }
+  .deck-identity .deck-meta > .deck-agent { margin-top: calc(var(--space-1) * .75); }
+  /* The clock sits on the same line: measured 6px above the code's centre while top-aligned. */
+  .deck-card-header > .deck-header-time { margin-top: calc(var(--space-1) * 1.5); }
+  .deck-identity .deck-heading > .deck-title { grid-area: 1 / 4; margin-top: var(--space-1); white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .deck-identity .deck-meta > .deck-setup { grid-column: 1 / -1; grid-row: 2; margin-top: var(--space-1); }
 }
 @media (max-width: 600px) {

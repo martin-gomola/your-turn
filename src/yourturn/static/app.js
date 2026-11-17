@@ -2949,7 +2949,8 @@ function deckHero(chat, kind) {
   } else {
     const text = deckHandoffText(chat, kind);
     if (kind === "waiting") handoff.append(...[line(nextLabel, text.next, "next"), text.outcome && line("Outcome", text.outcome)].filter(Boolean));
-    else handoff.append(line("Outcome", text.outcome), line(nextLabel, text.next, "next"));
+    // "No further action requested" restates the DONE code, so a finished chat with no step shows only its outcome.
+    else handoff.append(...[line("Outcome", text.outcome), chat.next_kind !== "none" && line(nextLabel, text.next, "next")].filter(Boolean));
   }
   left.append(handoff, telemetry);
   // Detailed telemetry is moved into Supporting evidence below.
@@ -2980,7 +2981,9 @@ function deckHero(chat, kind) {
   const time = el("div", "deck-header-time");
   time.append(el("span", "deck-time-label", kind === "waiting" ? "WAITING" : kind === "working" ? quiet ? "NO ACTIVITY FOR" : "ELAPSED" : "SINCE RESULT"), timer);
   const lapDelta = deckLapDelta(chat);
-  if (lapDelta) time.append(deckDeltaMark(lapDelta, "deck-header-delta"));
+  // The delta is a call to act on a run that is going long; on a finished or waiting chat it is history, so it stays
+  // with the laps in Supporting evidence.
+  if (lapDelta && kind === "working") time.append(deckDeltaMark(lapDelta, "deck-header-delta"));
   cardHeader.append(time);
   const size = contextSize(chat);
   const fill = contextFill(chat.context_used, size);
