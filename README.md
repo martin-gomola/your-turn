@@ -217,6 +217,7 @@ make phone     # restart it reachable from your phone: scan the printed QR code
 make doctor    # check the handoff without changing it
 make test      # run the test suite
 make demo      # made-up chats in every Deck state at http://127.0.0.1:8790/deck, for design QA
+make site      # the install page at http://127.0.0.1:8791
 ```
 
 See [docs/configuration.md](./docs/configuration.md#development) for all `make` targets and API routes.

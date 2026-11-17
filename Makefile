@@ -4,10 +4,18 @@ LOG_FILE := $(STATE_DIR)/server.log
 MARKETPLACE := your-turn
 HANDOFF_SOURCE ?= ../my-agent-skills
 
-.PHONY: install doctor up down restart phone status logs test screenshots demo update-skill site
+SITE_PORT ?= 8791
 
-# Copy the README screenshots into the install page (site/images is ignored); preview with python3 -m http.server -d site.
-site:
+.PHONY: install doctor up down restart phone status logs test screenshots demo update-skill site site-assets
+
+# Build and serve the install page locally (loopback only; Ctrl-C to stop).
+site: site-assets
+	@echo "Serving the install page at http://127.0.0.1:$(SITE_PORT) (Ctrl-C to stop)"
+	@python3 -m http.server $(SITE_PORT) --bind 127.0.0.1 --directory site
+
+# Internal step for site and the Pages workflow: copy the README screenshots in (site/images is ignored).
+# Separate only because CI needs the copy without a server that never exits.
+site-assets:
 	@mkdir -p site/images
 	@cp docs/images/desktop.png docs/images/deck.gif src/yourturn/static/icon.svg site/images/
 

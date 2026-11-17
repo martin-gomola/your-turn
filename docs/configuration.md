@@ -303,6 +303,7 @@ Decisions that older chats logged through the `log_decision` tool still show. Th
 | `make down` | Stop the matching background server owned by the launcher |
 | `make test` | Run the test suite |
 | `make screenshots` | Regenerate the README images from demo chats (needs Google Chrome and ffmpeg) |
+| `make site` | Build the install page and serve it at `http://127.0.0.1:8791` (`SITE_PORT` overrides) |
 
 | Route | Returns |
 | --- | --- |
