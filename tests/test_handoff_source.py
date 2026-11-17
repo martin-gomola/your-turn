@@ -34,7 +34,7 @@ def test_refresh_from_canonical_skills_directory(tmp_path):
     subprocess.run(['git', 'init', '-q', str(source)], check=True)
     subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c',
-                    'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+                    'user.email=test@example.invalid', 'commit', '-qm', 'fixture'], check=True)  # pii:allow
     destination = tmp_path / 'package'
     sync.sync(source, destination)
     sync.check(destination)
@@ -43,3 +43,28 @@ def test_refresh_from_canonical_skills_directory(tmp_path):
     (source / sync.SOURCE / 'SKILL.md').write_text('uncommitted')
     with pytest.raises(ValueError, match='commit the canonical'):
         sync.sync(source, destination)
+
+
+def test_refresh_fetches_latest_main_without_pulling_the_checkout(tmp_path):
+    def git(repo, *args):
+        return subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', *args],  # pii:allow
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    upstream = tmp_path / 'upstream'
+    for name in sync.FILES:
+        target = upstream / sync.SOURCE / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / sync.DESTINATION / name).read_bytes())
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(upstream)], check=True)
+    git(upstream, 'add', '.')
+    git(upstream, 'commit', '-qm', 'first')
+    source = tmp_path / 'source'
+    subprocess.run(['git', 'clone', '-q', str(upstream), str(source)], check=True)
+    # A later upstream commit the local checkout has not pulled.
+    (upstream / sync.SOURCE / 'SKILL.md').write_text('newer handoff\n')
+    git(upstream, 'commit', '-qam', 'second')
+    (source / sync.SOURCE / 'SKILL.md').write_text('local edit, ignored\n')
+    destination = tmp_path / 'package'
+    sync.sync(source, destination, ref='origin/main')
+    assert (destination / sync.DESTINATION / 'SKILL.md').read_text() == 'newer handoff\n'
+    assert json.loads((destination / 'handoff-source.json').read_text())['commit'] == git(upstream, 'rev-parse', 'HEAD')
