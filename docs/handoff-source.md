@@ -5,21 +5,29 @@ The maintained handoff lives in `martin-gomola/my-agent-skills` under
 `plugin/skills/your-turn-handoff/` is a generated snapshot, tracked so the existing
 Your Turn GitHub plugin and the PyPI package both include the files.
 
-To refresh it from a reviewed, committed local checkout:
+To refresh it to the latest `main` of the source repository:
 
 ```bash
 make update-skill
 ```
 
-The default source is `../my-agent-skills`. Update that checkout first to pick up
-remote changes. For a checkout elsewhere:
+This fetches `origin/main` in the local checkout (`../my-agent-skills` by default)
+and copies the handoff from that commit. It does not pull or touch the checkout's
+working tree, so local branches and edits there are left alone. For a checkout
+elsewhere, or to snapshot local commits that are not pushed yet:
 
 ```bash
 make update-skill HANDOFF_SOURCE=/path/to/my-agent-skills
 ```
 
-Commit the generated snapshot and `handoff-source.json` together. The record pins
-the canonical Git commit and file hashes. Do not hand-edit the bundled snapshot.
+```bash
+make update-skill HANDOFF_REF=HEAD
+```
+
+Review the diff, run the tests, then commit the generated snapshot and
+`handoff-source.json` together. The record pins the exact source commit and file
+hashes, so a release always ships the text that was reviewed here, even after
+`main` moves on. Do not hand-edit the bundled snapshot.
 
 A repository layout change does not invalidate an existing pin: its path refers
 to that historical commit. The next refresh records the current canonical path.

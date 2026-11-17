@@ -3,6 +3,7 @@ STATE_DIR ?= $(HOME)/.your-turn
 LOG_FILE := $(STATE_DIR)/server.log
 MARKETPLACE := your-turn
 HANDOFF_SOURCE ?= ../my-agent-skills
+HANDOFF_REF ?= origin/main
 
 SITE_PORT ?= 8791
 
@@ -20,7 +21,7 @@ site-assets:
 	@cp docs/images/inbox-light.png docs/images/deck.gif docs/images/deck-launcher.png src/yourturn/static/icon.svg site/images/
 
 update-skill:
-	@uv run --quiet python scripts/sync-handoff.py --source "$(HANDOFF_SOURCE)"
+	@uv run --quiet python scripts/sync-handoff.py --source "$(HANDOFF_SOURCE)" --ref "$(HANDOFF_REF)"
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
