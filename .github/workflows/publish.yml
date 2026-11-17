@@ -17,6 +17,8 @@ jobs:
           version="$(uv version --short)"
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
       - run: uv run pytest -q
+      - run: python scripts/sync-handoff.py --check
+      - run: python scripts/check-handoff-package.py
       - run: uv build
       - uses: actions/upload-artifact@v7
         with:

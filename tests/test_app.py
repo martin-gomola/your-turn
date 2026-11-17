@@ -19,6 +19,55 @@ def client(codex_home: Path) -> TestClient:
     return TestClient(create_app(codex_home), base_url="http://127.0.0.1")
 
 
+def test_launcher_renders_two_pages_and_escapes_configured_names(codex_home: Path, tmp_path: Path) -> None:
+    (tmp_path / "launcher.toml").write_text(
+        '[[shortcut]]\nslot = 5\nlabel = "Ghostty & Tools"\napp = "Ghostty"\n'
+        '[[shortcut]]\nslot = 9\nlabel = "Restart"\ncommand = ["make", "restart"]\n')
+    app = TestClient(create_app(codex_home, state_path=tmp_path / "state.json"), base_url="http://127.0.0.1")
+    page = app.get("/deck").text
+    assert page.count('class="deck-launch-grid deck-launch-page"') == 2
+    assert page.count('class="deck-launch-card deck-launch-placeholder"') == 14
+    assert 'data-open-app="slot-5" data-icon="app" aria-label="Open Ghostty &amp; Tools on this Mac"' in page
+    assert 'data-open-app="slot-9" data-icon="command" aria-label="Restart: run in Terminal on this Mac"' in page
+    assert '{{LAUNCHER_PAGES}}' not in page
+
+
+def test_default_launcher_keeps_the_built_in_tiles(codex_home: Path, tmp_path: Path) -> None:
+    page = TestClient(create_app(codex_home, state_path=tmp_path / "state.json"), base_url="http://127.0.0.1").get("/deck").text
+    assert 'data-open-app="slot-1" data-icon="codex" aria-label="Open Codex on this Mac"' in page
+    assert 'aria-label="Open Claude Code on this Mac"' in page
+    assert 'data-open-settings data-icon="settings" aria-label="Open Your Turn settings"' in page
+
+
+def test_only_configured_slots_can_launch_and_keep_origin_checks(codex_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "launcher.toml").write_text(
+        '[[shortcut]]\nslot = 5\nlabel = "Ghostty"\napp = "Ghostty"\n'
+        f'[[shortcut]]\nslot = 6\nlabel = "Tests"\ncommand = ["uv", "run", "pytest", "-q; rm -rf ~"]\ncwd = "{tmp_path}"\n'
+        '[[shortcut]]\nslot = 7\nlabel = "Settings"\nsettings = true\n')
+    calls = []
+    monkeypatch.setattr("yourturn.app.sys.platform", "darwin")
+    monkeypatch.setattr("yourturn.app.subprocess.run", lambda args, **kwargs: calls.append((args, kwargs)))
+    app = TestClient(create_app(codex_home, state_path=tmp_path / "state.json"), base_url="http://127.0.0.1")
+    assert app.post("/api/open-app/slot-5", json={}).status_code == 204
+    assert calls[-1] == (["open", "-a", "Ghostty"], {"check": True, "capture_output": True, "timeout": 10})
+    # A command opens a generated script in Terminal; each argument stays one quoted word.
+    assert app.post("/api/open-app/slot-6", json={}).status_code == 204
+    script = tmp_path / "launcher" / "slot-6.command"
+    assert calls[-1][0] == ["open", "-a", "Terminal", str(script)]
+    body = script.read_text()
+    assert f"cd {tmp_path} || exit 1" in body or f"cd '{tmp_path}' || exit 1" in body
+    assert "uv run pytest '-q; rm -rf ~'" in body
+    assert script.stat().st_mode & 0o777 == 0o700
+    for key in ["slot-1", "slot-7", "Ghostty", "Terminal", "command"]:
+        assert app.post(f"/api/open-app/{key}", json={}).status_code == 404
+    assert app.post("/api/open-app/slot-5", json={}, headers={"Origin": "https://example.com"}).status_code == 403
+    assert app.post("/api/open-app/slot-5", data={}).status_code == 403
+    assert len(calls) == 2
+    monkeypatch.setattr("yourturn.app.sys.platform", "linux")
+    assert app.post("/api/open-app/slot-5", json={}).status_code == 501
+    assert len(calls) == 2
+
+
 def test_inbox_lists_chats_without_subagents_or_exec_runs(codex_home: Path) -> None:
     write_rollout(codex_home, SUBAGENT, [meta(SUBAGENT, {"subagent": {"thread_spawn": {}}})])
     # `codex exec` runs are scripted, headless sessions with no chat in Codex.

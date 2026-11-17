@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from html import escape
 import json
+import os
 import secrets
+import shlex
 import subprocess
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -19,7 +22,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from yourturn import __version__
-from yourturn.config import DEFAULT_HISTORY_DAYS
+from yourturn.config import DEFAULT_HISTORY_DAYS, LAUNCHER_ICONS, Shortcut, load_launcher
 from yourturn.engine import SessionHub
 from yourturn.model import UUID, Harness, SessionKey
 from yourturn.state import InboxState
@@ -32,6 +35,20 @@ PAGE_POLICY = (
     "frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 )
 ASSET_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json"}
+
+
+def write_launch_script(folder: Path, shortcut: Shortcut) -> Path:
+    """A `.command` file Terminal runs in a new window: every argument shell-quoted, so the file never splices text
+    into a shell line. Rewritten on each launch from the loaded config, readable and runnable only by its owner."""
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / f"{shortcut.key}.command"
+    lines = ["#!/bin/zsh -l", f"# Your Turn launcher: {shortcut.label}"]
+    if shortcut.cwd:
+        lines.append(f"cd {shlex.quote(shortcut.cwd)} || exit 1")
+    lines.append(shlex.join(shortcut.command))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o700)
+    return path
 
 
 def _static(name: str) -> str:
@@ -48,6 +65,8 @@ def create_app(
     history_days: int = DEFAULT_HISTORY_DAYS, claude_home: Path | None = None,
     cursor_home: Path | None = None, cursor_user_dir: Path | None = None, state_path: Path | None = None,
     phone_token: str | None = None, lan_hosts: tuple[str, ...] = (),
+    instance_id: str | None = None, shutdown_token: str | None = None,
+    request_shutdown: Callable[[], None] | None = None,
 ) -> FastAPI:
     """`phone_token` with `lan_hosts`: also answer on those LAN addresses, but only to a client that shows the token."""
     app = FastAPI(title="Your Turn", docs_url=None, redoc_url=None, openapi_url=None)
@@ -55,6 +74,25 @@ def create_app(
     origins = {"127.0.0.1", "localhost", "::1", *lan_hosts}
     hub = SessionHub.for_codex_home(codex_home, claude_home=claude_home, cursor_home=cursor_home, cursor_user_dir=cursor_user_dir)
     state = InboxState(state_path) if state_path else InboxState()
+    # One file defines every launcher tile (apps, commands, settings); see load_launcher.
+    launcher = load_launcher(state.path.parent / "launcher.toml")
+    shortcuts = {shortcut.key: shortcut for shortcut in launcher if shortcut and not shortcut.settings}
+    launcher_scripts = state.path.parent / "launcher"
+    launcher_cards = []
+    for shortcut in launcher:
+        if shortcut:
+            label = shortcut.label
+            action = "data-open-settings" if shortcut.settings else f'data-open-app="{shortcut.key}"'
+            accessible = ("Open Your Turn settings" if shortcut.settings
+                          else f"{label}: run in Terminal on this Mac" if shortcut.command else f"Open {label} on this Mac")
+            # data-icon carries the brand tint (Codex green, Claude orange), whichever slot the file puts it in.
+            launcher_cards.append(f'<button class="deck-launch-card" type="button" {action} data-icon="{shortcut.icon}" aria-label="{escape(accessible, quote=True)}">'
+                                  f'<svg aria-hidden="true"><use href="#{LAUNCHER_ICONS[shortcut.icon]}"/></svg><span>{escape(label)}</span></button>')
+        else:
+            launcher_cards.append('<div class="deck-launch-card deck-launch-placeholder" aria-hidden="true">'
+                                  '<span class="deck-launch-placeholder-mark">+</span><span>Empty</span></div>')
+    launcher_pages = "".join(f'<div class="deck-launch-grid deck-launch-page" {"inert" if page else ""} role="group" aria-label="Shortcuts page {page + 1} of 2">'
+                             + "".join(launcher_cards[page * 8:(page + 1) * 8]) + '</div>' for page in range(2))
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -102,10 +140,25 @@ def create_app(
             raise HTTPException(status_code=400, detail="thread must be a session key or Codex thread id")
         return key
 
+    @app.get("/api/health")
+    def health() -> dict[str, Any]:
+        return {"app": "your-turn", "version": __version__, "pid": os.getpid(), "instance": instance_id}
+
+    if shutdown_token and request_shutdown:
+        @app.post("/api/shutdown", status_code=204)
+        async def shutdown(request: Request) -> None:
+            if (not request.client or request.client.host not in ("127.0.0.1", "::1")
+                    or not secrets.compare_digest(request.headers.get("X-Your-Turn-Token", "").encode(), shutdown_token.encode())):
+                raise HTTPException(status_code=403)
+            request_shutdown()
+
     @app.get("/deck", response_class=HTMLResponse)
     @app.get("/", response_class=HTMLResponse)
     def index() -> HTMLResponse:
-        page = _static("index.html").replace("{{APP_VERSION}}", __version__).replace("{{HISTORY_DAYS}}", str(history_days))
+        page = (_static("index.html").replace("{{APP_VERSION}}", __version__)
+                .replace("{{HISTORY_DAYS}}", str(history_days))
+                .replace("{{LAUNCHER_PAGES}}", launcher_pages)
+                .replace("{{APP_LAUNCH_AVAILABLE}}", str(sys.platform == "darwin").lower()))
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     @app.get("/fullscreen", response_class=HTMLResponse)
@@ -160,6 +213,21 @@ def create_app(
                                         check=True, capture_output=True, timeout=10)
             except (OSError, subprocess.SubprocessError):
                 raise HTTPException(status_code=502, detail="could not open the app on this computer") from None
+
+    @app.post("/api/open-app/{app}", status_code=204)
+    async def open_app(app: str, request: Request) -> None:
+        """Resolve a configured slot key; the browser never supplies an app name, command or folder."""
+        from_this_page(request)
+        shortcut = shortcuts.get(app)
+        if shortcut is None:
+            raise HTTPException(status_code=404, detail="unknown shortcut")
+        if sys.platform != "darwin":
+            raise HTTPException(status_code=501, detail="app shortcuts are available on macOS")
+        args = ["open", "-a", "Terminal", str(write_launch_script(launcher_scripts, shortcut))] if shortcut.command else ["open", "-a", shortcut.app]
+        try:
+            await asyncio.to_thread(subprocess.run, args, check=True, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            raise HTTPException(status_code=502, detail="could not open the shortcut on this Mac") from None
 
     @app.post("/api/state", status_code=204)
     async def write_state(request: Request) -> None:

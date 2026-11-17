@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Install Your Turn: one local inbox for your Codex, Claude Code and Cursor chats, with a handoff skill for clear results and next steps.">
+<title>Install · Your Turn</title>
+<link rel="icon" href="images/icon.svg" type="image/svg+xml">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch{document.documentElement.dataset.theme='light'}</script>
+<link rel="stylesheet" href="style.css?v=1">
+<script type="module" src="install.mjs?v=1"></script>
+<body>
+<!-- GitHub mark from Primer Octicons (MIT). -->
+<header>
+  <a class="brand" href="https://github.com/martin-gomola/your-turn">
+    <svg class="brand-icon" viewBox="0 0 64 64" aria-hidden="true"><rect class="brand-icon__tile" x="1" y="1" width="62" height="62" rx="14"/><g class="brand-icon__queue"><circle cx="18" cy="20" r="3.5"/><circle cx="29" cy="20" r="3.5"/></g><path class="brand-icon__route" d="M44 16v17c0 4.418-3.582 8-8 8H20"/><path class="brand-icon__route" d="m27 33-9 8 9 8"/><circle class="brand-icon__active" cx="44" cy="16" r="4.5"/></svg>
+    <span>Your Turn</span>
+  </a>
+  <a class="repo" href="https://github.com/martin-gomola/your-turn" aria-label="Your Turn on GitHub"><svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg><span>GitHub</span><span aria-hidden="true">↗</span></a>
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch to dark theme"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.5a8.5 8.5 0 1 0 12 12Z"/></svg></button>
+</header>
+<main>
+  <h1>Your agents are fast. You're the queue.</h1>
+  <p class="lead"><strong>Your Turn</strong> shows your coding-agent chats in one local inbox, with a handoff skill for clear results and next steps. It runs on your machine, reads the logs your agents already write, and sends nothing to the cloud.</p>
+  <div class="workspace">
+    <section class="choices panel" aria-label="Setup">
+      <fieldset class="field-group" id="uv-group">
+        <legend class="field-label"><span class="field-step" aria-hidden="true">01</span><span>Do you have <code>uv</code>?</span></legend>
+        <div class="options">
+          <label><input type="radio" name="uv" value="have" checked><span>Yes<small>Skip this step.</small></span></label>
+          <label><input type="radio" name="uv" value="brew"><span>No, use Homebrew<small><code>brew install uv</code></small></span></label>
+          <label><input type="radio" name="uv" value="script"><span>No, use uv's installer<small>macOS and Linux. <a href="https://docs.astral.sh/uv/getting-started/installation/">Other options ↗</a></small></span></label>
+        </div>
+      </fieldset>
+      <fieldset class="field-group">
+        <legend class="field-label"><span class="field-step" aria-hidden="true">02</span><span>Options</span></legend>
+        <div class="options single">
+          <label><input type="checkbox" id="doctor" checked><span>Dry run first<small><code>doctor</code> lists the files <code>install</code> would write. It changes nothing.</small></span></label>
+          <label><input type="checkbox" id="autostart"><span>Start the inbox with Codex<small>Persistent install plus an opt-in Codex session-start hook. macOS and Linux.</small></span></label>
+        </div>
+      </fieldset>
+      <p class="related">Only want the handoff skill, without the inbox? <a href="https://martin-gomola.github.io/my-agent-skills/">Install the skill only <span aria-hidden="true">↗</span></a></p>
+    </section>
+    <section id="install-panel" class="result panel" aria-labelledby="result-title">
+      <div class="result-heading">
+        <h2 id="result-title">Your commands</h2>
+        <button id="copy" type="button">Copy commands</button>
+      </div>
+      <p id="summary" class="result-summary"></p>
+      <pre id="commands" tabindex="0" aria-label="Install commands"></pre>
+      <p id="uv-note" class="help" hidden>If <code>uv</code> is not found right after installing it, open a new terminal and paste the rest.</p>
+      <p id="autostart-note" class="help" hidden>Then review the hook in <code>/hooks</code> in the Codex CLI or <b>Settings → Hooks</b> in the app. If <code>your-turn</code> is not found, run <code>uv tool update-shell</code> and open a new terminal. Disable it with <code>your-turn autostart disable</code>.</p>
+      <p class="help">Paste in a terminal. <code>install</code> adds the handoff to the agent apps it finds, then starts the inbox. Restart those apps and open <a href="http://localhost:8787">localhost:8787</a>. Keep the terminal open; stop with Ctrl+C.</p>
+      <p id="status" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+  <section class="shots" aria-label="Screenshots">
+    <figure class="panel">
+      <img src="images/inbox-light.png" width="2974" height="2116" alt="Your Turn inbox in the light theme, with Codex, Claude Code, and Cursor chats grouped by status" loading="lazy">
+      <figcaption>The inbox, with made-up demo chats.</figcaption>
+    </figure>
+    <figure class="panel">
+      <img src="images/deck.gif" width="960" height="600" alt="The Deck on a running Codex chat: the RUN phase code, live timer and lap delta, recorded log, context gauge, queue and plan usage" loading="lazy">
+      <figcaption>The Deck, for a second screen or tablet.</figcaption>
+    </figure>
+    <figure class="panel shots-wide">
+      <img src="images/deck-launcher.png" width="2532" height="1170" alt="The Deck launcher on a phone held sideways: app shortcuts as large chamfered tiles" loading="lazy">
+      <figcaption>The Deck launcher on a phone in landscape.</figcaption>
+    </figure>
+  </section>
+  <footer class="app-footer">
+    <!-- Filled from PyPI at load: the release `uvx your-turn@latest` installs. Hidden if PyPI cannot be reached. -->
+    <a id="version" class="version" href="https://pypi.org/project/your-turn/" hidden></a>
+    <a href="https://github.com/martin-gomola/your-turn#privacy">Privacy</a>
+    <a href="https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md">Configuration and uninstall <span aria-hidden="true">↗</span></a>
+  </footer>
+</main>
+</body></html>

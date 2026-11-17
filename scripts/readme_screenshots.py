@@ -1,271 +1,26 @@
 """Render README screenshots from made-up Codex, Claude Code and Cursor homes, so no real chat content is captured.
 
 Run with `make screenshots`. Needs Google Chrome; Playwright comes from `uvx --with playwright`.
+The chats and the disposable server live in demo/; this file only films them.
 """
 
 from __future__ import annotations
 
 import base64
-import json
-import os
-import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
-import urllib.request
-from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from demo.chats import demo_chats  # noqa: E402
+from demo.fixtures import ANSWER_RECORDS, Chat  # noqa: E402
+from demo.server import demo_server, free_port, wait_for  # noqa: E402
+
 OUT = ROOT / "docs" / "images"
-NOW = datetime.now(UTC)
-
-
-def at(minutes_ago: float) -> str:
-    return (NOW - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-
-class Chat:
-    def __init__(self, number: int, title: str, project: str, started: float) -> None:
-        self.id = f"0d3e{number:04x}-0000-7000-8000-{number:012x}"
-        self.title, self.project, self.clock, self.turn = title, project, started, 0
-        self.records: list[dict] = [
-            {"timestamp": at(started), "type": "session_meta", "payload": {
-                "id": self.id, "cwd": f"/workspace/{project}", "timestamp": at(started), "source": "vscode",
-                "model_provider": "openai", "cli_version": "0.80.0", "git": {"branch": "main"}}},
-            {"timestamp": at(started), "type": "turn_context", "payload": {"model": "gpt-5.5", "effort": "medium"}},
-        ]
-
-    def _add(self, record_type: str, payload: dict) -> None:
-        self.clock -= 0.5
-        self.records.append({"timestamp": at(self.clock), "type": record_type, "payload": payload})
-
-    def _item(self, body: dict) -> None:
-        self._add("event_msg", {"type": "item_completed", "thread_id": self.id, "turn_id": f"t{self.turn}", "item": body})
-
-    def ask(self, prompt: str) -> Chat:
-        self.turn += 1
-        self._add("event_msg", {"type": "task_started", "turn_id": f"t{self.turn}"})
-        self._item({"type": "UserMessage", "content": [{"type": "text", "text": prompt}]})
-        return self
-
-    def reply(self, question: str, answer: str) -> Chat:
-        replies = json.dumps([{"question": question, "answer": answer}])
-        return self.ask(f"<send_user_message_question_reply>{replies}</send_user_message_question_reply>")
-
-    def think(self, summary: str) -> Chat:
-        self._item({"type": "Reasoning", "summary_text": [summary]})
-        return self
-
-    def run(self, command: str, exit_code: int = 0) -> Chat:
-        self._item({"type": "CommandExecution", "command": ["/bin/zsh", "-lc", command], "exit_code": exit_code})
-        return self
-
-    def edit(self, *paths: str) -> Chat:
-        changes = {f"/workspace/{self.project}/{path}": {"type": "update"} for path in paths}
-        self._item({"type": "FileChange", "changes": changes})
-        return self
-
-    def decide(self, question: str, options: list[str], chosen: str, reason: str) -> Chat:
-        arguments = {"question": question, "options": options, "chosen": chosen, "reason": reason}
-        self._item({"type": "McpToolCall", "server": "your-turn", "tool": "log_decision",
-                    "status": "completed", "arguments": arguments})
-        return self
-
-    def answer(self, text: str, question: dict | None = None) -> Chat:
-        body = {"type": "AgentMessage", "phase": "final_answer", "content": [{"type": "Text", "text": text}]}
-        if question:
-            body["questions"] = [question]
-        self._item(body)
-        self._add("event_msg", {"type": "token_count", "info": {
-            "total_token_usage": {"input_tokens": 182_000, "cached_input_tokens": 120_000, "output_tokens": 9_400,
-                                  "reasoning_output_tokens": 3_100, "total_tokens": 191_400},
-            "last_token_usage": {"input_tokens": 61_000, "output_tokens": 1_800, "total_tokens": 62_800},
-            "model_context_window": 258_000}})
-        self._add("event_msg", {"type": "task_complete", "turn_id": f"t{self.turn}", "duration_ms": 184_000})
-        return self
-
-    def write(self, home: Path, held: int = 0) -> Path:
-        """Write the session file, holding back the last `held` records for `append_held`."""
-        folder = home / "sessions" / NOW.strftime("%Y/%m/%d")
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"rollout-{NOW.strftime('%Y-%m-%dT%H-%M-%S')}-{self.id}.jsonl"
-        records = self.records[:len(self.records) - held]
-        path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
-        mtime = (NOW - timedelta(minutes=self.clock)).timestamp()
-        if not held:
-            os.utime(path, (mtime, mtime))
-        return path
-
-    def append_held(self, path: Path, held: int) -> None:
-        with path.open("a", encoding="utf-8") as file:
-            file.write("".join(json.dumps(record) + "\n" for record in self.records[-held:]))
-
-
-# Chat.answer adds the final message, a token count and task_complete.
-ANSWER_RECORDS = 3
-
-
-def _touch(path: Path, minutes_ago: float) -> None:
-    stamp = (NOW - timedelta(minutes=minutes_ago)).timestamp()
-    os.utime(path, (stamp, stamp))
-
-
-class ClaudeChat:
-    """A made-up Claude Code transcript (`<home>/projects/<slug>/<id>.jsonl`)."""
-
-    def __init__(self, number: int, title: str, project: str, started: float) -> None:
-        self.id = f"c1a0{number:04x}-0000-4000-8000-{number:012x}"
-        self.title, self.project, self.clock, self.tools = title, project, started, 0
-        self.records: list[dict] = [{"type": "custom-title", "customTitle": title, "sessionId": self.id}]
-
-    def _add(self, kind: str, **fields: object) -> None:
-        self.clock -= 0.5
-        self.records.append({"type": kind, "timestamp": at(self.clock), "sessionId": self.id, "cwd": f"/workspace/{self.project}",
-                             "gitBranch": "main", "version": "2.1.0", "isSidechain": False, **fields})
-
-    def _assistant(self, block: dict, stop: str = "tool_use") -> None:
-        self.tools += 1
-        self._add("assistant", effort="high", message={
-            "model": "claude-opus-4-5", "id": f"msg{self.tools}", "role": "assistant", "content": [block], "stop_reason": stop,
-            "usage": {"input_tokens": 1_200, "cache_creation_input_tokens": 2_400, "cache_read_input_tokens": 38_000, "output_tokens": 900}})
-
-    def _tool(self, name: str, arguments: dict, result: str | None = "", error: bool = False) -> ClaudeChat:
-        self._assistant({"type": "tool_use", "id": f"tool{self.tools}", "name": name, "input": arguments})
-        if result is not None:
-            self._add("user", message={"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": f"tool{self.tools - 1}", "content": result, "is_error": error}]})
-        return self
-
-    def ask(self, prompt: str) -> ClaudeChat:
-        self._add("user", message={"role": "user", "content": prompt})
-        return self
-
-    def think(self, text: str) -> ClaudeChat:
-        self._assistant({"type": "thinking", "thinking": text, "signature": "demo"})
-        return self
-
-    def run(self, command: str, error: bool = False) -> ClaudeChat:
-        return self._tool("Bash", {"command": command, "description": "Run checks"}, "FAILED" if error else "ok", error)
-
-    def edit(self, *paths: str) -> ClaudeChat:
-        for path in paths:
-            self._tool("Edit", {"file_path": f"/workspace/{self.project}/{path}", "old_string": "a", "new_string": "b"})
-        return self
-
-    def question(self, title: str, options: list[str]) -> ClaudeChat:
-        """AskUserQuestion with no answer yet: the chat waits on the user."""
-        return self._tool("AskUserQuestion", {"questions": [{"question": title, "header": "Choice", "multiSelect": False,
-                                                             "options": [{"label": o, "description": o} for o in options]}]}, None)
-
-    def write(self, home: Path) -> Path:
-        folder = home / "projects" / f"-workspace-{self.project}"
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{self.id}.jsonl"
-        path.write_text("".join(json.dumps(record) + "\n" for record in self.records), encoding="utf-8")
-        _touch(path, self.clock)
-        return path
-
-
-class CursorChat:
-    """A made-up Cursor agent transcript plus its `composerHeaders` row."""
-
-    def __init__(self, number: int, title: str, project: str, started: float, *, approval: bool = False) -> None:
-        self.id = f"c0a5{number:04x}-0000-4000-8000-{number:012x}"
-        self.title, self.project, self.started, self.approval = title, project, started, approval
-        self.records: list[dict] = []
-
-    def ask(self, prompt: str) -> CursorChat:
-        local = (NOW - timedelta(minutes=self.started)).strftime("%A, %b %d, %Y, %I:%M %p")
-        self.records.append({"role": "user", "message": {"content": [
-            {"type": "text", "text": f"<timestamp>{local} (UTC+0)</timestamp>\n<user_query>\n{prompt}\n</user_query>"}]}})
-        return self
-
-    def say(self, text: str, *tools: tuple[str, dict]) -> CursorChat:
-        content = [{"type": "text", "text": text}] + [{"type": "tool_use", "name": name, "input": args} for name, args in tools]
-        self.records.append({"role": "assistant", "message": {"content": content}})
-        return self
-
-    def write(self, home: Path, database: sqlite3.Connection, minutes_ago: float) -> Path:
-        folder = home / "projects" / f"workspace-{self.project}" / "agent-transcripts" / self.id
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{self.id}.jsonl"
-        path.write_text("".join(json.dumps(record) + "\n" for record in self.records), encoding="utf-8")
-        _touch(path, minutes_ago)
-        millis = lambda minutes: int((NOW - timedelta(minutes=minutes)).timestamp() * 1000)  # noqa: E731
-        cwd = f"/workspace/{self.project}"
-        value = {"composerId": self.id, "name": self.title, "createdAt": millis(self.started), "lastUpdatedAt": millis(minutes_ago),
-                 "hasBlockingPendingActions": self.approval, "workspaceIdentifier": {"id": "demo", "uri": {"fsPath": cwd, "scheme": "file"}}}
-        database.execute("INSERT INTO composerHeaders VALUES (?, 'demo', ?, ?, 0, 0, ?)",
-                         (self.id, value["createdAt"], value["lastUpdatedAt"], json.dumps(value)))
-        return path
-
-
-def demo_other_chats() -> tuple[list[ClaudeChat], list[tuple[CursorChat, float]]]:
-    """One Claude Code chat asking a question, one working, and a Cursor chat blocked on an approval."""
-    claude = [
-        ClaudeChat(1, "Fix recipe import", "recipe-box", 60)
-        .ask("Recipe import fails on the new CSV header.")
-        .think("Comparing the old and new header rows")
-        .edit("app/recipes/importer.py", "tests/test_importer.py")
-        .run("uv run pytest -q tests/test_importer.py")
-        .question("Rows with an unknown unit: skip them, or import them without a unit?", ["Skip the row", "Import without unit"]),
-        ClaudeChat(2, "Add hourly forecast chart", "weather-widget", 3)
-        .ask("Add an hourly chart to the forecast card.")
-        .think("Reading the forecast card layout")
-        .edit("frontend/src/ForecastCard.tsx")
-        .run("npm test -- ForecastCard"),
-    ]
-    cursor = [
-        (CursorChat(1, "Upgrade Vite to v6", "weather-widget", 20, approval=True)
-         .ask("Upgrade Vite to v6 and fix anything that breaks.")
-         .say("Updating the config for Vite 6.", ("StrReplace", {"path": "/workspace/weather-widget/frontend/vite.config.ts",
-                                                                  "old_string": "a", "new_string": "b"}))
-         .say("Installing the new version.", ("Shell", {"command": "npm install vite@6", "description": "Upgrade Vite"})), 1),
-    ]
-    return claude, cursor
-
-
-def demo_chats(reminders_started: float = 40) -> list[Chat]:
-    return [
-        Chat(1, "Add watering reminders", "garden-planner", reminders_started)
-        .ask("Add watering reminders to the plant detail screen.")
-        .think("**Checking how plant schedules are stored**")
-        .edit("frontend/src/features/plants/Reminders.tsx", "backend/api/reminders.py")
-        .run("make check")
-        .answer("**Outcome:** Reminders work on the plant screen; storage is the open question.\n\n"
-                "**Next step:** answer: choose where reminders are stored.",
-                {"title": "Store reminders on this device only, or sync them to the server?",
-                 "options": ["This device only", "Sync to server"]}),
-        Chat(2, "Fix plant search ranking", "garden-planner", 95)
-        .ask("Search for 'basil' shows thyme first. Fix the ranking.")
-        .think("**Comparing prefix and fuzzy scores**")
-        .decide("How should exact names rank?", ["Boost exact prefix", "Tune fuzzy threshold"],
-                "Boost exact prefix", "Smaller change; keeps typo tolerance")
-        .edit("backend/search/ranking.py", "backend/tests/test_ranking.py")
-        .run("uv run pytest -q backend/tests/test_ranking.py", 1)
-        .edit("backend/search/ranking.py")
-        .run("uv run pytest -q")
-        .answer("**Outcome:** Exact name matches now rank first; all 48 tests pass.\n\n"
-                "**Next step:** answer: choose how ties are ordered.",
-                {"title": "When two plants score the same, order them by popularity or alphabetically?",
-                 "options": ["By popularity", "Alphabetically"]})
-        .reply("When two plants score the same, order them by popularity or alphabetically?", "By popularity")
-        .think("**Adding a popularity tie-break**")
-        .edit("backend/search/tiebreak.py", "backend/search/ranking.py", "docs/SEARCH.md")
-        .run("uv run pytest -q")
-        .answer("**Outcome:** Ties now fall back to popularity; all 51 tests pass.\n\n"
-                "**Recap:** Search ranks exact name prefixes first and breaks ties by popularity, "
-                "with tests for both and the rules written up in docs/SEARCH.md.\n\n"
-                "**Next step:** none."),
-        Chat(5, "Write offline sync guide", "weather-widget", 150)
-        .ask("Document how the outbox handles conflicts.")
-        .edit("docs/SYNC.md")
-        .answer("**Outcome:** Added docs/SYNC.md with the conflict flow.\n\n**Next step:** none."),
-    ]
 
 
 CODEX_WINDOW = """<!doctype html><html><head><style>
@@ -358,10 +113,10 @@ def write_gif(frames: list[tuple[Path, float]], tmp: Path, name: str, hold: floa
 
 
 def deck_gif(browser) -> None:
-    """Film the Deck on its running Codex chat: the spinning status icon, live timers and the recorded log."""
+    """Film the Deck on its running Codex chat, then capture the launcher on a phone in landscape."""
     port = free_port()
     # The Deck demo serves its own made-up plan usage, so no real usage capture is read.
-    server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "python"), "scripts/deck_demo.py", str(port)], cwd=ROOT,
+    server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "python"), "-m", "demo.deck", str(port)], cwd=ROOT,
                               stdout=subprocess.DEVNULL)
     try:
         base = f"http://127.0.0.1:{port}"
@@ -369,9 +124,11 @@ def deck_gif(browser) -> None:
         page = browser.new_page(viewport={"width": 1440, "height": 900}, color_scheme="dark")
         page.add_init_script("localStorage.setItem('theme', 'dark')")
         page.goto(base + "/deck")
-        page.wait_for_selector('.deck-mini[data-kind="working"]')
-        page.locator('.deck-mini[data-kind="working"]').first.click()
-        page.wait_for_selector('.deck-card[data-kind="working"]')
+        # A live run (RUN), not the demo's quiet one (IDLE): spinning icon, live timer, recorded log.
+        running = '.deck-mini[data-kind="working"][data-quiet="false"]'
+        page.wait_for_selector(running)
+        page.locator(running).first.click()
+        page.wait_for_selector('.deck-card[data-phase="run"]')
         page.mouse.move(0, 0)
         page.wait_for_timeout(800)
         with tempfile.TemporaryDirectory() as tmp:
@@ -384,76 +141,24 @@ def deck_gif(browser) -> None:
                 frames.append((shot, taken))
             page.close()
             write_gif(frames, Path(tmp), "deck.gif", hold=0.1)
+        deck_launcher(browser, base)
     finally:
         server.terminate()
         server.wait()
 
 
-def free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
 
-
-def wait_for(url: str, server: subprocess.Popen) -> None:
-    for _ in range(40):
-        if server.poll() is not None:
-            sys.exit("Your Turn server exited before it was ready")
-        try:
-            urllib.request.urlopen(url, timeout=1)
-            return
-        except OSError:
-            time.sleep(0.25)
-    sys.exit(f"Server did not start on {url}")
-
-
-def write_demo_homes(root: Path, chats: list[Chat], held: int = 0) -> tuple[dict[str, Path], list[Path]]:
-    """Write made-up Codex, Claude Code and Cursor homes under `root`; the first Codex chat holds back `held` records."""
-    homes = {name: root / name for name in ("codex", "claude", "cursor", "cursor-user")}
-    paths = [chat.write(homes["codex"], held if index == 0 else 0) for index, chat in enumerate(chats)]
-    (homes["codex"] / "session_index.jsonl").write_text(
-        "".join(json.dumps({"id": c.id, "thread_name": c.title}) + "\n" for c in chats), encoding="utf-8")
-    claude, cursor = demo_other_chats()
-    for chat in claude:
-        chat.write(homes["claude"])
-    storage = homes["cursor-user"] / "globalStorage"
-    storage.mkdir(parents=True)
-    with sqlite3.connect(storage / "state.vscdb") as database:
-        database.execute("CREATE TABLE composerHeaders (composerId TEXT UNIQUE, workspaceId TEXT, createdAt INTEGER,"
-                         " lastUpdatedAt INTEGER, isArchived INTEGER, isSubagent INTEGER, value TEXT)")
-        for chat, minutes_ago in cursor:
-            chat.write(homes["cursor"], database, minutes_ago)
-    database.close()
-    return homes, paths
-
-
-def serve_demo(root: Path, port: int) -> None:
-    """Run a disposable app with its own reminder state as well as its own agent homes."""
-    import uvicorn
-
-    from yourturn.app import SHUTDOWN_SECONDS, create_app
-
-    app = create_app(root / "codex", claude_home=root / "claude", cursor_home=root / "cursor",
-                     cursor_user_dir=root / "cursor-user", state_path=root / "inbox-state.json")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=SHUTDOWN_SECONDS)
-
-
-@contextmanager
-def demo_server(chats: list[Chat], held: int = 0):
-    """Serve disposable agent homes and inbox state. The first chat holds back `held` records."""
-    with tempfile.TemporaryDirectory() as tmp:
-        _, paths = write_demo_homes(Path(tmp), chats, held)
-        port = free_port()
-        server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "python"), "-c",
-            ("import sys; from pathlib import Path; from scripts.readme_screenshots import serve_demo; "
-             "serve_demo(Path(sys.argv[1]), int(sys.argv[2]))"), tmp, str(port)], cwd=ROOT)
-        try:
-            base = f"http://127.0.0.1:{port}"
-            wait_for(base + "/", server)
-            yield base, paths[0]
-        finally:
-            server.terminate()
-            server.wait()
+def deck_launcher(browser, base: str) -> None:
+    """The Deck's launcher mode on a phone held sideways (iPhone 14-class landscape, 844×390)."""
+    phone = browser.new_page(viewport={"width": 844, "height": 390}, device_scale_factor=3, is_mobile=True,
+                             has_touch=True, color_scheme="dark", reduced_motion="reduce")
+    phone.add_init_script("localStorage.setItem('theme', 'dark'); localStorage.setItem('your-turn.deck.mode', 'simple')")
+    phone.goto(base + "/deck")
+    phone.wait_for_selector("#deck-launcher:not([hidden])")
+    phone.wait_for_timeout(1200)
+    phone.screenshot(path=str(OUT / "deck-launcher.png"))
+    phone.close()
+    print("wrote docs/images/deck-launcher.png")
 
 
 def main() -> None:
@@ -473,6 +178,16 @@ def main() -> None:
             desk.screenshot(path=str(OUT / "desktop.png"))
             desk.close()
             print("wrote docs/images/desktop.png")
+
+            # The install page shows the inbox in the light theme.
+            light = browser.new_page(viewport={"width": 1487, "height": 1058}, device_scale_factor=2,
+                                     color_scheme="light", reduced_motion="reduce")
+            light.add_init_script("localStorage.setItem('theme', 'light'); localStorage.setItem('compact-header', 'true')")
+            light.goto(base + "/")
+            light.wait_for_timeout(1500)
+            light.screenshot(path=str(OUT / "inbox-light.png"))
+            light.close()
+            print("wrote docs/images/inbox-light.png")
 
             # Your Turn forbids framing, so the in-app browser pane shows a capture of it instead.
             pane = browser.new_page(viewport={"width": 420, "height": 700}, device_scale_factor=2,

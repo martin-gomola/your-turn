@@ -23,6 +23,7 @@ def test_install_adds_marketplace_when_missing(tmp_path: Path, monkeypatch: pyte
     log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nother  /x\\n")
     assert install_plugin()
     assert log.read_text().splitlines() == [
+        "plugin list --json",
         "plugin marketplace list",
         "plugin marketplace add martin-gomola/your-turn",
         "plugin add your-turn@your-turn",
@@ -32,7 +33,7 @@ def test_install_adds_marketplace_when_missing(tmp_path: Path, monkeypatch: pyte
 def test_install_reuses_existing_marketplace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nyour-turn  /Users/me/your-turn\\n")  # pii:allow (fake path)
     assert install_plugin()
-    assert log.read_text().splitlines() == ["plugin marketplace list", "plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
+    assert log.read_text().splitlines() == ["plugin list --json", "plugin marketplace list", "plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
 
 
 def test_install_without_codex_cli_saves_the_shared_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

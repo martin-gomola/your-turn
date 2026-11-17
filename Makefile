@@ -1,11 +1,26 @@
 PORT ?= 8787
 STATE_DIR ?= $(HOME)/.your-turn
-PID_FILE := $(STATE_DIR)/server.pid
 LOG_FILE := $(STATE_DIR)/server.log
-URL := http://localhost:$(PORT)
 MARKETPLACE := your-turn
+HANDOFF_SOURCE ?= ../my-agent-skills
 
-.PHONY: install doctor up down restart phone status logs test screenshots demo
+SITE_PORT ?= 8791
+
+.PHONY: install doctor up down restart phone status logs test screenshots demo update-skill site site-assets
+
+# Build and serve the install page locally (loopback only; Ctrl-C to stop).
+site: site-assets
+	@echo "Serving the install page at http://127.0.0.1:$(SITE_PORT) (Ctrl-C to stop)"
+	@python3 -m http.server $(SITE_PORT) --bind 127.0.0.1 --directory site
+
+# Internal step for site and the Pages workflow: copy the README screenshots in (site/images is ignored).
+# Separate only because CI needs the copy without a server that never exits.
+site-assets:
+	@mkdir -p site/images
+	@cp docs/images/inbox-light.png docs/images/deck.gif docs/images/deck-launcher.png src/yourturn/static/icon.svg site/images/
+
+update-skill:
+	@uv run --quiet python scripts/sync-handoff.py --source "$(HANDOFF_SOURCE)"
 
 install:
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
@@ -22,22 +37,8 @@ doctor:
 	@uv run your-turn doctor
 
 up:
-	@mkdir -p "$(STATE_DIR)"
-	@if [ -f "$(PID_FILE)" ] && kill -0 "$$(cat "$(PID_FILE)")" 2>/dev/null; then \
-		echo "Already running on $(URL) (pid $$(cat "$(PID_FILE)"))"; exit 0; \
-	fi; \
-	if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-		curl -fsS -o /dev/null "$(URL)/api/inbox" 2>/dev/null && { echo "Your Turn is already running on $(URL)"; exit 0; }; \
-		echo "Port $(PORT) is in use by another process. Try: make up PORT=8788"; exit 1; \
-	fi; \
-	uv sync --quiet || exit 1; \
-	nohup .venv/bin/yourturn serve --port $(PORT) $(if $(PHONE),--phone) >"$(LOG_FILE)" 2>&1 & \
-	echo $$! >"$(PID_FILE)"; \
-	for _ in 1 2 3 4 5 6 7 8 9 10; do \
-		curl -fsS -o /dev/null "$(URL)/" 2>/dev/null && { $(if $(PHONE),cat "$(LOG_FILE)";) echo "Your Turn on $(URL)"; exit 0; }; \
-		sleep 0.5; \
-	done; \
-	echo "Your Turn did not start. Last log lines:"; tail -n 20 "$(LOG_FILE)"; exit 1
+	@uv run --quiet your-turn start --port $(PORT) --state-dir "$(STATE_DIR)" $(if $(PHONE),--phone)
+	$(if $(PHONE),@cat "$(LOG_FILE)")
 
 # Restart with --phone and show the QR code to scan with the iPhone.
 phone:
@@ -45,32 +46,20 @@ phone:
 	@$(MAKE) --no-print-directory up PHONE=1
 
 down:
-	@pid=""; [ -f "$(PID_FILE)" ] && pid="$$(cat "$(PID_FILE)")"; \
-	if ! kill -0 "$$pid" 2>/dev/null && curl -fsS -o /dev/null "$(URL)/api/inbox" 2>/dev/null; then \
-		pid="$$(lsof -nP -t -iTCP:$(PORT) -sTCP:LISTEN 2>/dev/null | head -n 1)"; \
-	fi; \
-	if [ -n "$$pid" ] && kill "$$pid" 2>/dev/null; then \
-		for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$$pid" 2>/dev/null || break; sleep 0.3; done; \
-		echo "Stopped Your Turn (pid $$pid)"; \
-	else \
-		echo "Your Turn is not running"; \
-	fi; \
-	rm -f "$(PID_FILE)"
+	@uv run --quiet your-turn stop --state-dir "$(STATE_DIR)"
 
 restart: down up
 
 status:
-	@if [ -f "$(PID_FILE)" ] && kill -0 "$$(cat "$(PID_FILE)")" 2>/dev/null; then \
-		echo "Running on $(URL) (pid $$(cat "$(PID_FILE)"))"; \
-	else \
-		echo "Not running"; \
-	fi
+	@uv run --quiet your-turn status --port $(PORT)
 
 logs:
 	@tail -n 50 -f "$(LOG_FILE)"
 
+# Python suite, then the front-end node tests (tests/*.test.mjs), which pytest does not run.
 test:
 	@uv run pytest -q
+	@node --test tests/*.test.mjs
 
 screenshots:
 	@uv sync --quiet
@@ -79,4 +68,4 @@ screenshots:
 # Made-up chats in every Deck state for design QA at http://127.0.0.1:8790/deck (disposable homes and state).
 demo:
 	@uv sync --quiet
-	@uv run python scripts/deck_demo.py
+	@uv run python -m demo.deck

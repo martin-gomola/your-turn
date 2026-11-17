@@ -114,6 +114,10 @@ SOFTWARE.
     <span class="brand-name">Your Turn</span>
   </a>
   <a class="nav-link rail-action" id="nav-deck" href="/deck" aria-label="Deck" data-tooltip="Deck"><svg aria-hidden="true"><use href="#i-grid"/></svg><span class="nav-text">Deck</span></a>
+  <div class="deck-mode-switch" id="deck-mode-switch" role="group" aria-label="Deck mode" hidden>
+    <button type="button" class="nav-link rail-action" data-deck-mode="dashboard" aria-label="Dashboard" data-tooltip="Dashboard" aria-controls="deck-view" aria-pressed="true"><svg aria-hidden="true"><use href="#i-usage"/></svg><span class="nav-text">Dashboard</span></button>
+    <button type="button" class="nav-link rail-action" data-deck-mode="simple" aria-label="Launcher" data-tooltip="Launcher" aria-controls="deck-view" aria-pressed="false"><svg aria-hidden="true"><use href="#i-command"/></svg><span class="nav-text">Launcher</span></button>
+  </div>
   <button class="icon-button drawer-close" id="menu-close" type="button" aria-label="Close navigation"><svg aria-hidden="true"><use href="#i-back"/></svg></button>
   <div class="sidebar-footer">
     <button type="button" class="nav-link rail-action" data-aside="settings" aria-controls="settings" aria-expanded="false" aria-label="Settings" data-tooltip="Settings"><svg aria-hidden="true"><use href="#i-settings"/></svg><span class="nav-text">Settings</span></button>
@@ -198,8 +202,22 @@ SOFTWARE.
     <div class="deck-groups" id="deck-groups"></div>
     <section class="deck-standby" id="deck-empty" role="status" aria-labelledby="deck-standby-title" hidden>
       <span class="deck-standby-mark" aria-hidden="true"><svg><use href="#i-pulse"/></svg></span>
-      <h2 id="deck-standby-title">FLEET STANDBY · ALL SYSTEMS CLEAR</h2>
-      <p id="deck-standby-description">No blocking tasks. All parallel agent streams are synchronized.</p>
+      <h2 id="deck-standby-title">No active chats in this view</h2>
+      <p id="deck-standby-description">Open Inbox to see other chats and earlier results.</p>
+      <a class="button" href="/">Open Inbox</a>
+    </section>
+    <section class="deck-launcher" id="deck-launcher" aria-labelledby="deck-launcher-title" hidden>
+      <h2 id="deck-launcher-title" class="sr-only">Quick launch</h2>
+      <div class="deck-launch-pages" id="deck-launch-apps" data-available="{{APP_LAUNCH_AVAILABLE}}" role="region" aria-roledescription="carousel" aria-label="Shortcut pages" tabindex="0">
+        {{LAUNCHER_PAGES}}
+      </div>
+      <nav class="deck-launch-pagination" id="deck-launch-pagination" aria-label="Shortcut pages">
+        <button type="button" class="deck-launch-dot" data-launch-page="0" aria-label="Shortcuts page 1 of 2" aria-current="page"></button>
+        <button type="button" class="deck-launch-dot" data-launch-page="1" aria-label="Shortcuts page 2 of 2"></button>
+      </nav>
+      <p class="sr-only" id="deck-launch-position" aria-live="polite" aria-atomic="true"></p>
+      <p class="deck-launcher-note" id="deck-launch-unavailable" hidden>App shortcuts are available when Your Turn runs on macOS.</p>
+      <p class="deck-launch-status" id="deck-launch-status" role="status" aria-live="polite" aria-atomic="true"></p>
     </section>
   </div>
 
@@ -218,16 +236,20 @@ SOFTWARE.
           <h2 id="status-title">Loading…</h2>
           <button type="button" class="icon-button" id="reminder-toggle" aria-label="Dismiss reminder" hidden><svg aria-hidden="true"><use id="reminder-icon" href="#i-bell-off"/></svg></button>
         </div>
-        <a class="open-codex open-codex--primary" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
-        <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="Open project in Claude Desktop" title="Starts a new Code session using this project folder." hidden>Open project in Claude Desktop<svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
       <div class="status-body" id="status-body" data-kind="unknown" hidden>
         <p class="status-kind" id="next-kind" hidden></p>
         <div class="status-text" id="status-text" aria-live="polite"></div>
         <div class="pending-step" id="pending-step" hidden><p class="recap-label">Last recorded step</p><div id="pending-step-text"></div></div>
+        <div class="pending-step failed-check" id="failed-check" hidden><p class="recap-label" id="failed-check-label">Failed check</p><div id="failed-check-text"></div></div>
         <p class="quiet-note" id="quiet-note" hidden></p>
         <ul class="options" id="next-options" hidden></ul>
         <p id="reminder-note" role="status"></p>
+      </div>
+      <!-- After the question: read the decision first, then act on it. -->
+      <div class="status-actions">
+        <a class="open-codex open-codex--primary" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
+        <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="Open project in Claude Desktop" title="Starts a new Code session using this project folder." hidden>Open project in Claude Desktop<svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
     </section>
 
@@ -314,7 +336,7 @@ SOFTWARE.
 <div class="undo-toast" id="undo-toast" role="status"></div>
 <section class="aside-panel" id="settings" aria-labelledby="settings-title" hidden>
   <header class="aside-heading"><h2 id="settings-title" tabindex="-1">Settings</h2><button type="button" class="button" data-close-aside>Close</button></header>
-  <form id="appearance-form"><fieldset><legend><span class="setting-title"><svg aria-hidden="true"><use href="#i-sun"/></svg>Appearance</span></legend><div class="appearance-choices">
+  <form id="appearance-form"><fieldset><legend><span class="setting-title"><svg aria-hidden="true"><use href="#i-sun"/></svg>Inbox and chat appearance</span></legend><div class="appearance-choices">
     <label><input type="radio" name="appearance" value="system">System</label>
     <label><input type="radio" name="appearance" value="light">Light</label>
     <label><input type="radio" name="appearance" value="dark">Dark</label>
@@ -327,19 +349,19 @@ SOFTWARE.
     <p id="notification-status" class="settings-note" hidden></p>
   </section>
   <form id="deck-form" class="notification-setting"><fieldset><legend><span class="setting-title"><svg aria-hidden="true"><use href="#i-grid"/></svg>Deck <span class="beta-tag">Beta</span></span></legend>
-    <label class="setting-switch"><input type="checkbox" name="deck-enabled">Show Deck in the sidebar</label>
-    <p class="settings-note">A live telemetry view of every chat. Still in beta, so its layout may change.</p>
     <p class="setting-subtitle" id="deck-theme-label">Deck theme</p>
     <div class="appearance-choices" role="radiogroup" aria-labelledby="deck-theme-label">
       <label><input type="radio" name="deck-theme" value="dark">Dark</label>
       <label><input type="radio" name="deck-theme" value="warm">Warm</label>
     </div>
+    <label class="setting-switch"><input type="checkbox" name="deck-enabled">Show Deck in the sidebar</label>
+    <p class="settings-note">A live telemetry view of every chat. Still in beta, so its layout may change.</p>
   </fieldset></form>
 </section>
 <section class="aside-panel" id="help" aria-labelledby="help-title" hidden>
   <header class="aside-heading"><h2 id="help-title" tabindex="-1">Help</h2><button type="button" class="button" data-close-aside>Close</button></header>
-  <p class="help-intro">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Copy resume command</strong>) to reply or take action.</p>
-  <section class="help-keyboard" aria-labelledby="shortcuts-title">
+  <p class="help-intro" data-help-view="inbox">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Copy resume command</strong>) to reply or take action.</p>
+  <section class="help-keyboard" aria-labelledby="shortcuts-title" data-help-view="inbox">
     <h3 id="shortcuts-title">Keyboard shortcuts</h3>
     <p class="settings-note">In the inbox, when you’re not typing.</p>
     <dl class="help-shortcuts">
@@ -351,6 +373,17 @@ SOFTWARE.
       <div><dt><svg aria-hidden="true"><use href="#i-bell-off"/></svg>Dismiss focused reminder</dt><dd><kbd>e</kbd></dd></div>
       <div><dt><svg aria-hidden="true"><use href="#i-back"/></svg>Back to inbox, or clear search</dt><dd><kbd>Esc</kbd></dd></div>
     </dl>
+  </section>
+  <section class="help-workflow" data-help-view="dashboard" aria-labelledby="help-dashboard-title" hidden>
+    <h3 id="help-dashboard-title">Dashboard</h3>
+    <p>Read the fleet totals first, then select a status to focus its chats. Use <kbd>J</kbd>/<kbd>K</kbd> or <kbd>←</kbd>/<kbd>→</kbd> to browse that group, or swipe a card on touch screens.</p>
+    <p>The card shows its recorded activity, checks and context. Open <strong>Supporting evidence</strong> for the full log and run telemetry. Quiet means no recent activity was recorded; it does not prove the agent is blocked.</p>
+  </section>
+  <section class="help-workflow" data-help-view="launcher" aria-labelledby="help-launcher-title" hidden>
+    <h3 id="help-launcher-title">Launcher</h3>
+    <p>Swipe horizontally or select a page bar. With the shortcut area focused, use <kbd>←</kbd>/<kbd>→</kbd>, <kbd>Home</kbd> or <kbd>End</kbd>. Empty slots are not active.</p>
+    <p>Shortcuts open apps, or run commands in a new Terminal window, on the Mac running Your Turn, including when you use a phone. Your Turn Settings opens here.</p>
+    <p>Define all 16 slots in <code>launcher.toml</code> in the server's state directory (default <code>~/.your-turn</code>), then restart Your Turn.</p>
   </section>
   <table class="help-statuses">
     <caption>Chat statuses</caption>

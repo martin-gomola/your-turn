@@ -1,7 +1,8 @@
 import json
 import urllib.request
 
-from scripts.readme_screenshots import demo_chats, demo_server
+from demo.chats import demo_chats
+from demo.server import demo_server
 
 
 def test_demo_server_never_rewrites_user_inbox_state(tmp_path, monkeypatch):

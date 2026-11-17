@@ -7,57 +7,26 @@
 ![Works with Codex · Claude Code · Cursor](https://img.shields.io/badge/Works%20with-Codex%20%C2%B7%20Claude%20Code%20%C2%B7%20Cursor-56645f)
 ![Local · Read-only](https://img.shields.io/badge/Local-Read--only-2f7a6b)
 
-[Your inbox](#your-inbox) · [Quick start](#quick-start) · [Privacy](#privacy) ·
-[Why install the handoff](#why-install-the-handoff) · [Docs](#docs)
+[Quick start](#quick-start) · [Handoff skill](#handoff-skill) · [Why Your Turn](#why-your-turn) ·
+[Your inbox](#your-inbox) · [Privacy](#privacy) · [Docs](#docs)
 
 </div>
 
-When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat blocked on you sits in a window you are not looking at, and every answer is a long log.
-
-## Your inbox
+**Your Turn** shows your coding-agent chats in one local inbox, with a handoff skill for clear results and next steps. You can also use just the skill directly in chat, with no server.
 
 <div align="center">
 
 <img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/desktop.png?v=1" width="800" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status">
 
-<sub>Made-up demo chats from <code>make screenshots</code>, not real session data.</sub>
+<sub>The optional inbox, with made-up demo chats from <code>make screenshots</code>. The skill also works on its own.</sub>
 
 </div>
 
-<details>
-<summary>See the inbox beside a chat</summary>
-
-<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/in-codex.png?v=1" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
-
-</details>
-
-<details>
-<summary>Watch a chat move into Needs you</summary>
-
-<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
-
-</details>
-
-<details>
-<summary>See the Deck on a second screen or tablet</summary>
-
-<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/deck.gif?v=1" width="800" alt="The Deck telemetry view on a running Codex chat, with its recorded log, lap timers, context gauge, queue and plan usage">
-
-</details>
-<br>
-
-**Your Turn** is not another orchestrator, IDE wrapper, or cloud dashboard. It is a read-only, zero-config local inbox on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
-
-- ⏳ **Who is waiting on you?**<br>
-  Questions, pending approvals, and unreviewed results, ordered by how long they have waited.<br>
-- ✅ **Can you trust the result without reading the log?**<br>
-  `Check failed` and `Edits unchecked` badges tied to the latest code edit.<br>
-- ➡️ **What is the exact next step?**<br>
-  One line per chat, with one click to open or resume it in its app.<br>
-
-Your Turn runs on your machine. It does not take over agent processes, run a background service, or send chat data to the cloud. It uses no cloud account or extra agent permissions. From a phone or tablet, "Open in Codex" and "Open in Cursor" ask your Mac to open that chat's own link, the same as clicking it there.
-
 ## Quick start
+
+Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats. To pick your options and copy the commands in one click, use the [install page](https://martin-gomola.github.io/your-turn/).
+
+### Full setup
 
 You need [`uv`](https://docs.astral.sh/uv/) and Codex, Claude Code, or Cursor. `uv` downloads Python 3.11 or newer if you do not have it. Without `uv`, install it first with `brew install uv` or [uv's installer](https://docs.astral.sh/uv/getting-started/installation/).
 
@@ -67,29 +36,38 @@ To see which files `install` would write, run `uvx your-turn@latest doctor` firs
 uvx your-turn@latest install
 ```
 
-`install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
+Run in a terminal, `install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
 
-To start the inbox later, run:
+To start the inbox on later visits, or if you already have the skill, run:
 
 ```bash
 uvx your-turn@latest serve
 ```
 
+Keep the terminal open while using the inbox. Stop it with Ctrl+C.
+
+<details>
+<summary>Start the inbox with Codex (optional, macOS/Linux)</summary>
+
+Use a persistent installation, then opt in to a user-level Codex hook:
+
+```bash
+uv tool install your-turn
+your-turn autostart enable
+```
+
+Review the hook in `/hooks` in the Codex CLI or **Settings → Hooks** in the desktop app. Enabling autostart does not grant hook trust or verify that Codex loaded it. On `SessionStart`, the hook starts or reuses one background inbox without opening a browser.
+
+The handoff stays instruction-only. Disable the hook with `your-turn autostart disable`; the shared inbox keeps running until you stop it with `your-turn stop`. See [autostart setup and diagnostics](./docs/configuration.md#optional-codex-autostart), including what to do if the installed Python environment changes.
+
+</details>
+
+<details>
+<summary>Use a phone or uninstall</summary>
+
 The server binds to loopback only (`127.0.0.1`). To remove the handoff, run `uvx your-turn@latest uninstall`.
 
 To open the inbox on your phone, run `uvx your-turn@latest serve --phone` (in a clone: `make phone`) and scan the QR code it prints. The phone needs to be on the same Wi-Fi or Tailscale network, and the link carries a token; delete `~/.your-turn/phone-token` to lock out paired phones.
-
-<details>
-<summary>Install only the Codex plugin, without the inbox</summary>
-
-The handoff skill works without the inbox; it only shapes how Codex ends its answers. This needs neither `uv` nor Python:
-
-```bash
-codex plugin marketplace add martin-gomola/your-turn
-codex plugin add your-turn@your-turn
-```
-
-Codex keeps the marketplace at the commit it fetched. To pick up a newer skill, run `codex plugin marketplace upgrade your-turn && codex plugin add your-turn@your-turn`, then restart Codex. To remove it, run `codex plugin remove your-turn@your-turn` and `codex plugin marketplace remove your-turn`.
 
 </details>
 
@@ -113,40 +91,104 @@ Only `install` and `uninstall` change agent app folders. To see what `install` w
 
 </details>
 
+<a id="install-the-skill"></a>
+
+### Skill only (no server)
+
+Install **your-turn-handoff** from
+[the my-agent-skills installer](https://martin-gomola.github.io/my-agent-skills/).
+Select the skill, your coding agents, and project or global scope, then copy and
+run the generated command. Installation uses the Skills CLI and requires Node.js
+22.20+ and Git; no inbox, `uv` or Python is needed. Generated commands disable
+Skills CLI telemetry for that run.
+
+Start a new agent chat and ask:
+
+```text
+Use your-turn-handoff for the final answers in this chat.
+```
+
+The skill is maintained in
+[my-agent-skills](https://github.com/martin-gomola/my-agent-skills/tree/main/skills/your-turn-handoff).
+Follow its [update and removal instructions](https://github.com/martin-gomola/my-agent-skills/blob/main/docs/install.md)
+to manage that installation. Agent behavior determines when the skill loads.
+
+If you later want the inbox, run `uvx your-turn@latest serve`. Keep your existing
+skill installation; you do not need to run `install` again. Full setup already
+includes a bundled handoff, so choose one installation route to avoid duplicates.
+
+<a id="why-install-the-handoff"></a>
+
+## Handoff skill
+
+The handoff asks the agent to put its result and the action that needs you in predictable lines. Here, you asked the agent to compare import policies and wait for your choice before implementation.
+
+Without the handoff:
+
+```text
+I recommend skipping invalid rows and logging them so valid rows can still import.
+The alternative is stopping at the first invalid row. Which policy should I implement?
+```
+
+With the handoff:
+
+```text
+**Outcome:** Skipping and logging invalid rows is recommended so valid rows can still import.
+
+**Next step:** decide: skip and log invalid rows, or stop at the first invalid row?
+```
+
+If your input is needed, `Next step` names the answer, decision, review, approval, or command. Otherwise, it says `none`. Longer chats keep a `Recap`, and consequential choices get a `Decision`. See the [full handoff format](./docs/configuration.md#handoff-contract).
+
+## Why Your Turn
+
+When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat blocked on you sits in a window you are not looking at, and every answer is a long log.
+
+Your Turn keeps the result and next step in the chat, with an optional view across chats. It is not another orchestrator, IDE wrapper, or cloud dashboard. The inbox reads the logs agents already write and leaves execution, answers, and approvals in their own apps.
+
+## Your inbox
+
+Add the local inbox when you want to see which chats need you across Codex, Claude Code, and Cursor.
+
+<details>
+<summary>See the inbox beside a chat</summary>
+
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/in-codex.png?v=1" width="800" alt="Codex chat beside the Your Turn dark inbox in Focus Mode">
+
+</details>
+
+<details>
+<summary>Watch a chat move into Needs you</summary>
+
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/demo.gif?v=1" width="800" alt="A chat moves into Needs you when its question arrives, then opens beside the inbox">
+
+</details>
+
+<details>
+<summary>See the Deck on a second screen or tablet</summary>
+
+<img src="https://raw.githubusercontent.com/martin-gomola/your-turn/main/docs/images/deck.gif?v=1" width="800" alt="The Deck telemetry view on a running Codex chat, with its recorded log, lap timers, context gauge, queue and plan usage">
+
+</details>
+<br>
+
+The optional inbox is read-only and zero-config on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
+
+- ⏳ **Who is waiting on you?**<br>
+  Questions, pending approvals, and unreviewed results, ordered by how long they have waited.<br>
+- ✅ **Can you trust the result without reading the log?**<br>
+  `Check failed` and `Edits unchecked` badges tied to the latest code edit.<br>
+- ➡️ **What is the exact next step?**<br>
+  One line per chat, with one click to open or resume it in its app.<br>
+
+The inbox runs on your machine. It does not take over agent processes or send chat data to the cloud. It uses no cloud account or extra agent permissions. From a phone or tablet, "Open in Codex" and "Open in Cursor" ask your Mac to open that chat's own link, the same as clicking it there.
+
 ## Privacy
 
 - **Local only.** The server binds to `127.0.0.1`. It does not send session data anywhere.
 - **Read-only session access.** Your Turn reads agent logs and Cursor's local chat database. It never edits them, starts or answers chats, or approves actions.
 - **Small local state file.** `~/.your-turn/state.json` stores seen results and dismissed reminders so they stay in sync across browsers. The browser keeps a local backup.
 - **No account or setup file.** Your Turn finds existing chats and leaves out sub-agents, headless runs, and abandoned chats.
-
-## Why install the handoff?
-
-<details>
-<summary>See how the handoff keeps finished chats out of Needs you</summary>
-
-Agents often end with a polite question such as “Would you like me to update the docs?” Your Turn can read that as a question waiting on you, even when the work is done. The handoff asks the agent to end with an `Outcome` and a `Next step`, so the inbox can show a clear result.
-
-Without the handoff:
-
-```text
-I refactored the token refresh logic and ran pytest. All 12 tests passed.
-Would you like me to update the docs or commit the changes?
-```
-
-With the handoff:
-
-```text
-I refactored the token refresh logic and ran pytest. All 12 tests passed.
-
-**Outcome:** Token refresh is refactored and all 12 tests pass.
-
-**Next step:** none
-```
-
-If an agent needs a decision, answer, review, or approval, `Next step` names it. See the full format in [docs/configuration.md](./docs/configuration.md#your-turn-handoff).
-
-</details>
 
 ## Docs
 
@@ -156,6 +198,7 @@ If an agent needs a decision, answer, review, or approval, `Next step` names it.
 | [docs/configuration.md](./docs/configuration.md) | CLI commands and flags, app setup, handoff format, and development |
 | [DESIGN.md](./DESIGN.md) | UI design contract and references |
 | [docs/agents-snippet.md](./docs/agents-snippet.md) | Handoff format to add to agent instructions by hand |
+| [docs/handoff-source.md](./docs/handoff-source.md) | Canonical handoff source, pinned snapshot and package checks |
 
 ## Run from a clone
 
@@ -174,6 +217,7 @@ make phone     # restart it reachable from your phone: scan the printed QR code
 make doctor    # check the handoff without changing it
 make test      # run the test suite
 make demo      # made-up chats in every Deck state at http://127.0.0.1:8790/deck, for design QA
+make site      # the install page at http://127.0.0.1:8791
 ```
 
 See [docs/configuration.md](./docs/configuration.md#development) for all `make` targets and API routes.
