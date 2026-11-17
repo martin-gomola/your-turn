@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../src/yourturn/static/app.js', import.meta.url), 'utf8');
 const context = vm.createContext({});
 vm.runInContext(source.slice(source.indexOf('const AWAY_DIGEST_MS'), source.indexOf('// End pure triage helpers.')) +
-  '\nObject.assign(this, { AWAY_DIGEST_MS, filterInbox, awayDelta, queueTarget, focusAfterRemoval, shortcutBlocked, contextFill, contextSize, deckOrder, latestQuota, windowLabel, untilShort, deckTelemetry, deckMagazine, deckSwipe, deckUrgent, deckTerminalState, deckHandoffText, deckCanReview, deckFallback });', context);
+  '\nObject.assign(this, { AWAY_DIGEST_MS, DECK_TERMINAL_PREVIEW_ROWS, filterInbox, awayDelta, queueTarget, focusAfterRemoval, shortcutBlocked, contextFill, fillTone, contextSize, deckOrder, latestQuota, windowLabel, untilShort, deckTelemetry, deckMagazine, deckSwipe, deckUrgent, deckTerminalState, deckTerminalRows, deckHandoffText, deckCanReview, deckFallback });', context);
 
 test('working sessions cannot be dismissed unless they went quiet', () => {
   const working = {status:'working',attention_key:'pending'};
@@ -44,6 +44,13 @@ test('terminal shows recorded commands and pending calls without pretending unsu
   assert.equal(unsupported.label,'LAST KNOWN STATE');
   assert.equal(unsupported.events.length,0);
   assert.equal(unsupported.fallback,'Awaiting agent completion checkpoint…');
+});
+
+test('Deck terminal previews five recent rows while supporting evidence can retain the full log', () => {
+  const events = Array.from({ length: 12 }, (_, index) => ({ title: `row ${index + 1}` }));
+  assert.equal(context.DECK_TERMINAL_PREVIEW_ROWS, 5);
+  assert.equal(context.deckTerminalRows(events).map((event) => event.title).join(', '), 'row 8, row 9, row 10, row 11, row 12');
+  assert.equal(context.deckTerminalRows(events, null).length, 12);
 });
 
 test('missing handoffs use honest checkpoint copy, ignore old recaps and never invent a next action', () => {
@@ -113,6 +120,17 @@ test('Inbox ignores Deck review markers and uses its original seen-state rule', 
   assert.equal(helpers.isNewResult({ turn_ended_at: at }), true);
 });
 
+test('Inbox offers dismissal for reminders and unseen new results only', () => {
+  const helpers = vm.createContext({ needsAttention: chat => chat.waiting,
+    isNewResult: chat => chat.newResult });
+  vm.runInContext(source.slice(source.indexOf('function inboxDismissal('), source.indexOf('// How long a working chat')) +
+    '\nthis.inboxDismissal = inboxDismissal;', helpers);
+  assert.equal(helpers.inboxDismissal({ waiting: true, attention_key: 'request' }), 'reminder');
+  assert.equal(helpers.inboxDismissal({ waiting: true }), '');
+  assert.equal(helpers.inboxDismissal({ newResult: true }), 'result');
+  assert.equal(helpers.inboxDismissal({}), '');
+});
+
 test('hero swipes navigate, row swipes act, and vertical or small drags do neither', () => {
   assert.equal(context.deckSwipe(-70, 5, 390, true), 'next');
   assert.equal(context.deckSwipe(70, 5, 390, true), 'previous');
@@ -159,6 +177,15 @@ test('context size uses the reported window, infers 1M for Claude past 200K, els
   assert.equal(context.contextSize({ harness: 'claude', context_window: 0, context_used: 254800 }), 1000000);
   assert.equal(context.contextSize({ harness: 'claude', context_window: 0, context_used: 150000 }), 0);
   assert.equal(context.contextSize({ harness: 'cursor', context_window: 0, context_used: 300000 }), 0);
+});
+
+test('fill tones share the warning thresholds and preserve caller defaults', () => {
+  assert.equal(context.fillTone(null), '');
+  assert.equal(context.fillTone(74), '');
+  assert.equal(context.fillTone(75), 'amber');
+  assert.equal(context.fillTone(89), 'amber');
+  assert.equal(context.fillTone(90), 'red');
+  assert.equal(context.fillTone(74, 'green'), 'green');
 });
 
 test('quota comes from the newest report and drops windows that already reset', () => {

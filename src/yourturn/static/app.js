@@ -107,6 +107,7 @@ const UNDO_MS = 8000;
 
 // Pure triage helpers, shared by the inbox interactions and their unit tests.
 const AWAY_DIGEST_MS = 10 * 60 * 1000;
+const DECK_TERMINAL_PREVIEW_ROWS = 5;
 function filterInbox(chats, query) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   return chats.filter((chat) => {
@@ -145,6 +146,10 @@ function contextFill(used, size) {
   return { percent, level: percent >= 80 ? "heavy" : percent >= 50 ? "filling" : "ok" };
 }
 
+function fillTone(percent, base = "") {
+  return percent >= 90 ? "red" : percent >= 75 ? "amber" : base;
+}
+
 // The context window to measure against. Claude Code records none, but its windows are 200K or 1M,
 // so usage past 200K can only be a 1M window; below that the size stays unknown (0).
 // Claude transcripts omit the window; usage past the 200K window proves the 1M one. Else unknown.
@@ -180,15 +185,6 @@ function untilShort(iso, now = Date.now()) {
   if (!(minutes > 0)) return "";
   if (minutes < 1) return "<1m";
   return minutes < 60 ? `${Math.round(minutes)}m` : minutes < 1440 ? `${Math.round(minutes / 60)}h` : `${Math.round(minutes / 1440)}d`;
-}
-function untilClock(iso, now = Date.now()) {
-  const seconds = Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000));
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor(seconds % 86400 / 3600);
-  const minutes = Math.floor(seconds % 3600 / 60);
-  const remainder = seconds % 60;
-  const clock = [hours, minutes, remainder].map((value) => String(value).padStart(2, "0")).join(":");
-  return days ? `${days}d ${clock}` : clock;
 }
 function deckElapsed(since, now = Date.now()) {
   const started = new Date(since).getTime();
@@ -228,7 +224,7 @@ function deckTelemetry(chats, working, waits, now = Date.now()) {
         note: "Estimated from the earliest recorded Claude message in the last 5h; not an account quota reset. Turn on `install --claude-usage` for the reported value." },
     { id: "codex", label: "CODEX", value: `${active} ACTIVE${quota ? ` / ${Math.max(0, Math.round(100 - quota.used_percent))}%` : ""}`, tone: "", note: quota ? `Latest recorded ${windowLabel(quota.window_minutes)} account quota remaining.` : "Working Codex chats; quota not reported." },
     { id: "burn", label: "BURN", value: samples.length ? `${(burn / 15000).toFixed(1)}k/min` : "—", tone: "", note: `Recorded tokens over 15 minutes in currently working chats. ${note}` },
-    { id: "peak", label: "PEAK CTX", value: peak === null ? "—" : `${peak}%`, tone: peak >= 90 ? "red" : peak >= 75 ? "amber" : "", note: "Highest context utilization among chats with a known window." },
+    { id: "peak", label: "PEAK CTX", value: peak === null ? "—" : `${peak}%`, tone: fillTone(peak), note: "Highest context utilization among chats with a known window." },
     { id: "wait", label: "MAX WAIT", value: earliest.length ? deckElapsed(new Date(Math.min(...earliest)).toISOString(), now) : "—", tone: earliest.length ? "amber" : "", note: "Longest wait among Needs you chats." },
     { id: "today", label: "TODAY", value: samples.length ? `${(tokens / 1000000).toFixed(1)}M TOK` : "—", tone: "", note: `Recorded tokens since local midnight. ${note}` },
   ];
@@ -275,6 +271,10 @@ function deckTerminalState(chat, connected = true) {
   const label = !connected ? "OFFLINE" : !reportedLive ? "LAST KNOWN STATE" : chat.quiet ? "QUIET" : pending ? "CALL PENDING" : "RUNNING...";
   const fallback = reportedLive && chat.activity_summary ? chat.activity_summary : "Awaiting agent completion checkpoint…";
   return { label, live, events, fallback };
+}
+
+function deckTerminalRows(events, limit = DECK_TERMINAL_PREVIEW_ROWS) {
+  return limit === null ? events : events.slice(-limit);
 }
 
 function deckHandoffText(chat, kind) {
@@ -528,6 +528,11 @@ function attentionState(chat) {
   return hasAttention(chat) ? reminderDismissed(chat) ? "dismissed" : "waiting" : chat.status;
 }
 
+function inboxDismissal(chat) {
+  if (needsAttention(chat) && chat.attention_key) return "reminder";
+  return isNewResult(chat) ? "result" : "";
+}
+
 // An end recorded without saying how, and with nothing to show, is no finished result; the app's
 // own summary of a chat it keeps no messages of is something to show.
 function hasResult(chat) {
@@ -626,27 +631,39 @@ function renderRow(chat) {
   link.append(glyph, body, project, time, chevron);
   item.append(link);
   // A sibling of the link, not inside it: a link cannot contain a button.
-  if (state === "waiting" && chat.attention_key) {
+  const dismissal = inboxDismissal(chat);
+  if (dismissal) {
     const dismiss = el("button", "icon-button row-dismiss");
     dismiss.type = "button";
-    dismiss.setAttribute("aria-label", `Dismiss reminder: ${chatName(chat)}`);
-    dismiss.title = "Dismiss reminder (e)";
+    dismiss.setAttribute("aria-label", `Dismiss ${dismissal === "reminder" ? "reminder" : "result"}: ${chatName(chat)}`);
+    dismiss.title = `Dismiss ${dismissal === "reminder" ? "reminder" : "result"} (e)`;
     const label = el("span", "row-dismiss-label", "Dismiss");
     label.setAttribute("aria-hidden", "true");
     dismiss.append(icon("i-bell-off"), label);
-    dismiss.addEventListener("click", () => dismissFromInbox(chat));
+    dismiss.addEventListener("click", () => dismissFromInbox(chat, dismissal));
     item.append(dismiss);
   }
   return item;
 }
 
 let undoTimer = 0;
-function dismissFromInbox(chat) {
+function dismissFromInbox(chat, dismissal = inboxDismissal(chat)) {
   const key = chatKey(chat);
   const rows = [...document.querySelectorAll("#sections .row")].filter((row) => row.getClientRects().length);
   const next = focusAfterRemoval(rows.map((row) => row.dataset.id), key);
-  saveShared({ dismissed: { [key]: chat.attention_key } });
+  if (dismissal === "reminder") saveShared({ dismissed: { [key]: chat.attention_key } });
+  else {
+    saveShared({ seen: { [key]: chat.turn_ended_at } });
+    hideUndo();
+  }
   transition(renderShared).then(() => cardFor(next)?.focus({ preventScroll: true }));
+  if (dismissal !== "reminder") {
+    const toast = el("div", "undo-toast-body");
+    toast.append(el("span", "", `Result dismissed: ${chatName(chat)}`));
+    $("undo-toast").replaceChildren(toast);
+    restartUndoTimer();
+    return;
+  }
   const undo = el("button", "button", "Undo");
   undo.type = "button";
   undo.addEventListener("click", () => {
@@ -2370,7 +2387,7 @@ function deckMini(chat, kind) {
   context.title = fill ? `${tokenCount(chat.context_used, true)} / ${tokenCount(contextSize(chat), true)}` : "Context window not reported";
   const gauge = el("span", `deck-mini-gauge${fill ? "" : " deck-mini-standby"}`);
   gauge.setAttribute("aria-hidden", "true");
-  gauge.dataset.tone = fill?.percent >= 90 ? "red" : fill?.percent >= 75 ? "amber" : "green";
+  gauge.dataset.tone = fillTone(fill?.percent, "green");
   for (let i = 0; i < 10; i++) {
     const block = el("span");
     block.style.setProperty("--fill", `${fill ? Math.max(0, Math.min(100, (fill.percent - i * 10) * 10)) : 0}%`);
@@ -2430,8 +2447,9 @@ $("deck-mini-grid").addEventListener("click", (event) => {
   $("deck-feature").querySelector("a")?.focus({ preventScroll: true });
 });
 
-function deckTerminal(chat) {
+function deckTerminal(chat, { allEvents = false } = {}) {
   const state = deckTerminalState(chat, $("connection").dataset.state === "live");
+  const events = deckTerminalRows(state.events, allEvents ? null : undefined);
   const terminal = el("div", "deck-terminal");
   terminal.dataset.live = String(state.live);
   terminal.dataset.stream = JSON.stringify(state.events.length ? state.events : [state.fallback]);
@@ -2444,15 +2462,15 @@ function deckTerminal(chat) {
   terminal.append(header);
   const body = el("div", "deck-terminal-body");
   terminal.append(body);
-  if (state.events.length) {
+  if (events.length) {
     const log = el("ol", "deck-terminal-log");
     log.setAttribute("aria-label", "Latest recorded activity");
-    state.events.forEach((event, index) => {
+    events.forEach((event, index) => {
       const row = el("li");
       row.title = event.title;
       const time = el("span", "deck-terminal-time", event.pending ? "PENDING" : clock(event.at) || "LOG");
       const text = el("code", "deck-terminal-text", `${event.kind === "command" ? "$" : "›"} ${event.title}`);
-      if (index === state.events.length - 1) {
+      if (index === events.length - 1) {
         const cursor = el("span", "deck-terminal-cursor", "_");
         cursor.setAttribute("aria-hidden", "true");
         text.append(cursor);
@@ -2551,13 +2569,14 @@ function deckTrace(label, values, { reading = "", max, tone = () => "", title = 
   return block;
 }
 
-// Real telemetry for the hero's free space: lap times (purple best, live lap animated), context
-// at the end of each lap against the 75%/90% marks, and, off the Working card, the chat's token flow.
-function deckTraces(chat, kind) {
+// Real telemetry for Supporting evidence: lap times (purple best, live lap animated),
+// context at each lap's end, and the chat's token flow.
+function deckTraces(chat, kind, { supporting = false } = {}) {
   const traces = [];
+  const minimumSamples = supporting ? 1 : 2;
   const laps = (chat.laps || []).filter((lap) => lapSeconds(lap) > 0);
   const live = laps.length > 0 && !laps.at(-1).ended_at;
-  if (laps.length >= 2) {
+  if (laps.length >= minimumSamples) {
     const seconds = laps.map(lapSeconds);
     const finished = seconds.filter((_, i) => laps[i].ended_at);
     const best = finished.length ? Math.min(...finished) : 0;
@@ -2570,17 +2589,17 @@ function deckTraces(chat, kind) {
   }
   const size = contextSize(chat);
   const filled = (chat.laps || []).filter((lap) => lap.context > 0);
-  if (size && filled.length >= 2) {
+  if (size && filled.length >= minimumSamples) {
     const percents = filled.map((lap) => Math.min(100, lap.context / size * 100));
     const growth = percents.slice(1).map((value, i) => value - percents[i]).filter((value) => value > 0);
     traces.push(deckTrace("CTX / LAP", percents, {
       max: 100,
       reading: growth.length ? `+${mean(growth).toFixed(1)}% per lap` : "",
-      tone: (value) => value >= 90 ? "red" : value >= 75 ? "amber" : "",
+      tone: (value) => fillTone(value),
       title: (value, i) => `Turn ${filled[i].turn}: ${Math.round(value)}% of the context window`,
     }));
   }
-  if (kind !== "working") {
+  if (kind !== "working" || supporting) {
     const minutes = minuteBuckets(chat.usage_minutes, 60);
     const total = minutes.reduce((sum, value) => sum + value, 0);
     if (total) traces.push(deckTrace("TOKENS · 60M", minutes, { reading: `${tokenCount(total, true)} tokens` }));
@@ -2654,7 +2673,7 @@ function deckUsage(chats, now = Date.now()) {
     for (const [{ harness, at }, window] of rows) {
       const percent = Math.round(window.used_percent);
       const row = el("div", "deck-usage-row");
-      row.dataset.tone = percent >= 90 ? "red" : percent >= 75 ? "amber" : "";
+      row.dataset.tone = fillTone(percent);
       const gauge = el("span", "deck-mini-gauge");
       gauge.dataset.tone = row.dataset.tone;
       gauge.setAttribute("aria-hidden", "true");
@@ -2789,7 +2808,9 @@ function deckHero(chat, kind) {
   meta.append(...[deckAgent(chat), deckSetup(chat)].filter(Boolean));
   heading.append(meta);
   identity.append(badge, heading);
-  left.append(identity);
+  const cardHeader = el("div", "deck-card-header");
+  cardHeader.append(identity);
+  left.append(cardHeader);
   const telemetry = el("div", "deck-evidence");
   telemetry.setAttribute("aria-label", "Recorded chat telemetry");
   const check = el("span", "", `CHECKS ${chat.check_state || "—"}`);
@@ -2813,15 +2834,14 @@ function deckHero(chat, kind) {
     else handoff.append(line("Outcome", text.outcome), line("Next", text.next));
   }
   left.append(handoff, telemetry);
-  // The Working log only needs a narrow column; its traces join the gauges on the right instead.
+  // Detailed telemetry is moved into Supporting evidence below.
   const traces = deckTraces(chat, kind);
   if (kind !== "working") {
     const files = deckChangedFiles(chat);
     if (files) left.append(files);
-    if (traces) left.append(traces);
     // Say what this source does not record instead of leaving a silent gap, but only when it truly records
     // neither: a source with step times or token usage may simply not have enough laps yet.
-    else if (!(chat.laps || []).some((lap) => Object.keys(lap.sectors || {}).length) && !(chat.usage_minutes || []).length) {
+    if (!traces && !(chat.laps || []).some((lap) => Object.keys(lap.sectors || {}).length) && !(chat.usage_minutes || []).length) {
       left.append(el("p", "deck-unreported", `${appName(chat)} does not record per-step times or token usage, so laps and token flow are not shown.`));
     }
   }
@@ -2834,13 +2854,15 @@ function deckHero(chat, kind) {
   if (quiet) status.dataset.quiet = "true";
   // The repo follows the status so the line reads as one phrase: "WORKING your-turn".
   heading.prepend(status, deckRepo(chat));
-  right.append(el("span", "deck-time-label", kind === "waiting" ? "WAITING" : kind === "working" ? quiet ? "NO ACTIVITY FOR" : "ELAPSED" : "SINCE RESULT"), timer);
+  const time = el("div", "deck-header-time");
+  time.append(el("span", "deck-time-label", kind === "waiting" ? "WAITING" : kind === "working" ? quiet ? "NO ACTIVITY FOR" : "ELAPSED" : "SINCE RESULT"), timer);
+  cardHeader.append(time);
   const size = contextSize(chat);
   const fill = contextFill(chat.context_used, size);
   const context = el("div", "deck-context");
   const header = el("p", "deck-context-header");
   if (fill) {
-    context.dataset.tone = fill.percent >= 90 ? "red" : fill.percent >= 75 ? "amber" : "green";
+    context.dataset.tone = fillTone(fill.percent, "green");
     header.append(el("span", "deck-percent", `${fill.percent}%`),
       el("span", "deck-context-tokens", `CTX ${tokenCount(chat.context_used, true)} / ${tokenCount(size, true)}`));
     const gauge = el("div", "deck-gauge");
@@ -2858,7 +2880,7 @@ function deckHero(chat, kind) {
     for (let i = 0; i < DECK_CTX_SEGMENTS; i++) {
       const block = el("span", "deck-gauge-block");
       block.style.setProperty("--fill", `${Math.max(0, Math.min(100, (fill.percent - i * step) / step * 100))}%`);
-      const zone = i * step >= 90 ? "red" : i * step >= 75 ? "amber" : "";
+      const zone = fillTone(i * step);
       if (zone) block.dataset.zone = zone;
       block.append(el("span", "deck-gauge-fill"));
       gauge.append(block);
@@ -2885,7 +2907,6 @@ function deckHero(chat, kind) {
   if (kind === "working") right.append(deckVitals(chat));
   const tools = deckTools(chat);
   if (tools) right.append(tools);
-  if (traces && kind === "working") right.append(traces);
   // The context barometer spans the card's full width along its bottom edge.
   hero.append(left, right, context);
   return hero;
@@ -2975,10 +2996,19 @@ function renderDeck(chats) {
       collapse.setAttribute("aria-hidden", "true");
       summary.append(el("span", "", "Supporting evidence · logs, files & history"), collapse);
       supporting.append(summary);
-      supporting.append(...card.querySelectorAll(".deck-files-panel, .deck-traces, .deck-tools, .deck-unreported"));
+      const context = card.querySelector(".deck-context");
+      if (context) {
+        const contextPanel = el("section", "deck-supporting-context");
+        contextPanel.append(el("h3", "deck-supporting-label", "CURRENT CONTEXT"), context.cloneNode(true));
+        supporting.append(contextPanel);
+      }
+      const traces = deckTraces(chat, kind, { supporting: true });
+      if (traces) supporting.append(traces);
+      supporting.append(...card.querySelectorAll(".deck-lap, .deck-vitals, .deck-files-panel, .deck-tools, .deck-unreported"));
+      card.querySelector(".deck-readout").remove();
       const terminal = card.querySelector(".deck-terminal");
       if (terminal) {
-        const history = terminal.cloneNode(true);
+        const history = deckTerminal(chat, { allEvents: true });
         const log = history.querySelector(".deck-terminal-body");
         log.tabIndex = 0;
         log.setAttribute("role", "region");
@@ -2986,12 +3016,8 @@ function renderDeck(chats) {
         supporting.append(history);
       }
       if (kind === "working") {
-        const instruments = card.querySelector(".deck-readout").cloneNode(true);
-        instruments.className = "deck-mobile-telemetry";
-        instruments.setAttribute("aria-label", "Run telemetry");
         const setup = card.querySelector(".deck-setup");
-        if (setup) instruments.prepend(setup.cloneNode(true));
-        supporting.append(instruments);
+        if (setup) supporting.append(setup.cloneNode(true));
       }
       const decisions = (chat.decisions || []).filter((d) => d.chosen !== null);
       // Historical decisions support the current handoff without competing with its next action.
@@ -3008,7 +3034,12 @@ function renderDeck(chats) {
         history.append(list);
         supporting.append(history);
       }
-      if (supporting.children.length > 1) body.append(supporting);
+      if (supporting.children.length > 1) {
+        const panel = el("div", "deck-supporting-body");
+        panel.append(...[...supporting.children].slice(1));
+        supporting.append(panel);
+        body.append(supporting);
+      }
       const footer = el("div", "deck-card-footer");
       const waiting = groups.get("waiting").length;
       if (kind !== "waiting" && waiting && !deckFilter) {
@@ -3370,9 +3401,9 @@ if (!threadId && !deckView) {
     if (event.key === "e") {
       const id = document.activeElement.closest("#sections li")?.querySelector(".row")?.dataset.id;
       const chat = id && inboxData?.find((item) => chatKey(item) === id);
-      if (!chat || !needsAttention(chat) || !chat.attention_key) return;
+      if (!chat || !inboxDismissal(chat)) return;
       event.preventDefault();
-      dismissFromInbox(chat);
+      dismissFromInbox(chat, inboxDismissal(chat));
       return;
     }
     const direction = ["j", "ArrowDown"].includes(event.key) ? 1 : ["k", "ArrowUp"].includes(event.key) ? -1 : 0;
@@ -3382,7 +3413,7 @@ if (!threadId && !deckView) {
     const row = rows.find((row) => row.dataset.id === key);
     if (row) { event.preventDefault(); row.focus(); row.scrollIntoView({ block: "nearest" }); }
   });
-  // Touch has no hover: swiping a Needs you row left reveals Dismiss; past half the row it dismisses.
+  // Touch has no hover: swiping a dismissible row left reveals Dismiss; past half the row it dismisses.
   // Vertical drags stay with the browser (touch-action: pan-y), which cancels the swipe.
   let swipe = null;
   let swipeEnded = -Infinity;
@@ -3486,9 +3517,6 @@ setInterval(() => {
   renderDeckTelemetry();
   for (const node of document.querySelectorAll("[data-lcd]")) updateDeckTimer(node);
   for (const node of document.querySelectorAll("[data-pulse-last]")) updateDeckPulse(node);
-  for (const node of document.querySelectorAll("[data-until]")) {
-    node.textContent = untilShort(node.dataset.until) ? `RESET ${untilClock(node.dataset.until)}` : "";
-  }
 }, 1_000);
 
 

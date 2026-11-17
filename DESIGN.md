@@ -178,23 +178,31 @@ Industrial cyberpunk is the visual vocabulary; comprehension is the acceptance t
   and verification → context headroom → optional supporting evidence → action.
 - Needs you leads with the complete next action in an amber inset. Ready leads with
   the outcome; Working leads with the recorded current-turn log and source freshness.
+  Needs you and Ready keep charts in Supporting evidence so the requested action or result leads.
   A Needs you state is not automatically a blocked agent.
-- Below 960px, Working previews only the latest recorded activity on one line, keeping its state and
-  source labels. Long commands truncate in this preview; the full recorded log is available under
-  Supporting evidence, with a keyboard-focusable scrolling region. Desktop keeps its multi-line log.
+- The first glance keeps status, title, current activity, checks and context headroom together without
+  opening supporting details. Charts, lap phases, pulse, tool counts, files and historical detail
+  wait in Supporting evidence. Opening it repeats the current context meter first, followed by
+  available charts and the full recorded log.
+- Working's main terminal shows at most five of the latest recorded activity rows at every width,
+  inside a content-sized window capped at six text lines. Long content scrolls inside without making
+  the card taller. Below 960px it shows only the latest row on one truncated line, keeping its state
+  and source labels. The full recorded log remains available under Supporting evidence in a
+  keyboard-focusable scrolling region; commands there stay unchanged and may wrap.
+- All card states use one main column: the handoff or log spans the available width, with a compact,
+  labelled duration in the header. On narrow screens the header may wrap; time never reserves a side column.
 - Below 1024px, Working keeps the agent, latest activity, checks, file/decision counts and context in
-  its overview. Model setup, elapsed time, laps, pulse and file names are available in Supporting
+  its overview. Model setup, laps, pulse and file names are available in Supporting
   evidence. Quiet retains its labelled no-activity duration in the overview. The layout toggle hides
   where both layouts resolve to the same single card; the saved desktop choice stays intact.
-- Short landscape windows (600–1023px wide, at most 500px high) use a bounded Working-card exception
-  to the single-column rule: identity/activity/checks on the left, context on the right, detail and
-  actions below. Text still wraps and long content scrolls; no fixed card height or clipped instructions.
+- Short landscape windows retain the same single-column reading order with tighter spacing.
 - Status sits beside the title. Elapsed time has an explicit label and subordinate
   size. Titles and handoff prose wrap; essential instructions never require hover.
 - Check state, file count and decision count stay visible. File paths, tool rankings,
   historical decisions and traces live in a keyboard-accessible Supporting evidence
   disclosure, closed by default on every card.
-  Its open state survives updates for the selected chat.
+  On open, available trace charts lead the evidence; one recorded sample is enough to show a chart,
+  while missing telemetry stays absent. Its open state survives updates for the selected chat.
 - The agent-open action is the visually primary footer control. Review and reminder
   dismissal remain secondary, with their existing safety restrictions and undo.
 - Flat charcoal surfaces, crisp 1px frames, restrained chamfers, the static 32px grid,
@@ -226,7 +234,8 @@ Industrial cyberpunk is the visual vocabulary; comprehension is the acceptance t
 - Section labels stay uppercase scan anchors; readings and values use sentence case ("Resets in
   3h", "157.5K left", "≈21 turns", "22 calls"). Deck text is at least 12px.
 - Supporting evidence starts closed on every card and opens on request; the choice holds for the
-  selected chat. In the fixed-height wide card the footer stays pinned to the bottom: closed, the
+  selected chat. Its full-width summary is a chamfered frame in the selected status tone, so both
+  opening and collapsing read as an action. In the fixed-height wide card the footer stays pinned to the bottom: closed, the
   handoff takes the free space so the evidence row sits just above the buttons; opened, it is a
   drill-in: the hero folds to its header (status, title, agent and repo), the evidence fills the rest
   of the card and scrolls under its sticky bar, which reads COLLAPSE at its end, so the buttons never
@@ -521,9 +530,12 @@ Inbox/chat scale in `tokens.css`.
   so focus order matches), each column scrolling inside itself under a
   sticky label. Sections still fold and start closed, as on the plain chat page: someone who opens the
   chat has time to go through them. The page uses the
-  full window width (no 1440px cap), with the normal side gutters. The columns are plain scrolling blocks, so
-  lists keep their full height; a chat without decisions drops to two columns (5:8) so More is not
-  squeezed beside an empty one. Crossing 1200px re-renders the chat in the matching layout.
+  full window width (no 1440px cap), with the normal side gutters. The status and action card spans
+  the top row, while its prose keeps a readable measure. What happened and More begin together below,
+  with Checks under the outcome. When decisions exist, they keep the middle column. More scrolls
+  beside the outcome instead of competing with the status.
+  The columns are plain scrolling blocks, so lists keep their full height; without decisions the
+  layout uses two columns (5:8). Crossing 1200px re-renders the chat in the matching layout.
   Phones keep the folded rows. Spacing uses only the shared 4px-step tokens; the plain chat
   page is unchanged.
 
@@ -739,7 +751,7 @@ inbox, and blocked local storage leaves server sharing available.
 
 On mobile, group the navigation trigger, Live state and quick theme control at the top right. Move the inbox title to the top-left and keep the phone header compact. Full chat pages retain the Back link on the left.
 
-The footer shows the application version from package metadata and an icon link to the GitHub repository. In split views it sits under the detail pane; the chat list extends to the bottom. Local-session and read-only explanations belong in Help.
+The footer shows the application version from package metadata and an icon link to the GitHub repository. In split views it sits under the detail pane; the chat list extends to the bottom. The full-height desktop detail opened from Deck omits it so the HUD keeps that space for the chat. Local-session and read-only explanations belong in Help.
 
 Chat sections keep intrinsic row heights and align to the top of their scroll container. Sparse filtered lists must not stretch headings or distribute empty space between heading and rows. Split-view sections have no extra top inset.
 
