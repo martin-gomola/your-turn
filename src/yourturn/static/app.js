@@ -2383,8 +2383,9 @@ function deckMini(chat, kind) {
   meta.append(deckAgent(chat), deckRepo(chat), quiet ? deckQuietAge(chat, "deck-mini-time") : deckTimer(deckSince(chat, kind), "deck-mini-time"));
   const fill = contextFill(chat.context_used, contextSize(chat));
   const readout = el("span", "deck-mini-readout");
-  const context = el("span", "deck-mini-context", fill ? `CTX ${fill.percent}%` : "CTX unknown");
-  context.title = fill ? `${tokenCount(chat.context_used, true)} / ${tokenCount(contextSize(chat), true)}` : "Context window not reported";
+  // The bar is the reading; the percent stays for screen readers and the figures for hover.
+  const context = el("span", "deck-mini-context sr-only", fill ? `CTX ${fill.percent}%` : "CTX unknown");
+  readout.title = fill ? `CTX ${fill.percent}% · ${tokenCount(chat.context_used, true)} / ${tokenCount(contextSize(chat), true)}` : "Context window not reported";
   const gauge = el("span", `deck-mini-gauge${fill ? "" : " deck-mini-standby"}`);
   gauge.setAttribute("aria-hidden", "true");
   gauge.dataset.tone = fillTone(fill?.percent, "green");
@@ -2414,7 +2415,21 @@ function renderDeckMatrix(groups, selected) {
   $("deck-stage").dataset.queueEmpty = String(matrix.hidden);
   $("deck-matrix-title").textContent = deckFilter ? `${DECK_NAMES[deckFilter]} QUEUE` : "QUEUE";
   const focused = grid.contains(document.activeElement) && document.activeElement.dataset.select;
-  const cards = entries.map(({ chat, kind }) => deckMini(chat, kind));
+  // Category separators: each status run opens with its name and count, so the list reads as groups, not a stream.
+  // A filtered queue is one category and its title already names it.
+  // Counts include the chat open in the hero, so they match the fleet strip's totals.
+  const counts = {};
+  for (const { kind } of deckEntries(groups)) counts[kind] = (counts[kind] || 0) + 1;
+  const cards = entries.flatMap(({ chat, kind }, i) => {
+    const card = deckMini(chat, kind);
+    if (deckFilter || entries[i - 1]?.kind === kind) return [card];
+    const separator = el("li", "deck-mini-group");
+    separator.dataset.kind = kind;
+    const heading = el("h3", "", DECK_NAMES[kind]);
+    heading.append(el("span", "", String(counts[kind])));
+    separator.append(heading);
+    return [separator, card];
+  });
   const signature = cards.map((card) => card.outerHTML).join("");
   if (grid.dataset.sig !== signature) {
     const scroll = grid.scrollTop;
@@ -2816,8 +2831,13 @@ function deckHero(chat, kind) {
   const check = el("span", "", `CHECKS ${chat.check_state || "—"}`);
   check.dataset.state = chat.check_state || "unknown";
   if (!chat.check_state) check.title = "Checks not reported";
-  telemetry.append(check, el("span", "", `FILES ${chat.changed_files?.length || 0}`),
-    el("span", "", `DECISIONS ${chat.decisions?.filter((d) => d.chosen !== null).length || 0}`));
+  const count = (label, n) => {
+    const item = el("span", "", `${label} ${n}`);
+    if (!n) item.dataset.zero = "true";
+    return item;
+  };
+  telemetry.append(check, count("FILES", chat.changed_files?.length || 0),
+    count("DECISIONS", chat.decisions?.filter((d) => d.chosen !== null).length || 0));
   const handoff = el("div", "deck-handoff");
   const line = (label, value) => {
     const row = el("p");
@@ -2863,8 +2883,11 @@ function deckHero(chat, kind) {
   const header = el("p", "deck-context-header");
   if (fill) {
     context.dataset.tone = fillTone(fill.percent, "green");
-    header.append(el("span", "deck-percent", `${fill.percent}%`),
-      el("span", "deck-context-tokens", `CTX ${tokenCount(chat.context_used, true)} / ${tokenCount(size, true)}`));
+    // The figures sit in their own span: the card face shows percent + bar, Supporting evidence the exact tokens.
+    const tokens = el("span", "deck-context-tokens", "CTX ");
+    tokens.append(el("span", "deck-context-detail", `${tokenCount(chat.context_used, true)} / ${tokenCount(size, true)}`));
+    header.append(el("span", "deck-percent", `${fill.percent}%`), tokens);
+    context.title = `${tokenCount(chat.context_used, true)} / ${tokenCount(size, true)} tokens`;
     const gauge = el("div", "deck-gauge");
     gauge.setAttribute("role", "meter");
     gauge.setAttribute("aria-label", "Context window");
@@ -2886,7 +2909,7 @@ function deckHero(chat, kind) {
       gauge.append(block);
     }
     const remaining = el("p", "deck-context-left");
-    remaining.append(el("span", "", `${tokenCount(left, true)} left`));
+    remaining.append(el("span", "deck-context-tokens-left", `${tokenCount(left, true)} left`));
     if (runway !== null) {
       const turns = el("span", "deck-runway", runway < 1 ? "<1 turn" : `≈${runway > 99 ? "99+" : runway} ${runway === 1 ? "turn" : "turns"}`);
       turns.dataset.low = String(runway <= 3);

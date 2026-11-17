@@ -1000,7 +1000,9 @@ body[data-view="deck"] .deck-cockpit .bar { top: var(--space-1); left: auto; rig
   70% { background-color: var(--led-color); filter: brightness(1.15); }
   to { background-color: var(--led-color); filter: brightness(1); }
 }
-.deck-fleet-readout { --fleet-tone: var(--deck-amber); position: relative; display: flex; align-items: baseline; justify-content: center; gap: var(--space-2); flex: 1; min-height: 36px; padding: var(--space-1) var(--space-3); border: 1px solid transparent; border-left-color: #262930; border-radius: 4px; background: none; color: inherit; white-space: nowrap; font: 750 14px / 1.4 var(--font-sans); cursor: pointer; transition: transform 220ms cubic-bezier(.22,1,.36,1), background-color 220ms ease, border-color 220ms ease; }
+/* Grid, not flex: count and label keep a shared baseline, and align-content centres that line in the button
+   (a single-line flex row with baseline items sits at the top, above the reset icon's centre). */
+.deck-fleet-readout { --fleet-tone: var(--deck-amber); position: relative; display: grid; grid-auto-flow: column; align-items: baseline; align-content: center; justify-content: center; gap: var(--space-2); flex: 1; min-height: 36px; padding: var(--space-1) var(--space-3); border: 1px solid transparent; border-left-color: #262930; border-radius: 4px; background: none; color: inherit; white-space: nowrap; font: 750 14px / 1.4 var(--font-sans); cursor: pointer; transition: transform 220ms cubic-bezier(.22,1,.36,1), background-color 220ms ease, border-color 220ms ease; }
 .deck-fleet-readout[data-kind="working"] { --fleet-tone: var(--deck-purple); }
 .deck-fleet-readout[data-kind="new"] { --fleet-tone: var(--deck-green); }
 @media (hover: hover) { .deck-fleet-readout:hover { z-index: 1; background: #191d23; transform: scale(1.04); } }
@@ -1036,6 +1038,14 @@ body[data-view="deck"] .deck-cockpit .bar { top: var(--space-1); left: auto; rig
 .deck-matrix h2 { margin: 0 0 var(--space-3); color: var(--deck-muted); font-size: 12px; line-height: 1.4; font-weight: 700; letter-spacing: .04em; }
 .deck-mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); align-content: start; overflow-y: auto; min-height: 0; flex: 1; padding: var(--space-1); scroll-snap-type: y mandatory; scroll-padding-block: var(--space-1); scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--deck-muted) 60%, transparent) transparent; overscroll-behavior: contain; }
 .deck-mini-grid li { min-width: 0; scroll-snap-align: start; container-type: inline-size; }
+/* Category separator: the status name in its colour, the count, and a hairline that runs to the edge. */
+.deck-mini-group { --deck-tone: var(--deck-amber); grid-column: 1 / -1; container-type: normal; }
+.deck-mini-group[data-kind="working"] { --deck-tone: var(--deck-purple); }
+.deck-mini-group[data-kind="new"] { --deck-tone: var(--deck-green); }
+.deck-mini-group:not(:first-child) { margin-top: var(--space-3); }
+.deck-mini-group h3 { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--deck-tone); font: 700 12px / 1.4 var(--font-mono); letter-spacing: .08em; }
+.deck-mini-group h3 > span { color: var(--deck-muted); font-weight: 600; }
+.deck-mini-group h3::after { content: ""; flex: 1; height: 1px; background: var(--deck-line); }
 .deck-mini-grid[data-more="true"] { mask-image: linear-gradient(#000 calc(100% - var(--space-6)), transparent); }
 @container (width < 210px) { .deck-mini-meta .deck-repo { display: none; } }
 .deck-mini { --deck-tone: var(--deck-amber); display: grid; gap: var(--space-2); align-content: space-between; width: 100%; height: 100%; min-width: 0; padding: var(--space-2) var(--space-3); border: 1px solid #30353d; border-radius: 8px; background: #11151a; color: var(--deck-text); text-align: left; font: inherit; cursor: pointer; transition: background-color 180ms ease, border-color 180ms ease; }
@@ -1357,10 +1367,9 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
 .deck-fleet { padding: var(--space-2); border-radius: 0; }
 /* Reload: a bare icon that stays quiet beside the brand and spins its arrows while the page reloads. */
 .deck-reload { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; color: var(--deck-muted); background: none; cursor: pointer; }
-/* Brand and icon share the text baseline, so the icon sits on the "Your Turn" line whatever the font metrics;
-   the nudge centres the drawn arrows (inset in their 24px box) on the capital letters. */
-.deck-brand, .deck-reload { align-self: baseline; }
-.deck-reload svg { width: 20px; height: 20px; translate: 0 2px; }
+/* Brand, icon and controls share the row's centre line (.deck-brand-row align-items: center). Baseline alignment broke
+   when the reload icon was hidden (launcher mode): the brand, alone in its baseline group, rose to the row top. */
+.deck-reload svg { width: 20px; height: 20px; }
 .deck-reload:hover, .deck-reload[aria-busy="true"] { color: var(--deck-text); }
 .deck-reload:focus-visible { outline: 2px solid var(--deck-text); outline-offset: -2px; }
 @media (prefers-reduced-motion: no-preference) { .deck-reload[aria-busy="true"] svg { animation: status-working var(--motion-status-working) linear infinite; } }
@@ -1371,20 +1380,37 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
 .deck-card-header > .deck-identity { flex: 1; min-width: 0; }
 .deck-header-time { display: flex; flex: none; align-items: baseline; gap: var(--space-2); color: var(--deck-muted); }
 .deck-header-time .deck-timer { font-size: 14px; font-weight: 600; }
+/* Narrow cards: the clock joins the agent row instead of taking a row of its own. The identity flattens into the
+   header grid (its heading is already display: contents), so the clock can share the agent line. */
 @media (max-width: 600px) {
-  .deck-card-header { flex-wrap: wrap; gap: var(--space-1); }
-  .deck-card-header > .deck-identity { flex-basis: 100%; }
+  .deck-card-header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3) var(--space-2); }
+  .deck-card-header > .deck-identity { display: contents; }
+  /* The agent chip and the model line become rows of their own, so the clock centres on the chip, not on both. */
+  .deck-card-header > .deck-identity .deck-heading > .deck-meta { display: contents; }
+  .deck-card-header .deck-meta > .deck-agent { grid-column: 1 / 4; grid-row: 3; justify-self: start; }
+  .deck-card-header .deck-meta > .deck-setup { grid-column: 1 / -1; grid-row: 4; margin-top: calc(var(--space-2) - var(--space-3)); }
+  .deck-card-header > .deck-identity .deck-heading > .deck-repo { grid-column: 3 / -1; }
+  .deck-card-header > .deck-header-time { grid-column: 4; grid-row: 3; justify-self: end; }
 }
 .deck-readout::before { display: none; }
-.deck-evidence { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-4); font: 12px / 1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
-.deck-evidence > span { padding: var(--space-1) var(--space-2); border: 1px solid var(--deck-line); color: var(--deck-muted); }
+/* Plain readings, not boxed chips: the frames were non-data ink, and zero counts recede so a non-zero value stands out. */
+.deck-evidence { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin-top: var(--space-4); font: 12px / 1.5 var(--font-mono); font-variant-numeric: tabular-nums; }
+.deck-evidence > span { color: var(--deck-text); }
+.deck-evidence > span[data-zero="true"] { color: var(--deck-muted); }
 .deck-evidence > span[data-state="passed"] { color: var(--deck-green); }
 .deck-evidence > span[data-state="failed"] { color: #fca5a5; }
 .deck-evidence > span[data-state="unchecked"] { color: var(--deck-amber); }
 .deck-terminal::after { display: none; }
 .deck-group { border: 1px solid var(--deck-line); }
 .deck-matrix, .deck-mini { border-radius: 0; }
-.deck-mini { border-left: 3px solid var(--deck-tone); }
+/* Queue rows, "dark cockpit": the category separator carries status, so rows drop the frame, the accent bar and the
+   status icon. Only the exception lights up: a quiet chat keeps its amber icon. Hover and focus still show the tone. */
+.deck-mini { border-color: transparent; }
+.deck-mini:not([data-quiet="true"]) .deck-mini-head > svg { display: none; }
+/* READY is history: its age recedes; NEEDS YOU and WORKING clocks keep full weight. */
+.deck-mini[data-kind="new"]:not([data-quiet="true"]) .deck-mini-time { color: var(--deck-muted); font-weight: 500; }
+/* Card face: percent + bar (+ runway, the actionable "time to limit"). Exact tokens live in Supporting evidence. */
+:is(.deck-readout, .deck-hero) > .deck-context :is(.deck-context-detail, .deck-context-tokens-left) { display: none; }
 @media (prefers-reduced-motion: no-preference) {
   .deck-group { interpolate-size: allow-keywords; }
   .deck-group::details-content { block-size: 0; overflow: clip; transition: block-size 220ms cubic-bezier(.22,1,.36,1), content-visibility 220ms allow-discrete; }
@@ -1410,7 +1436,7 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
 .deck-context-tokens { color: var(--deck-muted); font-size: 12px; font-weight: 600; }
 .deck-gauge { padding-bottom: var(--space-2); }
 .deck-handoff p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; white-space: normal; overflow: hidden; }
-.deck-evidence > span[data-state="unknown"] { border-color: transparent; }
+.deck-evidence > span[data-state="unknown"] { color: var(--deck-muted); }
 .deck-card-jump { min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--deck-amber); border-radius: 0; background: color-mix(in srgb, var(--deck-amber) 10%, transparent); color: var(--deck-amber); font: 700 12px / 1.4 var(--font-sans); cursor: pointer; }
 .deck-card-jump:hover { background: color-mix(in srgb, var(--deck-amber) 18%, transparent); }
 .deck-card-jump:focus-visible { outline: 2px solid var(--deck-amber); outline-offset: 2px; }
@@ -1539,8 +1565,14 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 .deck-gauge-block[data-zone="red"] { background: color-mix(in srgb, #f87171 26%, #2a2d31); }
 .deck-gauge-block[data-zone="amber"] .deck-gauge-fill { background: var(--deck-amber); }
 .deck-gauge-block[data-zone="red"] .deck-gauge-fill { background: #f87171; }
-@media (max-width: 599px) {
+/* Phones keep the brand on one line so it shares the row's centre with reload and Live; a stacked brand left the
+   centred reload icon floating between its two lines. Only sub-360px screens, where one line overflows, stack. */
+@media (max-width: 359px) {
   .deck-brand { flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+  /* With the reset sharing their row, a count label like "NEEDS YOU" may need two lines. */
+  .deck-fleet-readout { white-space: normal; line-height: 1.1; text-align: left; }
+}
+@media (max-width: 599px) {
   .deck-brand > span > span { display: none; }
   .deck-hero > .deck-context { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "used left" "gauge gauge"; }
 }
@@ -1553,12 +1585,15 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 }
 @media (max-width: 599px) {
   body[data-view="deck"] .page { padding-inline: var(--space-4); padding-bottom: calc(var(--space-6) * 5 + env(safe-area-inset-bottom)); }
-  .deck-fleet { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0; }
-  /* Row 1: reset at the leading edge, lights centred on the whole strip (they share the reset's row,
-     not a leftover column, so they sit on the strip's centre line). */
-  .deck-fleet-all { grid-column: 1; grid-row: 1; justify-self: start; margin: 0; }
-  .deck-lights { grid-column: 1 / -1; grid-row: 1; justify-self: center; align-self: center; width: auto; height: 32px; padding: 0; margin: 0; }
-  /* Dividers only between counts: the first never doubles the strip's own edge. */
+  /* Row 1: the reset sits in line with the three counts it clears. Row 2: the lights run full width as a
+     segmented bar, drawn like the context gauge, instead of floating octagons on a row of their own. */
+  .deck-fleet { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); align-items: center; padding: var(--space-1) var(--space-2) var(--space-2); row-gap: var(--space-1); }
+  .deck-fleet-all { grid-column: 1; grid-row: 1; margin: 0; }
+  .deck-fleet-readout { grid-row: 1; }
+  .deck-lights { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-column: 1 / -1; grid-row: 2; gap: var(--space-1); width: auto; height: auto; padding: 0; margin: 0; }
+  .deck-lights > span { width: auto; height: 6px; border-radius: 2px; }
+  .deck-lights > span::before { border-radius: 2px; clip-path: none; }
+  /* Dividers only between counts: the first never doubles the reset's frame. */
   .deck-lights + .deck-fleet-readout { border-left-color: transparent; }
   /* Header controls share one treatment: 44px squares framed like the layout toggle. */
   body[data-view="deck"] .deck-cockpit .menu-toggle { width: 44px; height: 44px; border: 1px solid var(--deck-line); border-radius: 0; }
@@ -1774,7 +1809,7 @@ body[data-connection="offline"] #deck-view *, body[data-connection="offline"] #d
 :root[data-deck-theme="warm"] :is(.deck-card, .deck-matrix, .deck-fleet, .deck-mini, .deck-trace, .deck-usage-card, .deck-files-panel, .deck-row, .deck-supporting > summary) { background-color: #2d2a2f; }
 :root[data-deck-theme="warm"] :is(.deck-card, .deck-matrix, .deck-fleet) { --hud-frame: rgb(240 228 220 / .18); }
 :root[data-deck-theme="warm"] .deck-card[data-selected="true"] { --hud-frame: var(--deck-tone); }
-:root[data-deck-theme="warm"] .deck-mini { border-color: rgb(240 228 220 / .14); }
+:root[data-deck-theme="warm"] .deck-mini:hover { border-color: rgb(240 228 220 / .14); }
 :root[data-deck-theme="warm"] .deck-feature:not([hidden])::after { color: rgb(240 228 220 / .5); }
 :root[data-deck-theme="warm"] .deck-gauge-fill { background: #d6ccc4; }
 :root[data-deck-theme="warm"] .deck-gauge-block { background: #3d393f; }
