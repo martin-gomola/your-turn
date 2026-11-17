@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 
 from yourturn.app import create_app
 from yourturn.engine import MAX_LOG, SessionHub, TurnFolder
-from yourturn.harness.base import END_NOT_RECORDED, AgentMessage, CommandRun, FilesEdited, TurnEnded, TurnStarted, Usage
-from yourturn.harness.codex import DECISION_TOOL, CodexAdapter, record_to_events
+from yourturn.harness.base import DECISION_TOOL, END_NOT_RECORDED, AgentMessage, CommandRun, FilesEdited, TurnEnded, TurnStarted, Usage
+from yourturn.harness.codex import CodexAdapter, record_to_events
 from yourturn.heuristics import QUIET_SECONDS
 from yourturn.model import SessionKey, SessionRef
 
@@ -831,7 +831,9 @@ def test_version_and_fingerprint_change_only_on_append(tmp_path: Path) -> None:
 
 
 def test_inbox_row_ranks_mcp_tool_calls_with_latest_call(tmp_path: Path) -> None:
-    call = lambda n, tool: _item(n, {"type": "McpToolCall", "server": "docs", "tool": tool, "status": "completed", "arguments": {}})
+    def call(n: int, tool: str) -> dict[str, Any]:
+        return _item(n, {"type": "McpToolCall", "server": "docs", "tool": tool, "status": "completed", "arguments": {}})
+
     records = [_meta(SID), _event(1, {"type": "task_started", "turn_id": "t1"}),
                call(2, "search"), call(3, "fetch"), call(4, "search")]
     _write(tmp_path, SID, records)

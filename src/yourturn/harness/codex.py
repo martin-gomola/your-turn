@@ -16,8 +16,14 @@ from pathlib import Path
 from typing import Any
 
 from yourturn.harness.base import (
-    EventCursor,
+    DECISION_TOOL,
+    OUTPUT_TAIL,
+    SUBAGENT_TOOL,
+    TURN_COMPLETED,
     HarnessAdapter,
+    JsonlCursor,
+    command_line,
+    parse_ts,
     AgentMessage,
     CommandRun,
     ContextCompacted,
@@ -37,11 +43,6 @@ from yourturn.model import Capabilities, Handoff, Harness, SessionRef
 # --- Shared Codex rollout knowledge -------------------------------------------------------------
 
 ROLLOUT_GLOB = "*/*/*/rollout-*.jsonl"
-DECISION_TOOL = "log_decision"
-# Synthetic ToolCall name for a question the agent asked the user (Codex carries them on AgentMessage).
-ASK_USER_TOOL = "ask_user"
-# Synthetic ToolCall name for a sub-agent being started.
-SUBAGENT_TOOL = "subagent"
 # Substring prefilter: rollout files carry multi-megabyte encrypted reasoning lines we never need to parse.
 WANTED = (b'"item_completed"', b'"task_started"', b'"task_complete"', b'"turn_aborted"', b'"session_meta"', b'"turn_context"', b'"token_count"')
 TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens", "total_tokens")
@@ -49,8 +50,6 @@ SHELL_WRAPPERS = {"-lc", "-c"}
 QUESTION_REPLY = re.compile(r"<send_user_message_question_reply>\s*(.*?)\s*</send_user_message_question_reply>", re.DOTALL)
 # Codex prepends app and environment context to user messages; it is not what the user typed.
 INJECTED_CONTEXT = re.compile(r"<([\w-]*context[\w-]*|user_instructions)\b[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
-TURN_COMPLETED = "completed"
-OUTPUT_TAIL = 400
 
 
 def _token_counts(value: object) -> dict[str, int]:
@@ -94,8 +93,7 @@ def _full_command(item: dict[str, Any]) -> str:
 
 
 def _command(item: dict[str, Any]) -> str:
-    lines = _full_command(item).splitlines()
-    return _clip(lines[0] if lines else "", 120)
+    return command_line(_full_command(item))
 
 
 def is_background(source: object) -> bool:
@@ -115,35 +113,6 @@ def codex_home() -> Path:
     """`$CODEX_HOME`, else `~/.codex` (Codex's own default)."""
     raw = os.environ.get("CODEX_HOME")
     return Path(raw).expanduser() if raw else Path.home() / ".codex"
-
-
-class _Stamp(datetime):
-    """A parsed rollout timestamp that keeps its source text, so `format_ts` echoes it unchanged."""
-
-    raw = ""
-
-
-def parse_ts(value: object) -> datetime | None:
-    """Parse a rollout ISO timestamp (`...Z`) into an aware UTC datetime; None when absent/bad."""
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        parsed = _Stamp.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    parsed.raw = value
-    return parsed
-
-
-def format_ts(value: datetime | None) -> str:
-    """Inverse of `parse_ts` for `Step.at` / `Check.at` strings ("" when unknown)."""
-    if value is None:
-        return ""
-    if isinstance(value, _Stamp) and value.raw:
-        return value.raw
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _int_or_none(value: object) -> int | None:
@@ -314,56 +283,8 @@ def parse_line(raw: bytes) -> dict[str, Any] | None:
 # --- Cursor --------------------------------------------------------------------------------------
 
 
-class CodexCursor(EventCursor):
-    """Byte-offset incremental reader over one rollout file.
-
-    Other JSONL harnesses subclass it and override `_parse`, `_events` and `_head_events`.
-    """
-
-    def __init__(self, ref: SessionRef) -> None:
-        if ref.path is None:
-            raise ValueError("CodexCursor needs a SessionRef with a path")
-        self._ref = ref
-        self._path: Path = ref.path
-        self._offset = 0
-        self._skip_partial = False
-        self._head: list[Event] = []
-        # Bumped whenever the file shrank and the cursor rewound; consumers must rebuild state.
-        self.truncations = 0
-
-    @property
-    def ref(self) -> SessionRef:
-        return self._ref
-
-    @property
-    def path(self) -> Path:
-        return self._path
-
-    def reset(self) -> None:
-        self._offset = 0
-        self._skip_partial = False
-        self._head = []
-
-    def skip_to_tail(self, max_bytes: int) -> None:
-        """Before the first read, start `max_bytes` from the end (keeping the session_meta header)."""
-        try:
-            size = self._path.stat().st_size
-        except OSError:
-            return
-        self.seek(max(0, size - max_bytes))
-
-    def seek(self, start: int) -> None:
-        """Before the first read, start at byte `start` (keeping the session_meta header).
-
-        The first partial line after the seek point is discarded.
-        """
-        if self._offset != 0 or start <= 0:
-            return
-        self._offset, self._skip_partial, self.skipped_bytes = start, True, start
-        try:
-            self._head = self._head_events()
-        except (OSError, ValueError, TypeError, AttributeError):
-            self._head = []
+class CodexCursor(JsonlCursor):
+    """Incremental reader over one rollout file."""
 
     def _head_events(self) -> list[Event]:
         """Header events replayed when reading starts mid-file: the session_meta first line."""
@@ -378,41 +299,6 @@ class CodexCursor(EventCursor):
 
     def _events(self, record: dict[str, Any]) -> list[Event]:
         return record_to_events(record)
-
-    def read_new(self) -> list[Event]:
-        events, self._head = self._head, []
-        try:
-            size = self._path.stat().st_size
-        except OSError:
-            return events
-        if size < self._offset:
-            self.reset()
-            self.truncations += 1
-        if size <= self._offset:
-            return events
-        try:
-            # Line by line: rollouts can be hundreds of megabytes and must not be loaded whole.
-            with self._path.open("rb") as handle:
-                handle.seek(self._offset)
-                while self._offset < size:
-                    raw = handle.readline()
-                    if not raw.endswith(b"\n"):
-                        break
-                    self._offset += len(raw)
-                    if self._skip_partial:
-                        self._skip_partial = False
-                        continue
-                    record = self._parse(raw)
-                    if record is None:
-                        continue
-                    # One unexpected record must not stop the rest of the file from being read.
-                    try:
-                        events.extend(self._events(record))
-                    except (TypeError, AttributeError, ValueError):
-                        continue
-        except OSError:
-            pass
-        return events
 
 
 # --- Adapter -------------------------------------------------------------------------------------

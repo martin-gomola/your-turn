@@ -36,9 +36,14 @@ from typing import Any
 from urllib.parse import quote
 
 from yourturn.harness.base import (
+    ASK_USER_TOOL,
+    DECISION_TOOL,
     END_NOT_RECORDED,
+    SUBAGENT_TOOL,
+    TURN_COMPLETED,
     EventCursor,
     HarnessAdapter,
+    JsonlCursor,
     AgentMessage,
     ApprovalPending,
     CommandRun,
@@ -50,8 +55,8 @@ from yourturn.harness.base import (
     TurnStarted,
     Usage,
     UserMessage,
+    command_line,
 )
-from yourturn.harness.codex import ASK_USER_TOOL, DECISION_TOOL, SUBAGENT_TOOL, TURN_COMPLETED, CodexCursor, _command
 from yourturn.heuristics import clip
 from yourturn.model import Capabilities, Handoff, Harness, SessionRef
 
@@ -138,7 +143,7 @@ def _edited_paths(name: str, arguments: object) -> tuple[str, ...]:
     return (str(path),) if path else ()
 
 
-class CursorCursor(CodexCursor):
+class CursorCursor(JsonlCursor):
     """Incremental reader over one Cursor agent transcript.
 
     Cursor can run a later turn without writing it to the transcript until it ends. While the header
@@ -283,7 +288,7 @@ class CursorCursor(CodexCursor):
     def _tool(self, name: str, arguments: Any) -> list[Event]:
         args = arguments if isinstance(arguments, dict) else {}
         if name == "Shell":
-            return [CommandRun(ts=self._ts, command=_command({"command": args.get("command") or ""}))]
+            return [CommandRun(ts=self._ts, command=command_line(str(args.get("command") or "")))]
         if name in EDIT_TOOLS or name == "ApplyPatch":
             return [FilesEdited(ts=self._ts, paths=_edited_paths(name, arguments))]
         if name == "AskQuestion":

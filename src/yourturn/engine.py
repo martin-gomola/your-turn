@@ -25,7 +25,11 @@ from typing import Any
 
 from yourturn.config import DEFAULT_HISTORY_DAYS
 from yourturn.harness.base import (
+    ASK_USER_TOOL,
+    DECISION_TOOL,
     END_NOT_RECORDED,
+    SUBAGENT_TOOL,
+    TURN_COMPLETED,
     AgentMessage,
     ApprovalPending,
     ToolPending,
@@ -42,16 +46,10 @@ from yourturn.harness.base import (
     TurnStarted,
     Usage,
     UserMessage,
-)
-from yourturn.harness.codex import (
-    ASK_USER_TOOL,
-    DECISION_TOOL,
-    SUBAGENT_TOOL,
-    TURN_COMPLETED,
-    CodexAdapter,
     format_ts,
     parse_ts,
 )
+from yourturn.harness.codex import CodexAdapter
 from yourturn.harness.claude import ClaudeAdapter
 from yourturn.harness.cursor import CursorAdapter
 from yourturn import usage

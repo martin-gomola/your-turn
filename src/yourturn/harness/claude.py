@@ -20,8 +20,14 @@ from pathlib import Path
 from typing import Any
 
 from yourturn.harness.base import (
+    ASK_USER_TOOL,
+    DECISION_TOOL,
     END_NOT_RECORDED,
+    OUTPUT_TAIL,
+    SUBAGENT_TOOL,
+    TURN_COMPLETED,
     HarnessAdapter,
+    JsonlCursor,
     AgentMessage,
     CommandRun,
     Event,
@@ -34,15 +40,7 @@ from yourturn.harness.base import (
     TurnStarted,
     Usage,
     UserMessage,
-)
-from yourturn.harness.codex import (
-    ASK_USER_TOOL,
-    DECISION_TOOL,
-    OUTPUT_TAIL,
-    SUBAGENT_TOOL,
-    TURN_COMPLETED,
-    CodexCursor,
-    _command,
+    command_line,
     parse_ts,
 )
 from yourturn.heuristics import clip
@@ -105,7 +103,7 @@ def _tool_name(name: str) -> str:
 
 
 def _first_line(command: object) -> str:
-    return _command({"command": command if isinstance(command, str) else ""})
+    return command_line(command if isinstance(command, str) else "")
 
 
 def _pending_label(name: str, arguments: dict[str, Any]) -> str:
@@ -118,7 +116,7 @@ def _pending_label(name: str, arguments: dict[str, Any]) -> str:
     return _tool_name(name)
 
 
-class ClaudeCursor(CodexCursor):
+class ClaudeCursor(JsonlCursor):
     """Incremental reader over one Claude Code transcript."""
 
     def __init__(self, ref: SessionRef) -> None:
