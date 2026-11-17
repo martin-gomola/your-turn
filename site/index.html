@@ -24,15 +24,8 @@
   <p class="lead"><strong>Your Turn</strong> shows your coding-agent chats in one local inbox, with a handoff skill for clear results and next steps. It runs on your machine, reads the logs your agents already write, and sends nothing to the cloud.</p>
   <div class="workspace">
     <section class="choices panel" aria-label="Setup">
-      <fieldset class="field-group">
-        <legend class="field-label"><span class="field-step" aria-hidden="true">01</span><span>Install with</span></legend>
-        <div class="options">
-          <label><input type="radio" name="method" value="uv" checked><span>uv<small>Recommended. Downloads Python if needed.</small></span></label>
-          <label><input type="radio" name="method" value="nix"><span>Nix<small>Runs the pinned flake.</small></span></label>
-        </div>
-      </fieldset>
       <fieldset class="field-group" id="uv-group">
-        <legend class="field-label"><span class="field-step" aria-hidden="true">02</span><span>Do you have <code>uv</code>?</span></legend>
+        <legend class="field-label"><span class="field-step" aria-hidden="true">01</span><span>Do you have <code>uv</code>?</span></legend>
         <div class="options">
           <label><input type="radio" name="uv" value="have" checked><span>Yes<small>Skip this step.</small></span></label>
           <label><input type="radio" name="uv" value="brew"><span>No, use Homebrew<small><code>brew install uv</code></small></span></label>
@@ -40,10 +33,10 @@
         </div>
       </fieldset>
       <fieldset class="field-group">
-        <legend class="field-label"><span class="field-step" aria-hidden="true">03</span><span>Options</span></legend>
+        <legend class="field-label"><span class="field-step" aria-hidden="true">02</span><span>Options</span></legend>
         <div class="options single">
           <label><input type="checkbox" id="doctor" checked><span>Dry run first<small><code>doctor</code> lists the files <code>install</code> would write. It changes nothing.</small></span></label>
-          <label><input type="checkbox" id="autostart"><span>Start the inbox with Codex<small>Persistent install plus an opt-in Codex session-start hook. macOS and Linux, uv only.</small></span></label>
+          <label><input type="checkbox" id="autostart"><span>Start the inbox with Codex<small>Persistent install plus an opt-in Codex session-start hook. macOS and Linux.</small></span></label>
         </div>
       </fieldset>
       <p class="related">Only want the handoff skill, without the inbox? <a href="https://martin-gomola.github.io/my-agent-skills/">Install the skill only <span aria-hidden="true">↗</span></a></p>
@@ -63,15 +56,21 @@
   </div>
   <section class="shots" aria-label="Screenshots">
     <figure class="panel">
-      <img src="images/desktop.png" width="2974" height="2116" alt="Your Turn dark inbox in Focus Mode, with Codex, Claude Code, and Cursor chats grouped by status" loading="lazy">
+      <img src="images/inbox-light.png" width="2974" height="2116" alt="Your Turn inbox in the light theme, with Codex, Claude Code, and Cursor chats grouped by status" loading="lazy">
       <figcaption>The inbox, with made-up demo chats.</figcaption>
     </figure>
     <figure class="panel">
-      <img src="images/deck.gif" width="960" height="600" alt="The Deck telemetry view on a running Codex chat, with its recorded log, lap timers, context gauge, queue and plan usage" loading="lazy">
+      <img src="images/deck.gif" width="960" height="600" alt="The Deck on a running Codex chat: the RUN phase code, live timer and lap delta, recorded log, context gauge, queue and plan usage" loading="lazy">
       <figcaption>The Deck, for a second screen or tablet.</figcaption>
+    </figure>
+    <figure class="panel shots-wide">
+      <img src="images/deck-launcher.png" width="2532" height="1170" alt="The Deck launcher on a phone held sideways: app shortcuts as large chamfered tiles" loading="lazy">
+      <figcaption>The Deck launcher on a phone in landscape.</figcaption>
     </figure>
   </section>
   <footer class="app-footer">
+    <!-- Filled from PyPI at load: the release `uvx your-turn@latest` installs. Hidden if PyPI cannot be reached. -->
+    <a id="version" class="version" href="https://pypi.org/project/your-turn/" hidden></a>
     <a href="https://github.com/martin-gomola/your-turn#privacy">Privacy</a>
     <a href="https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md">Configuration and uninstall <span aria-hidden="true">↗</span></a>
   </footer>

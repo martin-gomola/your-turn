@@ -17,7 +17,7 @@ site: site-assets
 # Separate only because CI needs the copy without a server that never exits.
 site-assets:
 	@mkdir -p site/images
-	@cp docs/images/desktop.png docs/images/deck.gif src/yourturn/static/icon.svg site/images/
+	@cp docs/images/inbox-light.png docs/images/deck.gif docs/images/deck-launcher.png src/yourturn/static/icon.svg site/images/
 
 update-skill:
 	@uv run --quiet python scripts/sync-handoff.py --source "$(HANDOFF_SOURCE)"

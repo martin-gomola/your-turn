@@ -3,17 +3,11 @@ const getUv = {
   brew: ['brew install uv'],
   script: ['curl -LsSf https://astral.sh/uv/install.sh | sh'],
 };
-const nix = 'nix run github:martin-gomola/your-turn --';
-
 // One command per line, in the order to run them. `install` comes last because it starts the inbox and keeps the terminal.
-export function installation({method = 'uv', uv = 'have', doctor = true, autostart = false} = {}) {
-  if (!['uv', 'nix'].includes(method)) throw Error('Unknown method');
+// PyPI through uv is the one promoted path; Nix stays documented in the README only.
+export function installation({uv = 'have', doctor = true, autostart = false} = {}) {
   if (!Object.hasOwn(getUv, uv)) throw Error('Unknown uv choice');
   if (typeof doctor !== 'boolean' || typeof autostart !== 'boolean') throw Error('Invalid option');
-  if (method === 'nix') {
-    if (autostart) throw Error('Autostart needs a uv tool install');
-    return [...(doctor ? [`${nix} doctor`] : []), `${nix} install`].join('\n');
-  }
   const run = autostart ? 'your-turn' : 'uvx your-turn@latest';
   return [
     ...getUv[uv],
@@ -48,19 +42,13 @@ if (typeof document !== 'undefined') {
     clearTimeout(resetCopy);
     byId('copy').textContent = 'Copy commands';
     byId('status').textContent = '';
-    const method = value('method');
-    const nixMethod = method === 'nix';
-    byId('uv-group').hidden = nixMethod;
-    byId('autostart').disabled = nixMethod;
-    if (nixMethod) byId('autostart').checked = false;
-    const options = {method, uv: value('uv'), doctor: byId('doctor').checked, autostart: byId('autostart').checked};
+    const options = {uv: value('uv'), doctor: byId('doctor').checked, autostart: byId('autostart').checked};
     byId('commands').textContent = installation(options);
     byId('summary').textContent = [
-      nixMethod ? 'Nix' : 'uv',
       options.doctor ? 'dry run first' : 'no dry run',
       options.autostart ? 'Codex autostart' : 'starts in this terminal',
     ].join(' · ');
-    byId('uv-note').hidden = nixMethod || options.uv === 'have';
+    byId('uv-note').hidden = options.uv === 'have';
     byId('autostart-note').hidden = !options.autostart;
   }
   document.querySelector('.choices').addEventListener('change', render);
@@ -84,4 +72,14 @@ if (typeof document !== 'undefined') {
     }
   });
   render();
+  // The footer names the release the commands install. A failed lookup leaves it hidden rather than guessing.
+  fetch('https://pypi.org/pypi/your-turn/json')
+    .then((response) => response.ok ? response.json() : Promise.reject())
+    .then(({info}) => {
+      if (!/^\d+\.\d+\.\d+/.test(info?.version || '')) return;
+      byId('version').textContent = `v${info.version} on PyPI`;
+      byId('version').href = `https://pypi.org/project/your-turn/${info.version}/`;
+      byId('version').hidden = false;
+    })
+    .catch(() => {});
 }

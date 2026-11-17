@@ -113,7 +113,7 @@ def write_gif(frames: list[tuple[Path, float]], tmp: Path, name: str, hold: floa
 
 
 def deck_gif(browser) -> None:
-    """Film the Deck on its running Codex chat: the spinning status icon, live timers and the recorded log."""
+    """Film the Deck on its running Codex chat, then capture the launcher on a phone in landscape."""
     port = free_port()
     # The Deck demo serves its own made-up plan usage, so no real usage capture is read.
     server = subprocess.Popen([str(ROOT / ".venv" / "bin" / "python"), "-m", "demo.deck", str(port)], cwd=ROOT,
@@ -124,9 +124,11 @@ def deck_gif(browser) -> None:
         page = browser.new_page(viewport={"width": 1440, "height": 900}, color_scheme="dark")
         page.add_init_script("localStorage.setItem('theme', 'dark')")
         page.goto(base + "/deck")
-        page.wait_for_selector('.deck-mini[data-kind="working"]')
-        page.locator('.deck-mini[data-kind="working"]').first.click()
-        page.wait_for_selector('.deck-card[data-kind="working"]')
+        # A live run (RUN), not the demo's quiet one (IDLE): spinning icon, live timer, recorded log.
+        running = '.deck-mini[data-kind="working"][data-quiet="false"]'
+        page.wait_for_selector(running)
+        page.locator(running).first.click()
+        page.wait_for_selector('.deck-card[data-phase="run"]')
         page.mouse.move(0, 0)
         page.wait_for_timeout(800)
         with tempfile.TemporaryDirectory() as tmp:
@@ -139,10 +141,24 @@ def deck_gif(browser) -> None:
                 frames.append((shot, taken))
             page.close()
             write_gif(frames, Path(tmp), "deck.gif", hold=0.1)
+        deck_launcher(browser, base)
     finally:
         server.terminate()
         server.wait()
 
+
+
+def deck_launcher(browser, base: str) -> None:
+    """The Deck's launcher mode on a phone held sideways (iPhone 14-class landscape, 844×390)."""
+    phone = browser.new_page(viewport={"width": 844, "height": 390}, device_scale_factor=3, is_mobile=True,
+                             has_touch=True, color_scheme="dark", reduced_motion="reduce")
+    phone.add_init_script("localStorage.setItem('theme', 'dark'); localStorage.setItem('your-turn.deck.mode', 'simple')")
+    phone.goto(base + "/deck")
+    phone.wait_for_selector("#deck-launcher:not([hidden])")
+    phone.wait_for_timeout(1200)
+    phone.screenshot(path=str(OUT / "deck-launcher.png"))
+    phone.close()
+    print("wrote docs/images/deck-launcher.png")
 
 
 def main() -> None:
@@ -162,6 +178,16 @@ def main() -> None:
             desk.screenshot(path=str(OUT / "desktop.png"))
             desk.close()
             print("wrote docs/images/desktop.png")
+
+            # The install page shows the inbox in the light theme.
+            light = browser.new_page(viewport={"width": 1487, "height": 1058}, device_scale_factor=2,
+                                     color_scheme="light", reduced_motion="reduce")
+            light.add_init_script("localStorage.setItem('theme', 'light'); localStorage.setItem('compact-header', 'true')")
+            light.goto(base + "/")
+            light.wait_for_timeout(1500)
+            light.screenshot(path=str(OUT / "inbox-light.png"))
+            light.close()
+            print("wrote docs/images/inbox-light.png")
 
             # Your Turn forbids framing, so the in-app browser pane shows a capture of it instead.
             pane = browser.new_page(viewport={"width": 420, "height": 700}, device_scale_factor=2,
