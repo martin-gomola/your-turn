@@ -7,8 +7,7 @@
 ![Works with Codex · Claude Code · Cursor](https://img.shields.io/badge/Works%20with-Codex%20%C2%B7%20Claude%20Code%20%C2%B7%20Cursor-56645f)
 ![Local · Read-only](https://img.shields.io/badge/Local-Read--only-2f7a6b)
 
-[Quick start](#quick-start) · [Handoff skill](#handoff-skill) · [Why Your Turn](#why-your-turn) ·
-[Your inbox](#your-inbox) · [Privacy](#privacy) · [Docs](#docs)
+[Quick start](#quick-start) · [Handoff skill](#handoff-skill) · [Your inbox](#your-inbox) · [Privacy](#privacy) · [Docs](#docs)
 
 </div>
 
@@ -24,19 +23,25 @@
 
 ## Quick start
 
-Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats. To pick your options and copy the commands in one click, use the [install page](https://martin-gomola.github.io/your-turn/).
+Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats.
+
+> [!TIP]
+> **[Open the install page](https://martin-gomola.github.io/your-turn/)** to pick your agents and options and copy the matching commands.
+
+---
 
 ### Full setup
 
 You need [`uv`](https://docs.astral.sh/uv/) and Codex, Claude Code, or Cursor. `uv` downloads Python 3.11 or newer if you do not have it. Without `uv`, install it first with `brew install uv` or [uv's installer](https://docs.astral.sh/uv/getting-started/installation/).
 
-To see which files `install` would write, run `uvx your-turn@latest doctor` first; it changes nothing. Then run:
-
 ```bash
 uvx your-turn@latest install
 ```
 
-Run in a terminal, `install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
+`install` adds the Your Turn handoff instructions to the agent apps it finds, then starts the inbox. Restart those agent apps, then open [http://localhost:8787](http://localhost:8787).
+
+> [!NOTE]
+> To preview which files `install` would write without changing anything, run `uvx your-turn@latest doctor`.
 
 To start the inbox on later visits, or if you already have the skill, run:
 
@@ -91,64 +96,25 @@ Only `install` and `uninstall` change agent app folders. To see what `install` w
 
 </details>
 
+---
+
 <a id="install-the-skill"></a>
 
 ### Skill only (no server)
 
-Install **your-turn-handoff** from
+Install **your-turn-handoff** with
 [the my-agent-skills installer](https://martin-gomola.github.io/my-agent-skills/).
-Select the skill, your coding agents, and project or global scope, then copy and
-run the generated command. Installation uses the Skills CLI and requires Node.js
-22.20+ and Git; no inbox, `uv` or Python is needed. Generated commands disable
-Skills CLI telemetry for that run.
-
-Start a new agent chat and ask:
-
-```text
-Use your-turn-handoff for the final answers in this chat.
-```
-
-The skill is maintained in
-[my-agent-skills](https://github.com/martin-gomola/my-agent-skills/tree/main/skills/your-turn-handoff).
-Follow its [update and removal instructions](https://github.com/martin-gomola/my-agent-skills/blob/main/docs/install.md)
-to manage that installation. Agent behavior determines when the skill loads.
-
-If you later want the inbox, run `uvx your-turn@latest serve`. Keep your existing
-skill installation; you do not need to run `install` again. Full setup already
-includes a bundled handoff, so choose one installation route to avoid duplicates.
+See [docs/handoff.md](./docs/handoff.md#install-only-the-skill) for requirements, first use, and adding the inbox later.
 
 <a id="why-install-the-handoff"></a>
 
 ## Handoff skill
 
-The handoff asks the agent to put its result and the action that needs you in predictable lines. Here, you asked the agent to compare import policies and wait for your choice before implementation.
-
-Without the handoff:
-
-```text
-I recommend skipping invalid rows and logging them so valid rows can still import.
-The alternative is stopping at the first invalid row. Which policy should I implement?
-```
-
-With the handoff:
-
-```text
-**Outcome:** Skipping and logging invalid rows is recommended so valid rows can still import.
-
-**Next step:** decide: skip and log invalid rows, or stop at the first invalid row?
-```
-
-If your input is needed, `Next step` names the answer, decision, review, approval, or command. Otherwise, it says `none`. Longer chats keep a `Recap`, and consequential choices get a `Decision`. See the [full handoff format](./docs/configuration.md#handoff-contract).
-
-## Why Your Turn
-
-When Codex, Claude Code, and Cursor run side by side, the slow part is your attention. The chat blocked on you sits in a window you are not looking at, and every answer is a long log.
-
-Your Turn keeps the result and next step in the chat, with an optional view across chats. It is not another orchestrator, IDE wrapper, or cloud dashboard. The inbox reads the logs agents already write and leaves execution, answers, and approvals in their own apps.
+The handoff asks the agent to add to each answer an `Outcome` line and a `Next step` line that names what needs you, or `none`. See [docs/handoff.md](./docs/handoff.md) for an example.
 
 ## Your inbox
 
-Add the local inbox when you want to see which chats need you across Codex, Claude Code, and Cursor.
+The inbox shows which Codex, Claude Code, and Cursor chats need you. It is not an orchestrator or IDE wrapper: execution, answers, and approvals stay in each agent's app.
 
 <details>
 <summary>See the inbox beside a chat</summary>
@@ -172,16 +138,13 @@ Add the local inbox when you want to see which chats need you across Codex, Clau
 </details>
 <br>
 
-The optional inbox is read-only and zero-config on `localhost:8787`. It reads the JSONL logs your agents already write and the local Cursor chat database. It answers three questions at a glance:
+The inbox runs on `localhost:8787` and reads the JSONL logs your agents already write and the local Cursor chat database. For each chat it shows:
 
-- ⏳ **Who is waiting on you?**<br>
-  Questions, pending approvals, and unreviewed results, ordered by how long they have waited.<br>
-- ✅ **Can you trust the result without reading the log?**<br>
-  `Check failed` and `Edits unchecked` badges tied to the latest code edit.<br>
-- ➡️ **What is the exact next step?**<br>
-  One line per chat, with one click to open or resume it in its app.<br>
+- Questions, pending approvals, and unreviewed results, ordered by how long they have waited.
+- `Check failed` and `Edits unchecked` badges tied to the latest code edit.
+- The next step in one line, with one click to open or resume the chat in its app.
 
-The inbox runs on your machine. It does not take over agent processes or send chat data to the cloud. It uses no cloud account or extra agent permissions. From a phone or tablet, "Open in Codex" and "Open in Cursor" ask your Mac to open that chat's own link, the same as clicking it there.
+From a phone or tablet, "Open in Codex" and "Open in Cursor" ask your Mac to open that chat's link.
 
 ## Privacy
 
@@ -195,6 +158,7 @@ The inbox runs on your machine. It does not take over agent processes or send ch
 | Guide | What it covers |
 | --- | --- |
 | [docs/harnesses.md](./docs/harnesses.md) | Data sources by OS, supported apps, inbox states, checks, and limits |
+| [docs/handoff.md](./docs/handoff.md) | What the handoff looks like, and installing only the skill |
 | [docs/configuration.md](./docs/configuration.md) | CLI commands and flags, app setup, handoff format, and development |
 | [DESIGN.md](./DESIGN.md) | UI design contract and references |
 | [docs/agents-snippet.md](./docs/agents-snippet.md) | Handoff format to add to agent instructions by hand |
