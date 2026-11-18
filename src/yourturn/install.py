@@ -247,6 +247,7 @@ def install_plugin(home: Path | None = None) -> bool:
         entries = []
     if not isinstance(entries, list):
         entries = []
+    # Marketplace name from before the repo became your-turn-loop and dropped its Codex plugin; only older installs carry it.
     standalone = "your-turn-handoff@my-agent-skills"
     if any(isinstance(entry, dict) and entry.get("pluginId") == standalone and entry.get("installed") and entry.get("enabled") for entry in entries):
         if any(isinstance(entry, dict) and entry.get("pluginId") == PLUGIN and entry.get("installed") for entry in entries):

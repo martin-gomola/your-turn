@@ -26,7 +26,7 @@ See the [full handoff format](./configuration.md#handoff-contract).
 ## Install only the skill
 
 Install **your-turn-handoff** from
-[the my-agent-skills installer](https://martin-gomola.github.io/my-agent-skills/).
+[the your-turn-loop installer](https://martin-gomola.github.io/your-turn-loop/).
 Select the skill, your coding agents, and project or global scope, then copy and
 run the generated command. Installation uses the Skills CLI and requires Node.js
 22.20+ and Git; no inbox, `uv` or Python is needed. Generated commands disable
@@ -39,8 +39,8 @@ Use your-turn-handoff for the final answers in this chat.
 ```
 
 The skill is maintained in
-[my-agent-skills](https://github.com/martin-gomola/my-agent-skills/tree/main/skills/your-turn-handoff).
-Follow its [update and removal instructions](https://github.com/martin-gomola/my-agent-skills/blob/main/docs/install.md)
+[your-turn-loop](https://github.com/martin-gomola/your-turn-loop/tree/main/skills/your-turn-handoff).
+Follow its [update and removal instructions](https://github.com/martin-gomola/your-turn-loop/blob/main/docs/install.md)
 to manage that installation. Agent behavior determines when the skill loads.
 
 If you later want the inbox, run `uvx your-turn@latest serve`. Keep your existing

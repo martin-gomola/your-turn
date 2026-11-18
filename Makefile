@@ -2,7 +2,7 @@ PORT ?= 8787
 STATE_DIR ?= $(HOME)/.your-turn
 LOG_FILE := $(STATE_DIR)/server.log
 MARKETPLACE := your-turn
-HANDOFF_SOURCE ?= ../my-agent-skills
+HANDOFF_SOURCE ?= ../your-turn-loop
 HANDOFF_REF ?= origin/main
 
 SITE_PORT ?= 8791

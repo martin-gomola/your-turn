@@ -41,7 +41,7 @@ def sync(source: Path, root: Path = ROOT, ref: str = "HEAD") -> None:
     target.mkdir(parents=True, exist_ok=True)
     for name, data in contents.items():
         (target / name).write_bytes(data)
-    record = {"repository": "https://github.com/martin-gomola/my-agent-skills.git", "commit": commit,
+    record = {"repository": "https://github.com/martin-gomola/your-turn-loop.git", "commit": commit,
               "path": SOURCE, "files": {name: hashlib.sha256(data).hexdigest() for name, data in contents.items()}}
     (root / "handoff-source.json").write_text(json.dumps(record, indent=2) + "\n")
     check(root)
@@ -49,7 +49,7 @@ def sync(source: Path, root: Path = ROOT, ref: str = "HEAD") -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, help="local my-agent-skills checkout")
+    parser.add_argument("--source", type=Path, help="local your-turn-loop checkout")
     parser.add_argument("--ref", default="origin/main",
                         help="commit to snapshot (default: origin/main, fetched first; HEAD for local commits)")
     parser.add_argument("--check", action="store_true", help="verify the packaged snapshot without Git or network access")

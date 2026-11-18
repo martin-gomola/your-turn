@@ -23,7 +23,7 @@
 
 ## Quick start
 
-Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **my-agent-skills** for handoffs in your existing chats.
+Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **your-turn-loop** for handoffs in your existing chats.
 
 > [!TIP]
 > **[Open the install page](https://martin-gomola.github.io/your-turn/)** to pick your agents and options and copy the matching commands.
@@ -103,7 +103,7 @@ Only `install` and `uninstall` change agent app folders. To see what `install` w
 ### Skill only (no server)
 
 Install **your-turn-handoff** with
-[the my-agent-skills installer](https://martin-gomola.github.io/my-agent-skills/).
+[the your-turn-loop installer](https://martin-gomola.github.io/your-turn-loop/).
 See [docs/handoff.md](./docs/handoff.md#install-only-the-skill) for requirements, first use, and adding the inbox later.
 
 <a id="why-install-the-handoff"></a>

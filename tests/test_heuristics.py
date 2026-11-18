@@ -234,10 +234,12 @@ def test_skill_examples_parse_as_documented() -> None:
     from yourturn.install import plugin_text
 
     examples = plugin_text("skills/your-turn-handoff/SKILL.md").split("## Examples", 1)[1]
-    done, needs, choice = re.findall(r"```\n(.*?)```", examples, re.DOTALL)
+    done, release, needs, choice = re.findall(r"```\n(.*?)```", examples, re.DOTALL)
     assert parse_answer(done) == ("The last page now shows its final row.", "none", "", True)
     assert parse_recap(done) == ""
     assert parse_decisions(done) == []
+    assert parse_answer(release)[1:] == ("run", "git push --force-with-lease origin main && git push origin v0.1.0", True)
+    assert parse_recap(release) == "Release prepared. Original history is backed up locally; publishing remains yours."
     assert parse_answer(needs)[1:] == ("review", "confirm the skipped-row log format in importer.py", True)
     assert parse_recap(needs) == "Goal: tolerate bad rows. Settled: skip and log to keep valid rows. Open: your log-format review."
     assert parse_decisions(needs) == [{"question": "Skip or abort on a malformed row?", "options": ["skip and log", "abort", "silent skip"],
