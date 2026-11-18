@@ -7,7 +7,7 @@
 ![Works with Codex · Claude Code · Cursor](https://img.shields.io/badge/Works%20with-Codex%20%C2%B7%20Claude%20Code%20%C2%B7%20Cursor-56645f)
 ![Local · Read-only](https://img.shields.io/badge/Local-Read--only-2f7a6b)
 
-[Quick start](#quick-start) · [Handoff skill](#handoff-skill) · [Your inbox](#your-inbox) · [Privacy](#privacy) · [Docs](#docs)
+[Why Your Turn](#why-your-turn-instead-of-another-agent-framework) · [Quick start](#quick-start) · [Handoff skill](#handoff-skill) · [Your inbox](#your-inbox) · [Privacy](#privacy) · [Docs](#docs)
 
 </div>
 
@@ -20,6 +20,24 @@
 <sub>The optional inbox, with made-up demo chats from <code>make screenshots</code>. The skill also works on its own.</sub>
 
 </div>
+
+## Why Your Turn instead of another agent framework?
+
+Most multi-agent tools assume you want autonomous swarms spending API tokens inside a custom wrapper terminal. **Your Turn** and [**Your Turn Loop**](https://github.com/martin-gomola/your-turn-loop) take the opposite approach, for developers who run several local coding agents in parallel every day:
+
+| | Agent frameworks | Wrapper and multiplexer UIs | **Your Turn + Loop** |
+| :--- | :--- | :--- | :--- |
+| **Billing and auth** | Separate API keys and pay-per-token billing | Varies; often a custom runner config | **Zero API keys.** Uses the CLI logins and subscriptions you already have |
+| **Runtime footprint** | Orchestrator daemons and SDK lock-in | Wraps or takes over your terminal sessions | **Read-only local inbox** plus portable `SKILL.md` files |
+| **Control model** | Autonomous loops you can't see into | Manual tab-switching across sessions | **You decide; checks verify.** Each result ends with `Outcome` and `Next step`, naming what needs you or `none` |
+| **Cross-agent work** | Custom Python or TypeScript graphs | Separate panes and manual copy-paste | **One orchestrator chat** that delegates through the agent CLIs (`ask` for second opinions, `relay` for builds in their own git worktree) and reads the results back |
+
+### Core philosophy
+
+1. **Your agents are fast. You're the queue.** When Codex, Claude Code, and Cursor run in parallel, the bottleneck isn't model speed. It's knowing which chat needs your input next.
+2. **No terminal or app lock-in.** Keep using Ghostty, iTerm, VS Code, or each agent's own app. Your Turn reads the logs and local chat database your agents already write, and sends nothing to the cloud.
+3. **One conversation, not copy-paste between windows.** You talk to one orchestrator. It delegates to the other agents and reviews what they return, because every agent ends with the same `Outcome` and `Next step`.
+4. **You step in at decisions, not at every step.** The orchestrator reviews each delegated diff, so routine checks don't wait on you. The inbox shows the results that need your call, and you carry one into the next brief with [what-to-ask](https://github.com/martin-gomola/your-turn-loop).
 
 ## Quick start
 
