@@ -2025,3 +2025,6 @@ body[data-view="deck"] .connection .connection-dot { background: currentColor; }
 .deck-delegate .deck-agent { padding: 0 var(--space-2); font-size: 12px; line-height: 16px; }
 .deck-delegate-title { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .deck-delegate-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--deck-muted); }
+
+/* Inbox: a delegated chat sits indented under its orchestrator's row, a rule marking the branch. */
+#sections li[data-delegate] > .row { padding-inline-start: calc(var(--space-5) + var(--size-row-glyph)); background-image: linear-gradient(var(--color-separator), var(--color-separator)); background-size: 2px 100%; background-position: calc(var(--space-5) + var(--size-row-glyph) / 2 - 1px) 0; background-repeat: no-repeat; }

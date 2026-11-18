@@ -177,7 +177,7 @@ function deckOrder(groups) {
 
 // Delegated chats ride under their orchestrator instead of filling the queue: a Codex subagent names its
 // parent thread, and a relay worker runs in <repo>/.relay/<slug>, so its parent is the latest chat in <repo>
-// that started before it. A parent the Deck does not show (`canParent` false) leaves its children on their own.
+// that started before it. A child `canParent(parent, chat)` refuses (say a parent the view hides) stays on its own.
 // Returns the top-level chats and parent key -> children.
 function deckDelegates(chats, canParent = () => true) {
   const byId = new Map(chats.map((chat) => [chat.id, chat]));
@@ -190,7 +190,7 @@ function deckDelegates(chats, canParent = () => true) {
       parent = chats.filter((other) => other.cwd === relay[0] && (other.started_at || "") <= (chat.started_at || ""))
         .sort((a, b) => (b.started_at || "").localeCompare(a.started_at || ""))[0];
     }
-    if (!parent || parent === chat || !canParent(parent)) { top.push(chat); continue; }
+    if (!parent || parent === chat || !canParent(parent, chat)) { top.push(chat); continue; }
     const key = chatKey(parent);
     if (!children.has(key)) children.set(key, []);
     children.get(key).push(chat);
@@ -348,6 +348,7 @@ const wideDetail = matchMedia("(min-width: 1280px)");
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const WORKING_SPIN_PERIOD_MS = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-status-working"));
 let inboxData = null;
+let inboxChildren = new Map(); // orchestrator key -> delegated chats nested under its row, from renderInbox
 let previousNewResultsCount = null;
 let incomingBadgeTimer = null;
 let inboxLayout = "";
@@ -782,7 +783,13 @@ function renderSection({ key, label }, chats, fold = "") {
   }
   const list = el("ol", "list");
   list.id = `list-${key}`;
-  list.replaceChildren(...chats.slice(0, limit).map(renderRow));
+  // Delegated chats follow their orchestrator as indented sibling rows, so each keeps its own swipe and Dismiss.
+  list.replaceChildren(...chats.slice(0, limit).flatMap((chat) => [renderRow(chat), ...(inboxChildren.get(chatKey(chat)) || []).map((child) => {
+    const item = renderRow(child);
+    item.dataset.delegate = "";
+    item.querySelector(".row-title").prepend(el("span", "sr-only", `Delegated by ${chatName(chat)}: `));
+    return item;
+  })]));
   if (chats.length === 0) list.append(el("li", "empty column-empty", "No chats"));
   wrap.append(list);
   if (chats.length > limit) {
@@ -866,7 +873,11 @@ function liveInbox(chats) {
 function renderInbox(chats) {
   inboxData = chats;
   const focusedHref = document.activeElement.closest(".row, .show-all")?.getAttribute("href");
-  const groups = groupChats(filterInbox(chats, searchQuery));
+  // Delegated chats nest under their orchestrator's row, unless they need you or a status filter would hide it.
+  const delegates = deckDelegates(filterInbox(chats, searchQuery), (parent, child) => !needsAttention(child)
+    && (inboxStatus ? sectionOf(parent) === inboxStatus : sectionOf(parent) !== "earlier" || sectionOf(child) === "earlier"));
+  inboxChildren = delegates.children;
+  const groups = groupChats(delegates.top);
   inboxLayout = layoutOf(groups);
   // The approved inbox is a list at every width; wide screens can still open a detail pane.
   const shown = SECTIONS.filter(({ key }) => inboxStatus ? key === inboxStatus && groups.get(key).length > 0 : groups.get(key).length > 0);
