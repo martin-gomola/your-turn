@@ -134,8 +134,9 @@ calls in older transcripts still read as decisions.
 - Opening a finished result updates seen state and all filter counts immediately, including cross-tab
   storage updates. It does not complete a recorded user action.
 - A Needs you row can dismiss its reminder in place, for a request already handled in the agent app:
-  the struck-through bell, the status card's dismiss action, takes the place of the age and chevron
-  on hover or keyboard focus; `e` dismisses the focused row. Touch screens have no hover, so the row
+  the struck-through bell with the word Dismiss, in the age's muted type on the row's own background,
+  takes the place of the age and chevron on hover or keyboard focus (on the title's first line in
+  stacked rows), fading in from the left so long text recedes under it rather than a floating chip; `e` dismisses the focused row. Touch screens have no hover, so the row
   covers a labeled Dismiss action until it is swiped left; a swipe past half the row dismisses at
   once, a tap on an open row closes it, and vertical drags keep scrolling. The chat moves to Earlier as Reminder dismissed, with the same row transition as live
   updates, focus moves to the next row, and an Undo toast rises in and stays for 8 seconds, or while

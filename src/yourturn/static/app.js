@@ -2460,6 +2460,8 @@ function deckMini(chat, kind) {
   readout.append(gauge, context);
   button.append(head, meta, readout);
   item.append(button);
+  const review = deckReviewButton(chat, kind, "deck-mini-review");
+  if (review) item.append(review);
   return item;
 }
 
@@ -2519,6 +2521,8 @@ $("deck-feature").addEventListener("keydown", (event) => {
 });
 
 $("deck-mini-grid").addEventListener("click", (event) => {
+  const review = event.target.closest("[data-review]");
+  if (review) { reviewDeckChat(review.dataset.review); return; }
   const button = event.target.closest("[data-select]");
   if (!button) return;
   selectDeckChat(button.dataset.select);
