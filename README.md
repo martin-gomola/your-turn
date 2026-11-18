@@ -39,6 +39,10 @@ Most multi-agent tools assume you want autonomous swarms spending API tokens ins
 3. **One conversation, not copy-paste between windows.** You talk to one orchestrator. It delegates to the other agents and reviews what they return, because every agent ends with the same `Outcome` and `Next step`.
 4. **You step in at decisions, not at every step.** The orchestrator reviews each delegated diff, so routine checks don't wait on you. The inbox shows the results that need your call, and you carry one into the next brief with [what-to-ask](https://github.com/martin-gomola/your-turn-loop).
 
+### Why I built this
+
+I built this after realizing I had four terminal tabs open across Claude Code, Codex, and Cursor. One of them had been sitting idle for 20 minutes waiting on a single y/n approval while I was reviewing another diff. Worse, I kept copying a plan from one agent, pasting it into another for a second opinion, and losing track of which window finished what. I wanted one quiet place to see who actually needs me, and a simple contract so one agent can hand work to another without me playing human clipboard.
+
 ## Quick start
 
 Choose [Full setup](#full-setup) for the inbox and handoff skill, or install [just the skill](#skill-only-no-server) from **your-turn-loop** for handoffs in your existing chats.
