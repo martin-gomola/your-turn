@@ -13,6 +13,7 @@ preference is read or written. Each chat exists to show one state; the card it l
 | Speed up the nightly export job        | RUN        | fourth lap at 92% context (red zone), runway under one turn, live tool, Δ delta |
 | Reindex the invoice search             | IDLE       | working but silent for half an hour (quiet)                    |
 | Add hourly forecast chart (Claude Code)| RUN → IDLE | turns quiet about two minutes after start-up                   |
+| Split the payments service             | RUN        | orchestrator: two relay workers listed under DELEGATED, +2 in the queue |
 | Rename every legacy billing setting …  | DONE       | long title; a slow last lap (Δ in amber or red)               |
 | Bump all dependencies                  | DONE       | turn stopped by the user                                       |
 | Add a CSV export button                | DONE       | finished two days ago (Earlier)                                |
@@ -150,8 +151,29 @@ def ready() -> list[Chat]:
     return [renamed, stopped, earlier]
 
 
+def delegated() -> list[Chat]:
+    """An orchestrator with two relay workers in <repo>/.relay/<slug>: one finished, one still running."""
+    boss = (Chat(19, "Split the payments service", "payments", 30)
+            .ask("Split payments into a refunds and a payouts module; relay the pieces.")
+            .think("**Briefing two relay workers**").run("git worktree add -b relay/refunds .relay/refunds HEAD"))
+    boss.run("git worktree add -b relay/payouts .relay/payouts HEAD")
+    boss.clock = 1  # it reviews the finished worker now, so it reads RUN, not quiet
+    boss.think("**Reviewing the refunds diff while payouts runs**").run("git diff main...relay/refunds --stat")
+    refunds = (Chat(20, "Move refunds into their own module", "payments/.relay/refunds", 25)
+               .ask("Move every refund path into payments/refunds; keep the public API.")
+               .edit("payments/refunds/__init__.py", "payments/refunds/service.py").run("uv run pytest -q tests/refunds")
+               .answer("**Outcome:** Refunds live in payments/refunds; the public API is unchanged and 48 tests pass.\n\n"
+                       "**Next step:** none."))
+    payouts = (Chat(21, "Move payouts into their own module", "payments/.relay/payouts", 20)
+               .ask("Move payouts into payments/payouts; keep the public API.")
+               .think("**Untangling the payout scheduler**"))
+    payouts.clock = 1.5
+    payouts.edit("payments/payouts/scheduler.py")
+    return [boss, refunds, payouts]
+
+
 def qa_chats() -> list[Chat]:
-    return [*needs_you(), *working(), *ready(), *demo_chats()[1:]]
+    return [*needs_you(), *working(), *delegated(), *ready(), *demo_chats()[1:]]
 
 
 def main() -> None:
