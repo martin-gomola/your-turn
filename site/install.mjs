@@ -37,17 +37,30 @@ if (typeof document !== 'undefined') {
   });
   syncThemeToggle();
   let resetCopy;
+  // One span per line so CSS can draw the $ prompt; tokens get colours. textContent stays the commands.
+  function paint(target, commands) {
+    target.replaceChildren(...commands.split('\n').flatMap((line, index) => {
+      const row = document.createElement('span'); row.className = 'line';
+      line.split(/(\s+)/).forEach((token, position) => {
+        if (!token.trim()) { row.append(token); return; }
+        const kind = position === 0 ? 'cmd' : /^https?:|^\|$/.test(token) ? 'muted' : token.startsWith('your-turn') ? 'repo' : token.startsWith('-') ? 'flag' : 'arg';
+        const span = document.createElement('span'); span.className = `tok-${kind}`; span.textContent = token; row.append(span);
+      });
+      return index ? ['\n', row] : [row];
+    }));
+  }
   const value = name => document.querySelector(`input[name="${name}"]:checked`)?.value;
   function render() {
     clearTimeout(resetCopy);
     byId('copy').textContent = 'Copy commands';
     byId('status').textContent = '';
     const options = {uv: value('uv'), doctor: byId('doctor').checked, autostart: byId('autostart').checked};
-    byId('commands').textContent = installation(options);
-    byId('summary').textContent = [
-      options.doctor ? 'dry run first' : 'no dry run',
-      options.autostart ? 'Codex autostart' : 'starts in this terminal',
-    ].join(' · ');
+    paint(byId('commands'), installation(options));
+    byId('summary').replaceChildren(...[
+      [options.uv === 'have' ? 'uv ready' : 'installs uv', options.uv === 'have'],
+      [options.doctor ? 'dry run first' : 'no dry run', options.doctor],
+      [options.autostart ? 'Codex autostart' : 'this terminal', options.autostart],
+    ].map(([text, on]) => { const span = document.createElement('span'); span.textContent = text; span.toggleAttribute('data-on', on); return span; }));
     byId('uv-note').hidden = options.uv === 'have';
     byId('autostart-note').hidden = !options.autostart;
   }
@@ -58,7 +71,7 @@ if (typeof document !== 'undefined') {
       await navigator.clipboard.writeText(command);
       if (byId('commands').textContent !== command) return;
       clearTimeout(resetCopy);
-      byId('copy').textContent = 'Copied';
+      byId('copy').textContent = 'Copied!';
       resetCopy = setTimeout(() => { byId('copy').textContent = 'Copy commands'; }, 2500);
       byId('status').textContent = 'Commands copied. Paste them in your terminal.';
     } catch {
