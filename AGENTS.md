@@ -15,6 +15,6 @@ other checkouts. Images shown in `README.md` belong in `docs/images/`.
 ## Handoff source
 
 `plugin/skills/your-turn-handoff/` is a generated, pinned snapshot of the canonical
-skill in `my-agent-skills`. Update it with `scripts/sync-handoff.py --source <checkout>`;
+skill in `your-turn-loop`. Update it with `scripts/sync-handoff.py --source <checkout>`;
 do not hand-edit it. The snapshot and `handoff-source.json` must ship together so
 PyPI builds and installs work without the source repository. See `docs/handoff-source.md`.

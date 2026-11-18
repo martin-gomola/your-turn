@@ -1,6 +1,6 @@
 # Handoff source and packaged snapshot
 
-The maintained handoff lives in `martin-gomola/my-agent-skills` under
+The maintained handoff lives in `martin-gomola/your-turn-loop` under
 `skills/your-turn-handoff/`. The copy in
 `plugin/skills/your-turn-handoff/` is a generated snapshot, tracked so the existing
 Your Turn GitHub plugin and the PyPI package both include the files.
@@ -11,11 +11,11 @@ To refresh it from a reviewed, committed local checkout:
 make update-skill
 ```
 
-The default source is `../my-agent-skills`. Update that checkout first to pick up
+The default source is `../your-turn-loop`. Update that checkout first to pick up
 remote changes. For a checkout elsewhere:
 
 ```bash
-make update-skill HANDOFF_SOURCE=/path/to/my-agent-skills
+make update-skill HANDOFF_SOURCE=/path/to/your-turn-loop
 ```
 
 Commit the generated snapshot and `handoff-source.json` together. The record pins
