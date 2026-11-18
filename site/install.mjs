@@ -53,6 +53,7 @@ if (typeof document !== 'undefined') {
   function render() {
     clearTimeout(resetCopy);
     byId('copy').textContent = 'Copy commands';
+    byId('copy').removeAttribute('data-copied');
     byId('status').textContent = '';
     const options = {uv: value('uv'), doctor: byId('doctor').checked, autostart: byId('autostart').checked};
     paint(byId('commands'), installation(options));
@@ -71,8 +72,9 @@ if (typeof document !== 'undefined') {
       await navigator.clipboard.writeText(command);
       if (byId('commands').textContent !== command) return;
       clearTimeout(resetCopy);
-      byId('copy').textContent = 'Copied!';
-      resetCopy = setTimeout(() => { byId('copy').textContent = 'Copy commands'; }, 2500);
+      byId('copy').textContent = '✓ Copied to clipboard';
+      byId('copy').dataset.copied = '';
+      resetCopy = setTimeout(() => { byId('copy').textContent = 'Copy commands'; byId('copy').removeAttribute('data-copied'); }, 1800);
       byId('status').textContent = 'Commands copied. Paste them in your terminal.';
     } catch {
       if (byId('commands').textContent !== command) return;
