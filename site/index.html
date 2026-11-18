@@ -7,8 +7,8 @@
 <title>Install · Your Turn</title>
 <link rel="icon" href="images/icon.svg" type="image/svg+xml">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch{document.documentElement.dataset.theme='light'}</script>
-<link rel="stylesheet" href="style.css?v=1">
-<script type="module" src="install.mjs?v=1"></script>
+<link rel="stylesheet" href="style.css?v=telemetry-2">
+<script type="module" src="install.mjs?v=telemetry-1"></script>
 <body>
 <!-- GitHub mark from Primer Octicons (MIT). -->
 <header>
@@ -22,6 +22,9 @@
 <main>
   <h1>Your agents are fast. You're the queue.</h1>
   <p class="lead"><strong>Your Turn</strong> shows your coding-agent chats in one local inbox, with a handoff skill for clear results and next steps. It runs on your machine, reads the logs your agents already write, and sends nothing to the cloud.</p>
+  <ul class="trust" aria-label="How it runs">
+    <li>Local-only inbox</li><li>Reads existing logs</li><li>Zero API keys</li><li>Human-in-the-loop</li>
+  </ul>
   <div class="workspace">
     <section class="choices panel" aria-label="Setup">
       <fieldset class="field-group" id="uv-group">
@@ -41,19 +44,42 @@
       </fieldset>
       <p class="related">Only want the handoff skill, without the inbox? <a href="https://martin-gomola.github.io/your-turn-loop/">Install the skill only <span aria-hidden="true">↗</span></a></p>
     </section>
-    <section id="install-panel" class="result panel" aria-labelledby="result-title">
-      <div class="result-heading">
+    <section id="install-panel" class="result terminal panel" aria-labelledby="result-title">
+      <div class="term-bar">
+        <span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <h2 id="result-title">Your commands</h2>
-        <button id="copy" type="button">Copy commands</button>
+        <span class="term-path" aria-hidden="true">~</span>
       </div>
-      <p id="summary" class="result-summary"></p>
-      <pre id="commands" tabindex="0" aria-label="Install commands"></pre>
-      <p id="uv-note" class="help" hidden>If <code>uv</code> is not found right after installing it, open a new terminal and paste the rest.</p>
-      <p id="autostart-note" class="help" hidden>Then review the hook in <code>/hooks</code> in the Codex CLI or <b>Settings → Hooks</b> in the app. If <code>your-turn</code> is not found, run <code>uv tool update-shell</code> and open a new terminal. Disable it with <code>your-turn autostart disable</code>.</p>
-      <p class="help">Paste in a terminal. <code>install</code> adds the handoff to the agent apps it finds, then starts the inbox. Restart those apps and open <a href="http://localhost:8787">localhost:8787</a>. Keep the terminal open; stop with Ctrl+C.</p>
-      <p id="status" role="status" aria-live="polite"></p>
+      <div class="term-body">
+        <p id="summary" class="term-badges"></p>
+        <pre id="commands" tabindex="0" aria-label="Install commands"></pre>
+        <div class="term-actions">
+          <button id="copy" type="button">Copy commands</button>
+          <p id="status" role="status" aria-live="polite"></p>
+        </div>
+        <p id="uv-note" class="help" hidden>If <code>uv</code> is not found right after installing it, open a new terminal and paste the rest.</p>
+        <p id="autostart-note" class="help" hidden>Then review the hook in <code>/hooks</code> in the Codex CLI or <b>Settings → Hooks</b> in the app. If <code>your-turn</code> is not found, run <code>uv tool update-shell</code> and open a new terminal. Disable it with <code>your-turn autostart disable</code>.</p>
+        <p class="help">Paste in a terminal. <code>install</code> adds the handoff to the agent apps it finds, then starts the inbox. Restart those apps and open <a href="http://localhost:8787">localhost:8787</a>. Keep the terminal open; stop with Ctrl+C.</p>
+      </div>
     </section>
   </div>
+  <section class="loop panel" aria-labelledby="loop-title">
+    <div class="loop-heading">
+      <div>
+        <p class="kicker">Cross-agent loop</p>
+        <h2 id="loop-title">Your Turn is the last stage of the loop</h2>
+        <p class="loop-text">Your orchestrator agent briefs and delegates work to the other agents you already use. Every result ends with the same Outcome and Next step, and the inbox shows which ones need you. The skills for the first three stages live in <a href="https://martin-gomola.github.io/your-turn-loop/">Your Turn Loop</a>.</p>
+      </div>
+      <a class="button-link" href="https://martin-gomola.github.io/your-turn-loop/">Choose loop skills <span aria-hidden="true">→</span></a>
+    </div>
+    <ol class="loop-steps">
+      <li><span class="step-head"><span class="field-step">01</span><span class="step-state">Loop</span></span><strong>Brief</strong><small>Rough notes become a brief another agent can act on.</small><span class="chips"><code>what-to-ask</code></span></li>
+      <li><span class="step-head"><span class="field-step">02</span><span class="step-state">Loop</span></span><strong>Delegate</strong><small>A second opinion, a build in its own worktree, or an image.</small><span class="chips"><code>ask</code><code>relay</code><code>codex-image</code></span></li>
+      <li><span class="step-head"><span class="field-step">03</span><span class="step-state">Loop</span></span><strong>Result</strong><small>Every agent ends with the same Outcome and Next step.</small><span class="chips"><code>your-turn-handoff</code></span></li>
+      <li class="is-here"><span class="step-head"><span class="field-step">04</span><span class="step-state">You are here</span></span><strong>Your turn</strong><small>This inbox shows which results need you. You carry one back as the next brief.</small><span class="chips"><code>your-turn</code></span></li>
+    </ol>
+    <div class="loop-return" aria-hidden="true"><span>↺ Next brief</span></div>
+  </section>
   <section class="shots" aria-label="Screenshots">
     <figure class="panel">
       <img src="images/inbox-light.png" width="2974" height="2116" alt="Your Turn inbox in the light theme, with Codex, Claude Code, and Cursor chats grouped by status" loading="lazy">
