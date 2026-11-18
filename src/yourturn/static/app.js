@@ -175,6 +175,29 @@ function deckOrder(groups) {
     [key, key === "working" ? [...chats].sort(by("working_since")) : key === "new" ? [...chats].sort(by("turn_ended_at")) : chats]));
 }
 
+// Delegated chats ride under their orchestrator instead of filling the queue: a Codex subagent names its
+// parent thread, and a relay worker runs in <repo>/.relay/<slug>, so its parent is the latest chat in <repo>
+// that started before it. A child `canParent(parent, chat)` refuses (say a parent the view hides) stays on its own.
+// Returns the top-level chats and parent key -> children.
+function deckDelegates(chats, canParent = () => true) {
+  const byId = new Map(chats.map((chat) => [chat.id, chat]));
+  const children = new Map();
+  const top = [];
+  for (const chat of chats) {
+    let parent = chat.parent_id && byId.get(chat.parent_id);
+    const relay = !parent && (chat.cwd || "").split("/.relay/");
+    if (relay?.length === 2) {
+      parent = chats.filter((other) => other.cwd === relay[0] && (other.started_at || "") <= (chat.started_at || ""))
+        .sort((a, b) => (b.started_at || "").localeCompare(a.started_at || ""))[0];
+    }
+    if (!parent || parent === chat || !canParent(parent, chat)) { top.push(chat); continue; }
+    const key = chatKey(parent);
+    if (!children.has(key)) children.set(key, []);
+    children.get(key).push(chat);
+  }
+  return { top, children };
+}
+
 // Usage limits are per account, so the chat that reported last speaks for all; an ended window is dropped.
 function latestQuota(chats, now = Date.now()) {
   const newest = chats.reduce((best, chat) => (chat.rate_limits_at || "") > (best?.rate_limits_at || "") ? chat : best, null);
@@ -325,6 +348,7 @@ const wideDetail = matchMedia("(min-width: 1280px)");
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const WORKING_SPIN_PERIOD_MS = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-status-working"));
 let inboxData = null;
+let inboxChildren = new Map(); // orchestrator key -> delegated chats nested under its row, from renderInbox
 let previousNewResultsCount = null;
 let incomingBadgeTimer = null;
 let inboxLayout = "";
@@ -759,7 +783,13 @@ function renderSection({ key, label }, chats, fold = "") {
   }
   const list = el("ol", "list");
   list.id = `list-${key}`;
-  list.replaceChildren(...chats.slice(0, limit).map(renderRow));
+  // Delegated chats follow their orchestrator as indented sibling rows, so each keeps its own swipe and Dismiss.
+  list.replaceChildren(...chats.slice(0, limit).flatMap((chat) => [renderRow(chat), ...(inboxChildren.get(chatKey(chat)) || []).map((child) => {
+    const item = renderRow(child);
+    item.dataset.delegate = "";
+    item.querySelector(".row-title").prepend(el("span", "sr-only", `Delegated by ${chatName(chat)}: `));
+    return item;
+  })]));
   if (chats.length === 0) list.append(el("li", "empty column-empty", "No chats"));
   wrap.append(list);
   if (chats.length > limit) {
@@ -843,7 +873,11 @@ function liveInbox(chats) {
 function renderInbox(chats) {
   inboxData = chats;
   const focusedHref = document.activeElement.closest(".row, .show-all")?.getAttribute("href");
-  const groups = groupChats(filterInbox(chats, searchQuery));
+  // Delegated chats nest under their orchestrator's row, unless they need you or a status filter would hide it.
+  const delegates = deckDelegates(filterInbox(chats, searchQuery), (parent, child) => !needsAttention(child)
+    && (inboxStatus ? sectionOf(parent) === inboxStatus : sectionOf(parent) !== "earlier" || sectionOf(child) === "earlier"));
+  inboxChildren = delegates.children;
+  const groups = groupChats(delegates.top);
   inboxLayout = layoutOf(groups);
   // The approved inbox is a list at every width; wide screens can still open a detail pane.
   const shown = SECTIONS.filter(({ key }) => inboxStatus ? key === inboxStatus && groups.get(key).length > 0 : groups.get(key).length > 0);
@@ -2010,6 +2044,32 @@ function closePanel() {
 
 // Deck: selected handoff and telemetry above compact, selectable status rows.
 let deckData = null;
+let deckChildren = new Map(); // orchestrator key -> delegated chats, from deckGroups
+
+// The orchestrator's delegated chats, each with its state and handoff line; each opens its own thread.
+function deckDelegateList(chat) {
+  const children = deckChildren.get(chatKey(chat));
+  if (!children?.length) return null;
+  const section = el("section", "deck-delegates");
+  section.setAttribute("aria-label", "Delegated chats");
+  section.append(el("h3", "deck-supporting-label", `DELEGATED · ${children.length}`));
+  const list = el("ol");
+  for (const child of children) {
+    const kind = sectionOf(child);
+    const link = el("a", "deck-delegate");
+    link.href = `/?thread=${encodeURIComponent(chatKey(child))}&view=deck`;
+    link.dataset.kind = kind;
+    link.append(icon(SECTION_ICONS[kind]), deckAgent(child), el("span", "deck-delegate-title", chatName(child)));
+    const line = chatSummary(child);
+    if (line) link.append(el("span", "deck-delegate-line", line));
+    link.title = [chatName(child), line].filter(Boolean).join(" · ");
+    const item = el("li");
+    item.append(link);
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
 let deckSelected = "";
 // The hero follows urgency (Needs you first) until the user picks a chat; a status filter resets it.
 let deckPinned = false;
@@ -2081,7 +2141,9 @@ function deckSectionOf(chat) {
 }
 
 function deckGroups(chats) {
-  const groups = deckOrder(groupChats(chats));
+  const delegates = deckDelegates(chats, (parent) => deckSectionOf(parent) !== "earlier");
+  deckChildren = delegates.children;
+  const groups = deckOrder(groupChats(delegates.top));
   for (const kind of ["new", "working"]) {
     const reviewed = groups.get(kind).filter((chat) => deckReviewStamp(chat) === deckReviewMark(chat, kind));
     if (!reviewed.length) continue;
@@ -2443,7 +2505,8 @@ function deckMini(chat, kind) {
   title.title = chatName(chat);
   head.append(icon(SECTION_ICONS[kind]), title);
   const meta = el("span", "deck-mini-meta");
-  meta.append(deckAgent(chat), deckRepo(chat), quiet ? deckQuietAge(chat, "deck-mini-time") : deckTimer(deckSince(chat, kind), "deck-mini-time"));
+  const delegated = deckChildren.get(chatKey(chat))?.length;
+  meta.append(deckAgent(chat), deckRepo(chat), ...(delegated ? [el("span", "deck-mini-delegates", `+${delegated}`)] : []), quiet ? deckQuietAge(chat, "deck-mini-time") : deckTimer(deckSince(chat, kind), "deck-mini-time"));
   const fill = contextFill(chat.context_used, contextSize(chat));
   const readout = el("span", "deck-mini-readout");
   // The bar is the reading; the percent stays for screen readers and the figures for hover.
@@ -3075,7 +3138,8 @@ function deckRow(chat, kind) {
   if (since) { age.dataset.ago = since; age.dataset.short = ""; }
   const chevron = icon("i-chevron");
   chevron.classList.add("deck-row-chevron");
-  meta.append(deckAgent(chat), deckRepo(chat), quiet ? deckQuietAge(chat, "deck-age") : age, chevron);
+  const delegated = deckChildren.get(chatKey(chat))?.length;
+  meta.append(deckAgent(chat), deckRepo(chat), ...(delegated ? [el("span", "deck-mini-delegates", `+${delegated}`)] : []), quiet ? deckQuietAge(chat, "deck-age") : age, chevron);
   row.append(marker, title, meta);
   item.append(row);
   const review = deckReviewButton(chat, kind, "deck-row-review");
@@ -3125,6 +3189,8 @@ function renderDeck(chats) {
       const body = el("div", "deck-card-body");
       card.append(body);
       body.append(deckHero(chat, kind));
+      const delegates = deckDelegateList(chat);
+      if (delegates) body.append(delegates);
       const supporting = el("details", "deck-supporting");
       supporting.open = supportingOpen;
       const summary = el("summary");
