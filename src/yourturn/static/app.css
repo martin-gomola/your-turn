@@ -658,15 +658,18 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
    age's own type, on the row's background, and fades in from the left so a long title or request
    tail recedes under it instead of colliding. The word makes the struck-through bell unambiguous. */
 @media (hover: hover) {
-  #sections .list > li:has(> .row-dismiss) { --row-bg: var(--color-bg); }
-  #sections .list > li:has(> .row:is(:hover, :active), > .row-dismiss:hover) { --row-bg: var(--color-surface-pressed); }
-  #sections li:has(> .row-dismiss:hover) > .row { background: var(--row-bg); }
-  #sections li:has(> .row[aria-current="true"][data-section="waiting"]) { --row-bg: color-mix(in srgb, var(--color-waiting) 14%, var(--color-surface)); }
-  #sections li:has(> .row[aria-current="true"][data-section="new"]) { --row-bg: color-mix(in srgb, var(--color-new) 14%, var(--color-surface)); }
+  /* The hover fill is translucent, so it is layered over an opaque base; otherwise text shows through. */
+  #sections .list > li:has(> .row-dismiss) { --row-base: var(--color-bg); --row-tint: transparent; }
+  #sections .list > li:has(> .row:is(:hover, :active), > .row-dismiss:hover) { --row-tint: var(--color-surface-pressed); }
+  #sections li:has(> .row-dismiss:hover) > .row { background: var(--color-surface-pressed); }
+  /* The open chat's row keeps its selection fill on hover, so Dismiss adds no tint there. */
+  #sections .list > li:has(> .row[aria-current="true"]) { --row-tint: transparent; }
+  #sections li:has(> .row[aria-current="true"][data-section="waiting"]) { --row-base: color-mix(in srgb, var(--color-waiting) 14%, var(--color-surface)); }
+  #sections li:has(> .row[aria-current="true"][data-section="new"]) { --row-base: color-mix(in srgb, var(--color-new) 14%, var(--color-surface)); }
   .row-dismiss { display: flex; align-items: center; gap: var(--space-1); width: auto; height: 32px; inset-inline-end: var(--space-2);
     padding-inline: calc(var(--space-6) + var(--space-1)) var(--space-2); border-radius: var(--radius-md);
-    background: linear-gradient(to right, transparent, var(--row-bg) var(--space-6)); color: var(--color-text-muted); }
-  .row-dismiss:hover, .row-dismiss:focus-visible { background: linear-gradient(to right, transparent, var(--row-bg) var(--space-6)); color: var(--color-text); }
+    background: linear-gradient(to right, transparent, var(--row-tint) var(--space-6)), linear-gradient(to right, transparent, var(--row-base) var(--space-6)); color: var(--color-text-muted); }
+  .row-dismiss:hover, .row-dismiss:focus-visible { background: linear-gradient(to right, transparent, var(--row-tint) var(--space-6)), linear-gradient(to right, transparent, var(--row-base) var(--space-6)); color: var(--color-text); }
   .row-dismiss:hover .row-dismiss-label { text-decoration: underline; text-underline-offset: 3px; }
   .row-dismiss svg { width: 18px; height: 18px; }
   .row-dismiss-label { display: inline; font-size: var(--text-sm); font-weight: var(--weight-medium); }
