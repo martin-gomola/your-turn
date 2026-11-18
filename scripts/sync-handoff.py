@@ -22,13 +22,19 @@ def check(root: Path = ROOT) -> None:
             raise ValueError(f"bundled {name} differs from the pinned snapshot; run scripts/sync-handoff.py --source <checkout>")
 
 
-def sync(source: Path, root: Path = ROOT) -> None:
-    commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+def sync(source: Path, root: Path = ROOT, ref: str = "HEAD") -> None:
+    git = ["git", "-C", str(source)]
+    remote, _, branch = ref.partition("/")
+    # A remote-tracking ref (origin/main) is fetched first, so the snapshot is that branch's latest commit.
+    if branch and remote in subprocess.check_output([*git, "remote"], text=True).split():
+        subprocess.run([*git, "fetch", "--quiet", remote, branch], check=True)
+    commit = subprocess.check_output([*git, "rev-parse", f"{ref}^{{commit}}"], text=True).strip()
     contents = {}
     for name in FILES:
         relative = f"{SOURCE}/{name}"
-        data = subprocess.check_output(["git", "-C", str(source), "show", f"{commit}:{relative}"])
-        if (source / relative).read_bytes() != data:
+        data = subprocess.check_output([*git, "show", f"{commit}:{relative}"])
+        # Only a HEAD sync reads the checkout itself; uncommitted edits there would not be in the pin.
+        if ref == "HEAD" and (source / relative).read_bytes() != data:
             raise ValueError("commit the canonical handoff changes before synchronizing")
         contents[name] = data
     target = root / DESTINATION
@@ -43,11 +49,13 @@ def sync(source: Path, root: Path = ROOT) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, help="local your-turn-loop checkout with committed changes")
+    parser.add_argument("--source", type=Path, help="local your-turn-loop checkout")
+    parser.add_argument("--ref", default="origin/main",
+                        help="commit to snapshot (default: origin/main, fetched first; HEAD for local commits)")
     parser.add_argument("--check", action="store_true", help="verify the packaged snapshot without Git or network access")
     args = parser.parse_args()
     if args.source:
-        sync(args.source.resolve())
+        sync(args.source.resolve(), ref=args.ref)
     else:
         check()
     print("Pinned handoff snapshot verified.")
