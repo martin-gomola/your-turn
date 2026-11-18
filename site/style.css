@@ -170,7 +170,9 @@ button:focus-visible, pre:focus-visible, a:focus-visible { outline: 2px solid va
 #status:empty { display: none; }
 .shots { display: grid; gap: 24px; margin-top: 24px; }
 .shots figure { padding: 12px; }
-.shots img { display: block; width: 100%; height: auto; }
+/* Same frame for every shot; the inbox loses its empty bottom, never its top. */
+.shots img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; }
+.shots-wide img { aspect-ratio: auto; }
 .shots figcaption { margin-top: 10px; color: var(--muted); font-size: 14px; }
 .app-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 20px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
 /* The release sits on the left in the Deck's label voice; the links stay on the right. */
@@ -187,6 +189,11 @@ button:focus-visible, pre:focus-visible, a:focus-visible { outline: 2px solid va
   .panel { padding: 16px; }
   .terminal { padding: 0; }
   .loop-steps { padding: 12px; }
+  /* One swipeable row instead of three full-height screenshots. */
+  .shots { grid-auto-flow: column; grid-auto-columns: 85%; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; }
+  .shots figure { scroll-snap-align: start; padding: 8px; }
+  .shots-wide img { aspect-ratio: 16 / 10; }
+  .shots figcaption { font-size: 13px; }
   header .repo span:not([aria-hidden]) { display: none; }
 }
 @media (min-width: 1024px) {
