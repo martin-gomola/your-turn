@@ -240,7 +240,11 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Skill {skill} (Codex CLI not found, so no plugin)", agents_home() / "skills")
         return skill in ("written", "unchanged")
     env = {**os.environ, "CODEX_HOME": str(home)} if home is not None else None
-    inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env)
+    try:
+        inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        _install_result("codex", "Plugin list timed out; install stopped")
+        return False
     try:
         entries = json.loads(inventory.stdout).get("installed", []) if inventory.returncode == 0 else []
     except (ValueError, AttributeError):
@@ -256,7 +260,11 @@ def install_plugin(home: Path | None = None) -> bool:
             _remove_skill(agents_home())
         _install_result("codex", f"Using installed handoff {standalone}")
         return True
-    listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env)
+    try:
+        listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        _install_result("codex", "Marketplace list timed out; install stopped")
+        return False
     if not any(line.split()[:1] == [MARKETPLACE] for line in listed.stdout.splitlines()):
         _codex(["plugin", "marketplace", "add", MARKETPLACE_SOURCE], home)
     else:
