@@ -256,13 +256,14 @@ SOFTWARE.
     <section class="group" id="outcome-wrap" aria-labelledby="outcome-title" hidden>
       <h2 class="group-title" id="outcome-title"><span class="tone" data-tone="accent"><svg aria-hidden="true"><use href="#i-message"/></svg></span>What happened<span class="recap-label" id="outcome-source" title="The agent gave no Outcome line, so this is the first paragraph of its last message. Run your-turn install for exact recaps." hidden>From last message</span></h2>
       <div class="card outcome-card" id="outcome-card">
+        <!-- The news first, then the whole chat's summary as quieter context. -->
+        <div class="recap-latest" id="outcome-latest">
+          <p class="recap-label sr-only" id="outcome-label" hidden>Latest turn</p>
+          <p class="outcome" id="outcome"></p>
+        </div>
         <div class="recap" id="recap-wrap" hidden>
           <p class="recap-label">Chat so far</p>
           <p class="outcome" id="recap"></p>
-        </div>
-        <div class="recap-latest" id="outcome-latest">
-          <p class="recap-label" id="outcome-label" hidden>Latest turn</p>
-          <p class="outcome" id="outcome"></p>
         </div>
       </div>
       <div class="list" id="files-wrap" hidden>
