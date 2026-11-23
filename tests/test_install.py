@@ -496,6 +496,7 @@ def test_loop_skills_install_through_the_skills_cli_for_found_agents(tmp_path: P
     assert installer.install_loop_skills(["claude-code", "antigravity"])
     (args, env), = calls
     assert args[:5] == ["npx", "--yes", "skills", "add", installer.LOOP_REPO] and "your-turn-handoff" not in args
+    assert args[args.index("--skill") + 1:args.index("--agent")] == list(installer.LOOP_SKILLS) and "orchestrate" in args
     assert args[args.index("--agent") + 1:args.index("--global")] == ["claude-code", "antigravity"]
     assert env["DISABLE_TELEMETRY"] == "1"
 

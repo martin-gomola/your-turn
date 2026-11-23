@@ -515,7 +515,7 @@ LOOP_REPO = "martin-gomola/your-turn-loop"
 LOOP_PAGE = "https://martin-gomola.github.io/your-turn-loop/"
 # ponytail: fixed list of the Loop's skills other than the handoff, which this package installs itself
 # in each app's wording; add a name here when the Loop gains a skill.
-LOOP_SKILLS = ("what-to-ask", "second-opinion", "delegate-code", "codex-image")
+LOOP_SKILLS = ("orchestrate", "what-to-ask", "second-opinion", "delegate-code", "codex-image")
 # Skills CLI agent names; `antigravity` installs to ~/.gemini/config/skills, which the Gemini app reads too.
 LOOP_AGENTS = {"codex": "codex", "claude": "claude-code", "cursor": "cursor"}
 
