@@ -38,6 +38,8 @@ a { color: var(--color-accent); }
 .bar-title { flex: 1 1 auto; min-width: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
 .top { display: grid; gap: var(--space-1); }
 h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: var(--leading-tight); overflow-wrap: break-word; hyphens: auto; }
+/* Narrow screens: a step smaller, so mid-length titles fit one line and long ones wrap shorter (balanced, see below). */
+@media (max-width: 599px) { h1 { font-size: 1.5rem; } }
 .subtitle { color: var(--color-text-muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
 /* Chat header meta row: agent pill, then dot-separated project, branch and last event. */
 /* Baseline, not center: the pill's smaller text must sit on the same line as its neighbours'. */
@@ -56,6 +58,22 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 .meta-icon { margin-inline-end: var(--space-1); }
 /* The dot trails its item, so a wrapped line never starts with a separator. */
 .meta-item:not(:last-child)::after { content: "·"; margin-inline-start: var(--space-2); }
+/* Context window: a short track whose fill is the used share and whose color follows it: neutral ink while normal,
+   amber from 75% and red from 90%, the inbox and Deck thresholds. Not green below 75%: green is this app's Ready
+   status, and a normal reading needs no color. */
+.meta-item--context { --context-tone: color-mix(in srgb, var(--color-text) 55%, transparent); gap: var(--space-1); font-variant-numeric: tabular-nums; }
+.meta-item--context[data-tone="amber"] { --context-tone: var(--color-waiting); color: var(--color-waiting); }
+.meta-item--context[data-tone="red"] { --context-tone: var(--color-danger); color: var(--color-danger); }
+.context-label { font-size: var(--text-label); font-weight: var(--weight-semibold); letter-spacing: 0.02em; }
+.context-bar { align-self: center; flex: none; width: 40px; height: 6px; border-radius: var(--radius-pill); background: linear-gradient(to right, var(--context-tone) var(--fill), color-mix(in srgb, var(--color-text-muted) 22%, transparent) var(--fill)); }
+/* On a phone the row stays one line: the gauge keeps its label and a shorter bar, the exact percent moves to the
+   tooltip and accessible name, the branch (the least telling item) is left out, and the project shortens. */
+@media (max-width: 480px) {
+  .context-bar { width: 28px; }
+  .meta-item--context .meta-value { display: none; }
+  .subtitle > .meta-item--project { flex: 0 1 auto; min-width: 6ch; }
+  .subtitle > .meta-item--branch { display: none; }
+}
 /* Which app a chat belongs to; the same pill in inbox rows and chat headers. */
 .harness-pill { flex: none; padding: 0 var(--space-1); border-radius: var(--radius-sm); box-shadow: var(--edge); color: var(--color-text-muted); font-size: var(--text-label); line-height: 1.6; }
 [data-harness="codex"] { --harness-tone: #198038; }
@@ -282,6 +300,8 @@ body[data-origin="deck"] #subtasks-wrap { display: none; }
 .status-head h2 { flex: 0 1 auto; min-width: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); line-height: var(--leading-tight); overflow-wrap: anywhere; }
 [data-status="waiting"] #status-title { color: var(--color-waiting); }
 [data-status="working"] #status-title { color: var(--color-working); }
+/* In the quiet line a running chat is not an exception: the spinning glyph carries its purple, the title stays ink. */
+body:not([data-origin="deck"]) .status-card[data-settled="true"] #status-title { color: var(--color-text); }
 [data-status="interrupted"] #status-title { color: var(--color-danger); }
 .open-codex, .open-claude-desktop {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
@@ -329,6 +349,20 @@ body:not([data-origin="deck"]) .status-card:not([data-settled="true"]) #status-t
 body:not([data-origin="deck"]) .status-card:not([data-settled="true"]) .status-body:not([data-kind="none"], [data-kind="unknown"]) .status-text { font-size: var(--text-lg); font-weight: var(--weight-medium); line-height: var(--leading-normal); }
 body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions > :is(.open-codex, .open-claude-desktop) { flex: none; min-height: var(--size-control); padding-inline: var(--space-2); background: none; box-shadow: none; color: var(--color-text-muted); font-weight: var(--weight-medium); }
 body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions > :is(.open-codex, .open-claude-desktop):hover { background: var(--color-fill); color: var(--color-text); }
+/* A running chat's step changes every few seconds. It gets its own reserved line under the status, always one line
+   high and cut with an ellipsis, so a long step never wraps and nothing below it moves. */
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "head actions" "body body"; row-gap: 0; }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-head { grid-area: head; }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-actions { grid-area: actions; justify-self: end; }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body { grid-area: body; min-width: 0; height: calc(var(--text-md) * var(--leading-relaxed)); overflow: hidden; padding-inline-start: calc(var(--size-glyph) + var(--space-3)); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text,
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Focusing a cut command (Tab or a tap) is the reader's choice, so only then may the line grow to show all of it. */
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body:focus-within { height: auto; }
+@media (max-width: 599px) {
+  body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "body" "actions"; }
+  body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-actions { justify-self: start; }
+}
 .status-text .command { display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--color-fill); }
 .options { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); list-style: disc; overflow-wrap: anywhere; }
 /* One secondary button for the inbox and thread (Back, Inbox, Load more, Close): surface, hairline edge (shared rule
@@ -375,8 +409,6 @@ body:not([data-origin="deck"]) .recap .recap-label { font-size: var(--text-label
 /* Evidence strip: the latest turn's checks and files and the session's decisions; each chip jumps
    to its section. Same role colors as the check rows they summarize. */
 .evidence ul { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); list-style: none; }
-/* The whole-chat chips (decisions, context) start after a wider gap than the last-turn ones (checks, files). */
-.evidence-group { margin-inline-start: var(--space-3); }
 .top .evidence, .panel-heading .evidence { margin-top: var(--space-3); }
 .evidence-chip {
   display: inline-flex; align-items: center; min-height: 32px; padding-inline: var(--space-3);
@@ -390,7 +422,6 @@ body:not([data-origin="deck"]) .recap .recap-label { font-size: var(--text-label
   .evidence ul::-webkit-scrollbar { display: none; }
   .evidence li { flex: none; }
   .evidence-chip { padding-inline: var(--space-2); }
-  .evidence-group { margin-inline-start: var(--space-2); }
 }
 .evidence-chip:hover { background: var(--color-fill); }
 /* Passing is the normal case, so it stays neutral; only failures and warnings take colour. */
@@ -398,16 +429,18 @@ body:not([data-origin="deck"]) .recap .recap-label { font-size: var(--text-label
 .evidence-chip[data-tone="danger"] { color: var(--color-danger); }
 .evidence-chip[data-tone="warning"] { color: var(--color-waiting); }
 .evidence-chip[data-tone="muted"] { color: var(--color-text-muted); }
+/* The files row names an edit no check covered, in the warning tone, where the strip used to. */
+#files-summary[data-tone="warning"] .row-value { color: var(--color-waiting); font-weight: var(--weight-medium); }
 /* Jumps land below the sticky chat header, not under it. */
 #outcome-wrap, #checks-wrap, #decisions-wrap { scroll-margin-top: calc(2 * var(--size-control) + var(--space-2)); }
 .pending-step { display: grid; gap: var(--space-1); }
 .failed-check .recap-label { color: var(--color-danger); }
 .command { white-space: pre-wrap; line-height: var(--leading-relaxed); }
-.command-executable { color: var(--color-new); }
-.command-path { color: var(--color-accent); }
-.command-flag { color: var(--color-working); }
-.command-string { color: var(--color-waiting); }
-.command-operator { color: var(--color-danger); }
+/* Commands read by weight and tone, never by hue: every hue in this app is a status (amber needs you, purple
+   working, red failed, green ready), so a colored flag or string read as one. The program leads in ink and weight;
+   flags and operators step back; paths and strings stay in the plain text color. */
+.command-executable { color: var(--color-text); font-weight: var(--weight-semibold); }
+.command-flag, .command-operator { color: var(--color-text-muted); }
 
 .disclosure-row { padding: 0; }
 .disclosure-row > summary {
@@ -1641,6 +1674,20 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
     1px 1px, calc(100% - 8.41px) 1px, calc(100% - 1px) 8.41px, calc(100% - 1px) calc(100% - 1px),
     8.41px calc(100% - 1px), 1px calc(100% - 8.41px), 1px 1px);
 }
+/* The brand outside the Deck: the same chamfered corners and 1px ring, quiet in the light inbox, on framed
+   surfaces only (chat cards and lists, the inbox filter bar). A loud status card rings in its status tone; the
+   quiet one-line status and the inbox's row lists stay unframed. The Deck's own rules below take precedence. */
+/* A chat is grouped cards, so its page takes the grouped background: the whole page on a chat URL, the chat pane
+   beside the inbox. Sticky headers inside read --color-bg, so they follow. */
+body[data-view="thread"], body[data-panel="open"] #thread-view { --color-bg: var(--color-bg-grouped); }
+body[data-panel="open"] #thread-view { background: var(--color-bg); }
+:is(.card, .list, .segments) { --hud-frame: color-mix(in srgb, var(--color-text-muted) 38%, transparent); border: 0; border-radius: 0; box-shadow: none; clip-path: var(--hud-shape); }
+/* The ring is absolutely placed; the filter bar is already positioned (absolute or sticky), so only these need it. */
+:is(.card, .list) { position: relative; }
+:is(.card, .list, .segments)::before { content: ""; position: absolute; z-index: 3; inset: 0; background: var(--hud-frame); pointer-events: none; clip-path: var(--hud-ring); }
+.status-card { --hud-frame: color-mix(in srgb, var(--status-tone) 55%, var(--color-separator)); }
+.status-card[data-settled="true"], #sections .list { clip-path: none; }
+.status-card[data-settled="true"]::before, #sections .list::before { content: none; }
 :is(.deck-card, .deck-matrix, .deck-fleet) { --hud-frame: rgb(255 255 255 / .15); position: relative; border: 0; border-radius: 0; clip-path: var(--hud-shape); }
 :is(.deck-card, .deck-matrix, .deck-fleet)::before { content: ""; position: absolute; z-index: 3; inset: 0; background: var(--hud-frame); pointer-events: none; clip-path: var(--hud-ring); }
 /* The chat opened from Deck wears the same bezel; the status card's ring takes its status tone. */

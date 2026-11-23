@@ -1,8 +1,11 @@
 :root {
   color-scheme: light;
   /* Shared day/night architecture; all interface text remains neutral. */
+  /* Plain lists (the inbox) sit on a near-white page; a chat's grouped cards sit on a warm gray, so a white card
+     reads a step closer than the page, as in the dark theme. */
   --color-bg: #fcfbfa;
-  --color-surface: #fcfbfa;
+  --color-bg-grouped: #f5f4f1;
+  --color-surface: #ffffff;
   --color-sidebar: #faf9f7;
   --color-surface-pressed: rgb(129 139 152 / 0.08);
   --color-fill: #f0efec;
@@ -112,6 +115,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --color-bg: #151515;
+  --color-bg-grouped: #151515;
   --color-surface: #1b1a1a;
   --color-sidebar: #1b1a1a;
   --color-surface-pressed: rgb(255 255 255 / 0.06);

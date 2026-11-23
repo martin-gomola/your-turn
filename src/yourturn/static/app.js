@@ -1631,8 +1631,11 @@ function renderChanges(thread, turn) {
     return item;
   }));
   $("files-wrap").hidden = files.length === 0;
-  // Scoped like the header chip, so it never reads as a second, different count beside More's "every turn" total.
-  rowLabel("files-summary", `${files.length} ${files.length === 1 ? "file" : "files"} changed in the last turn`);
+  // Scoped to the last turn, so it never reads as a second, different count beside More's "every turn" total. An
+  // edit no check has covered is the one exception worth flagging here, beside the files it concerns.
+  const unchecked = files.length && !checks.length ? "Unchecked" : checks.length && turn.edited_after_check ? "Edited after last check" : "";
+  rowLabel("files-summary", `${files.length} ${files.length === 1 ? "file" : "files"} changed in the last turn`, unchecked);
+  $("files-summary").dataset.tone = unchecked ? "warning" : "";
   $("files").replaceChildren(...renderFileTree(files, thread.cwd, $("files-copy-status")));
 }
 
@@ -1945,6 +1948,20 @@ function metaItems(thread) {
     items.push(branch);
   }
   items.push(item(ago(thread.updated_at), "Last recorded event"));
+  // How full the context window is, as a short bar with its percent: muted while normal, amber past 75% and
+  // red past 90%, the same thresholds as the inbox tag and the Deck gauge.
+  const fill = contextFill(thread.context_used, contextSize(thread));
+  if (fill) {
+    const context = item(`${fill.percent}%`, `Context window: ${tokenCount(thread.context_used, true)} of ${tokenCount(contextSize(thread), true)} tokens used`);
+    context.classList.add("meta-item--context");
+    if (fill.percent >= 75) context.dataset.tone = fill.percent >= 90 ? "red" : "amber";
+    const bar = el("span", "context-bar");
+    bar.setAttribute("aria-hidden", "true");
+    bar.style.setProperty("--fill", `${fill.percent}%`);
+    context.prepend(el("span", "context-label", "CTX"), bar);
+    context.setAttribute("aria-label", `Context ${fill.percent}% used`);
+    items.push(context);
+  }
   return items;
 }
 
@@ -1970,29 +1987,23 @@ function renderEvidence(thread, turn) {
     checks.length && turn.edited_after_check && ["Edited after last check", "#checks-wrap", "warning"],
     files.length && [plural(files.length, "file"), "#outcome-wrap", ""],
   ].filter(Boolean);
-  // Context is amber past 75% and red past 90%, like the Deck gauge.
-  const fill = contextFill(thread.context_used, contextSize(thread));
-  const chatChips = [
-    // The Decisions section already counts itself, and normal context use needs no attention: only 75% and up shows.
-    fill && fill.percent >= 75 && [`Context ${fill.percent}%`, "#more", fill.percent >= 90 ? "danger" : "warning"],
-  ].filter(Boolean);
+  // Only the Deck's chat HUD shows this strip. Elsewhere it repeated the files row, the Checks section and the
+  // status card for a whole extra row; the files row carries the unchecked-edit warning instead.
   const header = threadId ? $("thread-heading") : document.querySelector(".panel-heading");
   header.append($("evidence"));
-  $("evidence").hidden = turnChips.length + chatChips.length === 0;
-  // The scope is in each chip's tooltip and accessible name, not a visible label: the chips read on their own, and
-  // a wider gap before the chat group still separates the two.
-  const chip = (scopeLabel) => ([text, target, tone], index) => {
+  $("evidence").hidden = turnChips.length === 0 || document.body.dataset.origin !== "deck";
+  // The scope is in each chip's tooltip and accessible name, not a visible label: the chips read on their own.
+  const chip = (scopeLabel) => ([text, target, tone]) => {
     const link = el("a", "evidence-chip", text);
     link.href = target;
     link.title = `${scopeLabel}: ${text}`;
     link.setAttribute("aria-label", `${text}, ${scopeLabel.toLowerCase()}`);
     if (tone) link.dataset.tone = tone;
     const item = el("li");
-    if (index === 0 && scopeLabel === "Whole chat" && turnChips.length) item.className = "evidence-group";
     item.append(link);
     return item;
   };
-  $("evidence-list").replaceChildren(...turnChips.map(chip("Last turn")), ...chatChips.map(chip("Whole chat")));
+  $("evidence-list").replaceChildren(...turnChips.map(chip("Last turn")));
 }
 
 $("evidence-list").addEventListener("click", (event) => {
