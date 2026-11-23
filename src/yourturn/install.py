@@ -269,7 +269,10 @@ def install_plugin(home: Path | None = None) -> bool:
         _codex(["plugin", "marketplace", "add", MARKETPLACE_SOURCE], home)
     else:
         # Refresh a Git marketplace so an installed plugin picks up the current skill (a local one has nothing to refresh).
-        _codex(["plugin", "marketplace", "upgrade", MARKETPLACE], home, check=False)
+        try:
+            subprocess.run(["codex", "plugin", "marketplace", "upgrade", MARKETPLACE], capture_output=True, text=True, env=env, timeout=60)
+        except subprocess.TimeoutExpired:
+            pass
     _codex(["plugin", "add", PLUGIN], home)
     # The plugin holds the skill, so a copy left from a run without the CLI would load twice.
     shared = ", shared skill removed" if _shared_skill() and _remove_skill(agents_home()) == "removed" else ""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,30 @@ def test_install_reuses_existing_marketplace(tmp_path: Path, monkeypatch: pytest
     log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nyour-turn  /Users/me/your-turn\\n")  # pii:allow (fake path)
     assert install_plugin()
     assert log.read_text().splitlines() == ["plugin list --json", "plugin marketplace list", "plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
+
+
+def test_install_stops_when_codex_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_codex(tmp_path, monkeypatch, "")
+
+    def hang(args: list[str], **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    monkeypatch.setattr("yourturn.install.subprocess.run", hang)
+    assert not install_plugin()
+
+
+def test_install_continues_when_marketplace_upgrade_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nyour-turn  /Users/me/your-turn\\n")  # pii:allow (fake path)
+    real_run = subprocess.run
+
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if args[2:4] == ["marketplace", "upgrade"]:
+            raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr("yourturn.install.subprocess.run", run)
+    assert install_plugin()
+    assert log.read_text().splitlines()[-1] == "plugin add your-turn@your-turn"
 
 
 def test_install_without_codex_cli_saves_the_shared_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
