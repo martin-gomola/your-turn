@@ -253,6 +253,12 @@ SOFTWARE.
       </div>
     </section>
 
+    <!-- An orchestrator's subtasks come right after its own status: whether the delegated work is on track. -->
+    <section class="group" id="subtasks-wrap" aria-labelledby="subtasks-title" hidden>
+      <h2 class="group-title" id="subtasks-title">Subtasks<span class="group-count" id="subtasks-count"></span></h2>
+      <ol class="list subtasks" id="subtasks"></ol>
+    </section>
+
     <section class="group" id="outcome-wrap" aria-labelledby="outcome-title" hidden>
       <h2 class="group-title" id="outcome-title"><span class="tone" data-tone="accent"><svg aria-hidden="true"><use href="#i-message"/></svg></span>What happened<span class="recap-label" id="outcome-source" title="The agent gave no Outcome line, so this is the first paragraph of its last message. Run your-turn install for exact recaps." hidden>From last message</span></h2>
       <div class="card outcome-card" id="outcome-card">
