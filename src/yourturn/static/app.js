@@ -1167,7 +1167,7 @@ function setStatusText(content, command = false) {
     const list = el("ol", "status-steps");
     list.append(...structured.steps.map((step) => el("li", "", step)));
     target.replaceChildren(el("p", "status-steps-label", structured.label), list);
-  } else target.replaceChildren(el("p", "", text));
+  } else target.replaceChildren(...(text ? [el("p", "", text)] : []));
 }
 
 function renderStatus(thread, turn) {
@@ -1217,7 +1217,7 @@ function renderStatus(thread, turn) {
     if (listed) {
       setStatusText(`${label}, shown under ${step.kind === "edit" ? "What happened" : "Checks"}.`);
       label = "";
-    } else setStatusText(step?.title || "Working on your request.", step?.kind === "command" && Boolean(step.title));
+    } else setStatusText(step?.title || "", step?.kind === "command" && Boolean(step.title));
     if (thread.quiet) label = "Quiet";
   } else if (pending) {
     kind = "answer";
@@ -1256,8 +1256,9 @@ function renderStatus(thread, turn) {
     if ($("failed-check-text").textContent !== failedCheck.command) $("failed-check-text").replaceChildren(commandCode(failedCheck.command));
   }
   $("status-body").dataset.kind = kind;
-  // A finished chat that asks nothing collapses to one quiet line: the solid action is kept for chats that need you.
-  const settled = kind === "none" && !failed;
+  // Only a chat that needs you is loud. A finished chat that asks nothing, and one still running normally, collapse to
+  // one quiet line with link actions; a quiet (stalled) run stays framed because it may need you.
+  const settled = (kind === "none" && !failed) || (state === "working" && !quiet);
   $("status-card").dataset.settled = String(settled);
   $("open-codex").classList.toggle("open-codex--primary", !settled);
   $("status-body").dataset.check = failed && (kind === "none" || kind === "unknown") ? "failed" : "";
