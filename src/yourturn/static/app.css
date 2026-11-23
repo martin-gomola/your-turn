@@ -166,7 +166,9 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 /* Long titles and paragraphs wrap without a lone last word; prose keeps a readable measure. */
 h1, h2, h3, #panel-title { text-wrap: balance; }
 p, .status-text, .outcome, .row-text { text-wrap: pretty; }
-.status-text, .decision .reason { max-inline-size: 68ch; }
+/* Reading measure: prose stops near 66 characters a line however wide the panel gets. One ch is the width of "0",
+   wider than an average letter in this font, so 54ch measures about 66 real characters (68ch gave about 85). */
+.status-text, .outcome, .decision :is(.reason, .decision-question, .decision-answer-text, .decision-over) { max-inline-size: 54ch; }
 .subtitle, .row-value, .step-meta, .turn-index, .decision-meta, .check-result { font-variant-numeric: tabular-nums; }
 .connection[data-state="offline"] { color: var(--color-danger); }
 .connection[data-state="offline"] .connection-dot { background: var(--color-danger-fill); }
