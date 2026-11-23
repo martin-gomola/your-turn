@@ -118,6 +118,8 @@ h1 { margin: 0 0 16px; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.05; l
 .terminal #status { margin: 0; color: var(--term-green); font: 13px/1.5 var(--mono); }
 .terminal .help { margin: 0; color: var(--term-muted); }
 .terminal .help code, .terminal .help b { color: var(--term-ink); }
+.terminal .help p { margin: 0; }
+.hook-shot { display: block; width: 100%; height: auto; margin: 10px 0; border: 1px solid var(--term-line); }
 .terminal a { color: var(--term-green); }
 .terminal :focus-visible { outline-color: var(--term-green); }
 

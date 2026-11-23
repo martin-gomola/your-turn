@@ -14,7 +14,7 @@ test('missing uv is installed first', () => {
 
 test('autostart uses a persistent install and ends with install', () => {
   assert.equal(installation({autostart: true}),
-    'uv tool install your-turn\nyour-turn doctor\nyour-turn autostart enable\nyour-turn install');
+    'uv tool install your-turn@latest\nyour-turn doctor\nyour-turn autostart enable\nyour-turn install');
 });
 
 test('unknown choices are rejected', () => {

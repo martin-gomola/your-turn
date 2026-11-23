@@ -11,7 +11,7 @@ export function installation({uv = 'have', doctor = true, autostart = false} = {
   const run = autostart ? 'your-turn' : 'uvx your-turn@latest';
   return [
     ...getUv[uv],
-    ...(autostart ? ['uv tool install your-turn'] : []),
+    ...(autostart ? ['uv tool install your-turn@latest'] : []),
     ...(doctor ? [`${run} doctor`] : []),
     ...(autostart ? ['your-turn autostart enable'] : []),
     `${run} install`,

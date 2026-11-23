@@ -58,8 +58,12 @@
           <p id="status" role="status" aria-live="polite"></p>
         </div>
         <p id="uv-note" class="help" hidden>If <code>uv</code> is not found right after installing it, open a new terminal and paste the rest.</p>
-        <p id="autostart-note" class="help" hidden>Then review the hook in <code>/hooks</code> in the Codex CLI or <b>Settings → Hooks</b> in the app. If <code>your-turn</code> is not found, run <code>uv tool update-shell</code> and open a new terminal. Disable it with <code>your-turn autostart disable</code>.</p>
-        <p class="help">Paste in a terminal. <code>install</code> adds the handoff to the agent apps it finds, then starts the inbox. Restart those apps and open <a href="http://localhost:8787">localhost:8787</a>. Keep the terminal open; stop with Ctrl+C.</p>
+        <div id="autostart-note" class="help" hidden>
+          <p>Turn on the hook in Codex: <b>Settings → Hooks → User config → Starting Your Turn inbox</b>. In the CLI, use <code>/hooks</code>.</p>
+          <img class="hook-shot" src="images/codex-hooks.png" width="680" height="410" loading="lazy" alt="Codex Settings, Hooks page: the User config dialog lists the SessionStart hook Starting Your Turn inbox with its toggle turned on.">
+          <p><code>your-turn</code> not found? Run <code>uv tool update-shell</code> and open a new terminal.</p>
+        </div>
+        <p class="help">Paste in a terminal, restart your agent apps, and open <a href="http://localhost:8787">localhost:8787</a>. Keep the terminal open; Ctrl+C stops the inbox.</p>
       </div>
     </section>
   </div>
