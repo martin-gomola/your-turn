@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#fcfbfa">
+<meta name="theme-color" content="#ffffff">
 <title>Your Turn</title>
 <link rel="icon" id="favicon" type="image/svg+xml" href="/assets/icon.svg">
 <link rel="icon" id="favicon-ico" type="image/x-icon" href="/assets/favicon.ico">
@@ -249,7 +249,7 @@ SOFTWARE.
       <!-- After the question: read the decision first, then act on it. -->
       <div class="status-actions">
         <a class="open-codex open-codex--primary" id="open-codex" href="codex://threads/" aria-label="Open in Codex (full chat)" hidden>Open in Codex<svg aria-hidden="true"><use id="open-action-icon" href="#i-external"/></svg></a>
-        <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="Open project in Claude Desktop" title="Starts a new Code session using this project folder." hidden>Open project in Claude Desktop<svg aria-hidden="true"><use href="#i-external"/></svg></a>
+        <a class="open-codex" id="open-claude-desktop" href="claude://code/new" aria-label="New session in the Claude app, in this folder" title="Starts a new Code session in the Claude app, in this folder. It does not reopen this chat." hidden>New in app<svg aria-hidden="true"><use href="#i-external"/></svg></a>
       </div>
     </section>
 
@@ -347,6 +347,8 @@ SOFTWARE.
     <label><input type="radio" name="appearance" value="system">System</label>
     <label><input type="radio" name="appearance" value="light">Light</label>
     <label><input type="radio" name="appearance" value="dark">Dark</label>
+    <label><input type="radio" name="appearance" value="warm">Dusk</label>
+    <label><input type="radio" name="appearance" value="terminal">Terminal</label>
   </div></fieldset></form>
   <p id="appearance-note" class="settings-note" role="status">Follows your device until you choose a theme.</p>
   <!-- Frequent on/off settings as switches, full screen first: a tablet reaches for it most. -->
@@ -359,7 +361,7 @@ SOFTWARE.
     <p class="setting-subtitle" id="deck-theme-label">Deck theme</p>
     <div class="appearance-choices" role="radiogroup" aria-labelledby="deck-theme-label">
       <label><input type="radio" name="deck-theme" value="dark">Dark</label>
-      <label><input type="radio" name="deck-theme" value="warm">Warm</label>
+      <label><input type="radio" name="deck-theme" value="warm">Dusk</label>
     </div>
     <label class="setting-switch"><input type="checkbox" name="deck-enabled">Show Deck in the sidebar</label>
     <p class="settings-note">A live telemetry view of every chat. Still in beta, so its layout may change.</p>
@@ -367,7 +369,7 @@ SOFTWARE.
 </section>
 <section class="aside-panel" id="help" aria-labelledby="help-title" hidden>
   <header class="aside-heading"><h2 id="help-title" tabindex="-1">Help</h2><button type="button" class="button" data-close-aside>Close</button></header>
-  <p class="help-intro" data-help-view="inbox">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Copy resume command</strong>) to reply or take action.</p>
+  <p class="help-intro" data-help-view="inbox">Read chat recaps here. Choose <strong>Open in Codex</strong> or <strong>Open in Cursor</strong> (for Claude Code, <strong>Resume command</strong> copies the command that continues the chat in the CLI, and <strong>New in app</strong> starts a new session in its folder) to reply or take action.</p>
   <section class="help-keyboard" aria-labelledby="shortcuts-title" data-help-view="inbox">
     <h3 id="shortcuts-title">Keyboard shortcuts</h3>
     <p class="settings-note">In the inbox, when you’re not typing.</p>
