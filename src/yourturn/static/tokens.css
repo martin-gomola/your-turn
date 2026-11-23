@@ -1,18 +1,19 @@
 :root {
   color-scheme: light;
   /* Shared day/night architecture; all interface text remains neutral. */
-  /* Plain lists (the inbox) sit on a near-white page; a chat's grouped cards sit on a warm gray, so a white card
-     reads a step closer than the page, as in the dark theme. */
-  --color-bg: #fcfbfa;
-  --color-bg-grouped: #f5f4f1;
+  /* Plain lists (the inbox) sit on a white page; a chat's grouped cards sit on a gray, so a white card reads a step
+     closer than the page, as in the dark theme. Not an off-white: beside white cards and the white filter bar it
+     read as gray. Grays, lines and ink follow the install site (site/style.css), a cool green-tinted neutral. */
+  --color-bg: #ffffff;
+  --color-bg-grouped: #f4f6f4;
   --color-surface: #ffffff;
-  --color-sidebar: #faf9f7;
+  --color-sidebar: #f8faf8;
   --color-surface-pressed: rgb(129 139 152 / 0.08);
-  --color-fill: #f0efec;
-  --color-separator: #dededb;
+  --color-fill: #eceff0;
+  --color-separator: #d8ded9;
   --color-border-strong: #818b98;
-  --color-text: #1b201d;
-  --color-text-muted: #626663;
+  --color-text: #0f1712;
+  --color-text-muted: #56605a;
   --color-accent: #198038;
   --color-accent-fill: #198038;
   --color-nav-selected: #146b30;
@@ -144,6 +145,36 @@
   --color-danger-fill: #fa423e;
   --color-history-fill: #6e6e6e;
   --color-on-status: #000000;
+}
+
+/* Dusk (stored as "warm"): the dark theme on the Deck's warm plum-gray surfaces, so the inbox and chat match a Deck
+   set to Dusk. Status colors stay the dark theme's. */
+:root[data-theme="dark"][data-palette="warm"] {
+  --color-bg: #262327;
+  --color-bg-grouped: #262327;
+  --color-surface: #2d2a2f;
+  --color-sidebar: #262327;
+  --color-fill: #353137;
+  --color-separator: #4a454c;
+  --color-text: #f4efe9;
+  --color-text-muted: #b7aeb1;
+}
+
+/* Terminal: the install site's dark (site/style.css), green-black surfaces with its bright green for links, the
+   selected filter and Ready. Other status colors stay the dark theme's. */
+:root[data-theme="dark"][data-palette="terminal"] {
+  --color-bg: #0a0d0c;
+  --color-bg-grouped: #0a0d0c;
+  --color-surface: #111614;
+  --color-sidebar: #111614;
+  --color-fill: #172019;
+  --color-separator: #222b27;
+  --color-text: #e3eae5;
+  --color-text-muted: #919d96;
+  --color-accent: #22c55e;
+  --color-nav-selected: #22c55e;
+  --color-accent-fill: #22c55e;
+  --color-on-accent: #03140a;
 }
 
 @media (prefers-contrast: more) {

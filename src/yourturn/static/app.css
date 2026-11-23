@@ -354,7 +354,13 @@ body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "head actions" "body body"; row-gap: 0; }
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-head { grid-area: head; }
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-actions { grid-area: actions; justify-self: end; }
-body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body { grid-area: body; min-width: 0; height: calc(var(--text-md) * var(--leading-relaxed)); overflow: hidden; padding-inline-start: calc(var(--size-glyph) + var(--space-3)); }
+/* The step reads as a terminal line: a quiet hairline box with a prompt mark, in the mono face, so the changing text
+   sits in a fixed frame instead of flickering loose on the page. */
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body { grid-area: body; min-width: 0; height: 32px; overflow: hidden; align-items: center; margin-block-start: var(--space-2); margin-inline: calc(-1 * var(--space-2)); padding-inline: var(--space-3); border: var(--size-hairline) solid var(--color-separator); border-radius: 0; background: var(--color-surface); font-family: var(--font-mono); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body::before { content: "›"; flex: none; color: var(--color-text-muted); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-kind { font-family: var(--font-sans); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text { font-size: var(--text-sm); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text .command { display: block; padding: 0; background: none; }
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text,
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Focusing a cut command (Tab or a tap) is the reader's choice, so only then may the line grow to show all of it. */
@@ -362,6 +368,9 @@ body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="wo
 @media (max-width: 599px) {
   body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "body" "actions"; }
   body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-actions { justify-self: start; }
+  /* Narrow: the two link actions stay small and share a row where they fit, instead of each taking a tall row. */
+  body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions { gap: 0 var(--space-1); }
+  body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions > :is(.open-codex, .open-claude-desktop) { min-height: 36px; font-size: var(--text-sm); }
 }
 .status-text .command { display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--color-fill); }
 .options { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); list-style: disc; overflow-wrap: anywhere; }
@@ -815,6 +824,8 @@ body:is([data-panel="open"], [data-aside]) .row-tags .tag { font-size: var(--tex
 body[data-panel="open"] { height: 100dvh; overflow: hidden; }
 body[data-panel="open"] .page { display: grid; grid-template-columns: 340px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: var(--space-6); height: 100dvh; padding-top: 64px; padding-bottom: var(--space-2); row-gap: var(--space-2); }
 body[data-panel="open"] .footer { grid-column: 2; grid-row: 2; }
+/* Inside the open chat pane the footer is just its last item, on the pane's gray, below the content. */
+#thread-view > .footer { grid-column: auto; grid-row: auto; padding-block: var(--space-6) var(--space-2); background: none; }
 body[data-panel="open"] .bar { position: fixed; }
 body[data-panel="open"] #inbox-view { grid-column: 1; grid-row: 1 / 3; min-height: 0; overflow-y: auto; align-content: start; margin-inline-end: calc(-1 * var(--space-6)); padding-inline-end: var(--space-6); }
 body[data-panel="open"] .inbox-hero { position: sticky; top: 0; z-index: 3; height: 0; margin: 0; background: var(--color-bg); }
@@ -897,9 +908,14 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
 .aside-heading h2:focus { outline: none; }
 .aside-panel fieldset { margin: 0; border: 0; padding: 0; }
 .aside-panel legend { margin-bottom: var(--space-3); font-weight: var(--weight-semibold); }
-.appearance-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.appearance-choices label { display: flex; align-items: center; gap: var(--space-2); min-height: var(--size-control); padding-inline: var(--space-3); border: 1px solid var(--color-separator); border-radius: var(--radius-md); cursor: pointer; }
-.appearance-choices input { accent-color: var(--color-accent-fill); }
+/* A segmented control: one bar of equal segments with the chosen one raised, so five themes fit the 380px panel on
+   one row without radio dots crowding the labels. The radios stay in the label for keyboard and screen readers. */
+.appearance-choices { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 2px; border-radius: var(--radius-md); background: var(--color-fill); box-shadow: var(--edge); }
+.appearance-choices label { position: relative; display: grid; place-items: center; min-height: 36px; padding-inline: var(--space-1); border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: nowrap; cursor: pointer; }
+.appearance-choices label:hover { color: var(--color-text); }
+.appearance-choices label:has(input:checked) { background: var(--color-surface); box-shadow: var(--edge); color: var(--color-text); font-weight: var(--weight-semibold); }
+.appearance-choices label:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.appearance-choices input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
 .settings-note { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: var(--space-3); }
 .notification-setting[hidden] { display: none; }
 .notification-setting { display: grid; gap: var(--space-3); margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-separator); }
@@ -1681,6 +1697,9 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
    beside the inbox. Sticky headers inside read --color-bg, so they follow. */
 body[data-view="thread"], body[data-panel="open"] #thread-view { --color-bg: var(--color-bg-grouped); }
 body[data-panel="open"] #thread-view { background: var(--color-bg); }
+/* The pane's gray runs out to the page edges above, right and below it, instead of leaving the page's white gap and
+   margins as a white border; the left edge keeps its divider against the inbox. */
+body[data-panel="open"] #thread-view { box-shadow: 0 0 0 64px var(--color-bg); clip-path: inset(calc(-1 * var(--space-2)) -64px -64px 0); }
 :is(.card, .list, .segments) { --hud-frame: color-mix(in srgb, var(--color-text-muted) 38%, transparent); border: 0; border-radius: 0; box-shadow: none; clip-path: var(--hud-shape); }
 /* The ring is absolutely placed; the filter bar is already positioned (absolute or sticky), so only these need it. */
 :is(.card, .list) { position: relative; }

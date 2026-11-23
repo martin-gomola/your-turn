@@ -365,6 +365,11 @@ document.body.dataset.view = threadId ? "thread" : deckView ? "deck" : "inbox";
 if (threadId && deckView) document.body.dataset.origin = "deck";
 if (threadId) $("nav-inbox").removeAttribute("aria-current");
 const wideDetail = matchMedia("(min-width: 1280px)");
+const RESUME_LABEL = "Resume command";
+// The page footer, and a marker where it lives when no chat pane is open (see showPanel).
+const pageFooter = document.querySelector(".footer");
+const footerHome = document.createComment("footer");
+pageFooter.before(footerHome);
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const WORKING_SPIN_PERIOD_MS = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-status-working"));
 let inboxData = null;
@@ -1107,13 +1112,13 @@ $("open-codex").addEventListener("click", async (event) => {
   try {
     await navigator.clipboard.writeText(command);
     button.dataset.copied = "true";
-    text.textContent = "Resume command copied";
+    text.textContent = "Copied";
   } catch {
     text.textContent = command;  // Shown so it can be selected and copied by hand.
   }
   setTimeout(() => {
     delete button.dataset.copied;
-    if (button.dataset.copy === command) text.textContent = "Copy resume command";
+    if (button.dataset.copy === command) text.textContent = RESUME_LABEL;
   }, 2000);
 });
 
@@ -1261,13 +1266,15 @@ function renderStatus(thread, turn) {
   const resume = thread.harness === "claude" ? thread.handoff?.resume_command || "" : "";
   const link = thread.harness === "cursor" ? thread.handoff?.open_uri || "" : `codex://threads/${encodeURIComponent(thread.id)}`;
   const desktopLink = thread.harness === "claude" ? thread.handoff?.open_uri || "" : "";
-  const action = resume ? "Copy resume command" : `${stepVerb(chat, state === "waiting")} in ${appName(thread)}`;
-  // Keep "Resume command copied" visible until its timeout restores the label.
+  // Claude Code gets two short actions: "Resume command" copies the command that continues this chat in the CLI, and
+  // "New in app" starts a new session in its folder (the app has no link to reopen an existing chat).
+  const action = resume ? RESUME_LABEL : `${stepVerb(chat, state === "waiting")} in ${appName(thread)}`;
+  // Keep "Copied" visible until its timeout restores the label.
   if (!$("open-codex").dataset.copied) $("open-codex").firstChild.textContent = action;
   $("open-codex").dataset.copy = resume;
   $("open-codex").href = resume ? "#" : link;
-  $("open-codex").setAttribute("aria-label", resume ? `${action}: ${resume}` : thread.harness === "cursor" ? `${action} (opens the project)` : `${action} (full chat)`);
-  $("open-codex").title = resume;
+  $("open-codex").setAttribute("aria-label", resume ? `Copy the resume command: ${resume}` : thread.harness === "cursor" ? `${action} (opens the project)` : `${action} (full chat)`);
+  $("open-codex").title = resume ? `Copy the resume command: ${resume}` : "";
   $("open-codex").hidden = !resume && !link;
   setOpenKey($("open-codex"), !resume && link ? chatKey(thread) : "");
   setOpenKey($("open-claude-desktop"), desktopLink ? chatKey(thread) : "");
@@ -2206,6 +2213,10 @@ function showPanel(id) {
   return transition(() => {
     document.body.dataset.panel = id ? "open" : "closed";
     $("thread-view").hidden = !id;
+    // Beside an open chat the footer rides at the end of the chat pane, scrolling away on its gray instead of
+    // holding a pinned row under both columns; closing the chat puts it back.
+    if (id) $("thread-view").append(pageFooter);
+    else footerHome.parentNode.insertBefore(pageFooter, footerHome.nextSibling);
     if (inboxData) renderInbox(inboxData);
     if (!id) return;
     cardFor(id)?.scrollIntoView({ block: "nearest" });
