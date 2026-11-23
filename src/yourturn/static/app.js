@@ -1228,7 +1228,7 @@ function renderStatus(thread, turn) {
     label = thread.summary ? `${appName(thread)} summary` : "";
     setStatusText(thread.summary || unavailableNote(thread));
   } else if (kind === "none") {
-    setStatusText(failed ? "No further action was requested, but a check failed." : "No further action was requested.");
+    setStatusText(failed ? "No further action was requested, but a check failed." : "Nothing needs you.");
   } else if (kind === "unknown") {
     const basis = basisOf(thread);
     if (basis) label = basis.label;
@@ -1256,6 +1256,10 @@ function renderStatus(thread, turn) {
     if ($("failed-check-text").textContent !== failedCheck.command) $("failed-check-text").replaceChildren(commandCode(failedCheck.command));
   }
   $("status-body").dataset.kind = kind;
+  // A finished chat that asks nothing collapses to one quiet line: the solid action is kept for chats that need you.
+  const settled = kind === "none" && !failed;
+  $("status-card").dataset.settled = String(settled);
+  $("open-codex").classList.toggle("open-codex--primary", !settled);
   $("status-body").dataset.check = failed && (kind === "none" || kind === "unknown") ? "failed" : "";
   const quietNote = quiet ? `No activity since ${clock(thread.updated_at)} (${ago(thread.updated_at)}). ${quietHint(thread).replace(/^No activity recorded\. /, "")}`
     : thread.status === "unknown" && (thread.content_available !== false || thread.summary) ? unknownNote(thread)
@@ -1675,16 +1679,22 @@ function renderDecisions(thread) {
     item.dataset.key = key;
     item.dataset.record = record;
     const at = new Date(decision.at);
-    const when = [decision.turn ? `Turn ${decision.turn}` : "", Number.isNaN(at.getTime()) ? "" : at.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })].filter(Boolean).join(" · ");
+    // The turn places a decision in the chat; the exact time is only a hover away.
+    const stamp = Number.isNaN(at.getTime()) ? "" : at.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const when = decision.turn ? `Turn ${decision.turn}` : stamp;
     const answer = (decision.chosen || "").replace(/^#+\s*/, "");
     // Without answer text the question is the only information, so it leads instead of a placeholder.
     const longAnswer = answer.length > DECISION_ANSWER_PREVIEW_LIMIT;
     const lead = el("p", "decision-answer-text", longAnswer ? decisionPreview(answer) : answer || decision.question);
     const context = el("p", "decision-question", answer ? decision.question : `Answered in ${appName(thread)}; the answer was not recorded.`);
     if (answer) context.title = decision.question;
-    const meta = el("p", "decision-meta");
-    meta.append(el("span", "decision-role", decision.source === "agent" ? "Agent" : "You"), ...(when ? [` · ${when}`] : []));
+    // Most decisions are the agent's, so only the exception (yours) is named.
+    const meta = el("p", "decision-meta", [decision.source === "agent" ? "" : "You", when].filter(Boolean).join(" · "));
+    if (stamp) meta.title = stamp;
     const alternatives = answer ? decision.options.filter((option) => option !== decision.chosen) : decision.options;
+    // A single rejected option is the comparison that gives the choice its meaning, so it shows inline.
+    const inlineAlternative = answer && alternatives.length === 1;
+    const over = inlineAlternative ? el("p", "decision-over", `Over: ${alternatives[0]}`) : null;
     const answerAction = longAnswer ? el("button", "decision-full-button", "Show full decision") : null;
     answerAction?.addEventListener("click", () => showFullDecision({
       question: decision.question,
@@ -1695,7 +1705,7 @@ function renderDecisions(thread) {
     }));
     const footer = el("div", "decision-footer");
     const actions = el("div", "decision-actions");
-    if (alternatives.length) {
+    if (alternatives.length && !inlineAlternative) {
       const popoverId = `decision-options-${index}`;
       const optionsButton = el("button", "decision-options-button", `View options (${alternatives.length})`);
       optionsButton.type = "button";
@@ -1746,7 +1756,8 @@ function renderDecisions(thread) {
     }
     if (answerAction) actions.append(answerAction);
     footer.append(actions, meta);
-    item.replaceChildren(lead, context, ...(decision.reason ? [el("p", "reason", decision.reason)] : []), footer);
+    // Question, then the choice and what it beat, then why; without an answer the question leads.
+    item.replaceChildren(...(answer ? [context, lead] : [lead, context]), ...(over ? [over] : []), ...(decision.reason ? [el("p", "reason", decision.reason)] : []), footer);
     return item;
   });
   const older = items.slice(DECISION_PREVIEW_LIMIT);
@@ -1871,9 +1882,8 @@ function renderEvidence(thread, turn) {
   const failed = count((check) => check.exit_code !== null && check.exit_code !== 0);
   const passed = count((check) => check.exit_code === 0);
   const unknown = count((check) => check.exit_code === null);
-  const decisions = thread.decisions.filter((decision) => decision.chosen !== null).length;
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  // Each chip says its scope: checks and files are the latest turn's, decisions and context the whole chat's
+  // Each chip says its scope: checks and files are the latest turn's, context the whole chat's
   // (the More section's "Files changed" counts every turn, so an unscoped "14" next to its "17" read as a mismatch).
   const turnChips = [
     failed && [`${failed} failed`, "#checks-wrap", "danger"],
@@ -1884,11 +1894,11 @@ function renderEvidence(thread, turn) {
     checks.length && turn.edited_after_check && ["Edited after last check", "#checks-wrap", "warning"],
     files.length && [plural(files.length, "file"), "#outcome-wrap", ""],
   ].filter(Boolean);
-  // Context is always shown; it is muted while normal, amber past 75% and red past 90%, like the Deck gauge.
+  // Context is amber past 75% and red past 90%, like the Deck gauge.
   const fill = contextFill(thread.context_used, contextSize(thread));
   const chatChips = [
-    decisions && [plural(decisions, "decision"), "#decisions-wrap", ""],
-    fill && [`CTX ${fill.percent}%`, "#more", fill.percent >= 90 ? "danger" : fill.percent >= 75 ? "warning" : "muted"],
+    // The Decisions section already counts itself, and normal context use needs no attention: only 75% and up shows.
+    fill && fill.percent >= 75 && [`Context ${fill.percent}%`, "#more", fill.percent >= 90 ? "danger" : "warning"],
   ].filter(Boolean);
   const header = threadId ? $("thread-heading") : document.querySelector(".panel-heading");
   header.append($("evidence"));
@@ -1942,6 +1952,7 @@ function renderThread(thread) {
     if (threadId) document.title = "Chat not found · Your Turn";
     subtitle.hidden = true;
     $("status-card").dataset.status = "idle";
+  $("status-card").dataset.settled = "false";
     $("status-icon").setAttribute("href", "#i-alert");
     $("status-title").textContent = "No rollout file for this chat";
     $("status-body").hidden = false;
@@ -2010,6 +2021,7 @@ function resetThread() {
   $("panel-title").textContent = "Loading…";
   $("panel-subtitle").textContent = "";
   $("status-card").dataset.status = "idle";
+  $("status-card").dataset.settled = "false";
   $("status-icon").setAttribute("href", "#i-turn");
   $("status-title").textContent = "Loading…";
   for (const id of ["status-body", "open-codex", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "more"]) $(id).hidden = true;
