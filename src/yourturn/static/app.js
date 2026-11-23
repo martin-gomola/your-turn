@@ -178,10 +178,13 @@ function deckOrder(groups) {
 // Delegated chats ride under their orchestrator instead of filling the queue: a Codex subagent names its
 // parent thread, and a relay worker runs in <repo>/.relay/<slug>, so its parent is the latest chat in <repo>
 // that started before it. A child `canParent(parent, chat)` refuses (say a parent the view hides) stays on its own.
-// Returns the top-level chats and parent key -> children.
+// Returns the top-level chats, parent key -> children, child key -> parent, and the child keys whose parent was
+// inferred from the relay folder rather than named.
 function deckDelegates(chats, canParent = () => true) {
   const byId = new Map(chats.map((chat) => [chat.id, chat]));
   const children = new Map();
+  const parents = new Map();
+  const inferred = new Set();
   const top = [];
   for (const chat of chats) {
     let parent = chat.parent_id && byId.get(chat.parent_id);
@@ -194,8 +197,25 @@ function deckDelegates(chats, canParent = () => true) {
     const key = chatKey(parent);
     if (!children.has(key)) children.set(key, []);
     children.get(key).push(chat);
+    parents.set(chatKey(chat), parent);
+    if (relay?.length === 2) inferred.add(chatKey(chat));
   }
-  return { top, children };
+  return { top, children, parents, inferred };
+}
+
+// Subtask states from most to least urgent: a parent lists its subtasks in this order and takes the tone of the
+// most urgent exception among them.
+const SUBTASK_ORDER = ["waiting", "failed", "stopped", "quiet", "working", "done"];
+const SUBTASK_EXCEPTIONS = { waiting: "needs you", failed: "failed check", stopped: "stopped", quiet: "quiet" };
+
+// One line for a parent: how many subtasks are done, then each exception by count, most urgent first.
+function subtaskRollup(kinds) {
+  const count = (kind) => kinds.filter((each) => each === kind).length;
+  const exceptions = Object.keys(SUBTASK_EXCEPTIONS).filter(count);
+  return {
+    text: [`${count("done")} of ${kinds.length} done`, ...exceptions.map((kind) => `${count(kind)} ${SUBTASK_EXCEPTIONS[kind]}`)].join(" · "),
+    tone: exceptions[0] || "",
+  };
 }
 
 // Usage limits are per account, so the chat that reported last speaks for all; an ended window is dropped.
@@ -349,6 +369,8 @@ const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const WORKING_SPIN_PERIOD_MS = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-status-working"));
 let inboxData = null;
 let inboxChildren = new Map(); // orchestrator key -> delegated chats nested under its row, from renderInbox
+let inboxRelations = new Map(); // orchestrator key -> every delegated chat, whatever the filter shows, from renderInbox
+const delegateOpen = new Set(); // orchestrator keys whose finished subtasks are unfolded in the inbox
 let previousNewResultsCount = null;
 let incomingBadgeTimer = null;
 let inboxLayout = "";
@@ -640,6 +662,14 @@ function renderRow(chat) {
     else if (state === "working" && liveUnverified(chat)) node.title = unverifiedNote(chat);
     meta.append(node);
   }
+  const subtasks = inboxRelations.get(chatKey(chat));
+  if (subtasks?.length) {
+    const rollup = subtaskRollup(subtasks.map(subtaskKind));
+    const node = el("span", "tag tag--subtasks", rollup.text);
+    if (rollup.tone) node.dataset.tone = rollup.tone;
+    node.title = `Subtasks: ${rollup.text}`;
+    meta.append(node);
+  }
   const basis = basisOf(chat);
   if (basis) {
     const node = el("span", "tag tag--idle", basis.label);
@@ -784,12 +814,7 @@ function renderSection({ key, label }, chats, fold = "") {
   const list = el("ol", "list");
   list.id = `list-${key}`;
   // Delegated chats follow their orchestrator as indented sibling rows, so each keeps its own swipe and Dismiss.
-  list.replaceChildren(...chats.slice(0, limit).flatMap((chat) => [renderRow(chat), ...(inboxChildren.get(chatKey(chat)) || []).map((child) => {
-    const item = renderRow(child);
-    item.dataset.delegate = "";
-    item.querySelector(".row-title").prepend(el("span", "sr-only", `Delegated by ${chatName(chat)}: `));
-    return item;
-  })]));
+  list.replaceChildren(...chats.slice(0, limit).flatMap((chat) => [renderRow(chat), ...renderDelegates(chat)]));
   if (chats.length === 0) list.append(el("li", "empty column-empty", "No chats"));
   wrap.append(list);
   if (chats.length > limit) {
@@ -868,6 +893,43 @@ function liveInbox(chats) {
   notifyChanges(chats);
   if (inboxLayout && layoutOf(groupChats(chats)) !== inboxLayout) transition(() => renderInbox(chats));
   else renderInbox(chats);
+  if (threadData) renderSubtasks(threadData);
+}
+
+// An orchestrator's nested subtasks. With three or more, finished ones already seen fold into one line, unless a
+// search is running or one of them is open; running, quiet and failed subtasks always stay visible.
+function renderDelegates(chat) {
+  const key = chatKey(chat);
+  const kids = inboxChildren.get(key) || [];
+  const foldable = kids.length >= 3 && !searchQuery.trim()
+    ? kids.filter((child) => subtaskKind(child) === "done" && !isNewResult(child) && !isChat(child, openId)) : [];
+  const canFold = foldable.length >= 2;
+  const folded = canFold && !delegateOpen.has(key);
+  const rows = (folded ? kids.filter((child) => !foldable.includes(child)) : kids).map((child) => {
+    const item = renderRow(child);
+    item.dataset.delegate = "";
+    item.querySelector(".row-title").prepend(el("span", "sr-only", `Delegated by ${chatName(chat)}: `));
+    // The parent's row already names the agent; a subtask repeats it only when it differs.
+    if (child.harness === chat.harness) item.querySelector(".harness-pill")?.remove();
+    return item;
+  });
+  if (!canFold) return rows;
+  const item = el("li", "delegate-fold");
+  item.dataset.delegate = "";
+  const button = el("button", "delegate-fold-button", folded ? `${foldable.length} done` : `Hide ${foldable.length} done`);
+  button.type = "button";
+  button.dataset.foldKey = key;
+  button.setAttribute("aria-expanded", String(!folded));
+  button.setAttribute("aria-label", `${folded ? "Show" : "Hide"} ${foldable.length} finished subtasks of ${chatName(chat)}`);
+  button.prepend(icon(folded ? STATUS.done.icon : "i-chevron"));
+  button.addEventListener("click", () => {
+    if (delegateOpen.has(key)) delegateOpen.delete(key);
+    else delegateOpen.add(key);
+    renderInbox(inboxData);
+    document.querySelector(`[data-fold-key="${CSS.escape(key)}"]`)?.focus();
+  });
+  item.append(button);
+  return [...rows, item];
 }
 
 function renderInbox(chats) {
@@ -877,6 +939,8 @@ function renderInbox(chats) {
   const delegates = deckDelegates(filterInbox(chats, searchQuery), (parent, child) => !needsAttention(child)
     && (inboxStatus ? sectionOf(parent) === inboxStatus : sectionOf(parent) !== "earlier" || sectionOf(child) === "earlier"));
   inboxChildren = delegates.children;
+  // The roll-up counts every subtask, including ones lifted to the top level or hidden by search.
+  inboxRelations = deckDelegates(chats).children;
   const groups = groupChats(delegates.top);
   inboxLayout = layoutOf(groups);
   // The approved inbox is a list at every width; wide screens can still open a detail pane.
@@ -1162,7 +1226,13 @@ function setStatusText(content, command = false) {
   // Leave the selected text untouched when an unrelated value changes.
   if ((target.dataset.sourceText ?? target.textContent) === text && Boolean(target.querySelector("code")) === command) return;
   target.dataset.sourceText = text;
-  if (command) target.replaceChildren(commandCode(text));
+  if (command) {
+    // A long command is cut to one line in the quiet status line; focus (a tap or Tab) shows all of it.
+    const code = commandCode(text);
+    code.tabIndex = 0;
+    code.title = text;
+    target.replaceChildren(code);
+  }
   else if (structured) {
     const list = el("ol", "status-steps");
     list.append(...structured.steps.map((step) => el("li", "", step)));
@@ -1948,6 +2018,82 @@ function deckHudWide() {
 // Crossing 1200px (or plugging in a mouse) re-renders the chat so its layout (data-hud) matches the window.
 HUD_WIDE.addEventListener("change", () => { if (threadData) renderThread(threadData); });
 
+// A subtask's state in the order a parent sorts them; see SUBTASK_ORDER.
+function subtaskKind(chat) {
+  if (needsAttention(chat)) return "waiting";
+  if (chat.check_state === "failed") return "failed";
+  if (chat.status === "interrupted") return "stopped";
+  if (chat.status === "working") return chat.quiet ? "quiet" : "working";
+  return "done";
+}
+
+const SUBTASK_LABEL = { waiting: "Needs you", failed: "Check failed", stopped: "Stopped", quiet: "Quiet", working: "Working", done: "Done" };
+
+// Every chat this page knows: the inbox beside a panel, or the attention stream on a full chat page.
+function chatRelations() {
+  return deckDelegates(inboxData || attentionData || []);
+}
+
+function subtaskRow(chat, kind) {
+  const state = attentionState(chat);
+  const link = el("a", "list-row subtask");
+  link.href = `/?thread=${encodeURIComponent(chatKey(chat))}${inboxReturn}`;
+  link.dataset.kind = kind;
+  link.dataset.status = state;
+  const glyph = el("span", "glyph");
+  glyph.append(icon((STATUS[state] || STATUS.idle).icon));
+  if (state === "working") syncSpin(glyph.querySelector("use"));
+  // The age says what it measures: a quiet run since its last activity, a running one since it started.
+  const when = kind === "quiet" ? `last activity ${ago(chat.updated_at)}` : kind === "working" ? workingFor(chat.working_since) : ago(chat.updated_at);
+  const head = el("span", "subtask-head");
+  head.append(el("span", "subtask-title", chatName(chat)), el("span", "subtask-state", [SUBTASK_LABEL[kind], when].filter(Boolean).join(" · ")));
+  const summary = chatSummary(chat);
+  link.append(glyph, head, ...(summary ? [el("span", "subtask-summary", summary)] : []));
+  link.title = [chatName(chat), summary].filter(Boolean).join("\n");
+  // Beside the inbox, a subtask opens in the same pane, like a row click.
+  link.addEventListener("click", (event) => {
+    if (threadId || !wideDetail.matches || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    showPanel(chatKey(chat));
+  });
+  const item = el("li");
+  item.append(link);
+  return item;
+}
+
+const parentLine = el("p", "parent-link");
+
+// An orchestrator lists its subtasks by urgency under its status; a subtask links back to its orchestrator.
+function renderSubtasks(thread) {
+  const { children, parents, inferred } = chatRelations();
+  const key = thread ? chatKey(thread) : "";
+  const kids = children.get(key) || [];
+  $("subtasks-wrap").hidden = kids.length === 0;
+  if (kids.length) {
+    const rows = kids.map((chat) => ({ chat, kind: subtaskKind(chat) }))
+      .sort((a, b) => SUBTASK_ORDER.indexOf(a.kind) - SUBTASK_ORDER.indexOf(b.kind));
+    const rollup = subtaskRollup(rows.map(({ kind }) => kind));
+    $("subtasks-count").textContent = rollup.text;
+    $("subtasks-count").dataset.tone = rollup.tone;
+    $("subtasks").replaceChildren(...rows.map(({ chat, kind }) => subtaskRow(chat, kind)));
+  }
+  const parent = parents.get(key);
+  (threadId ? $("subtitle") : $("panel-subtitle")).after(parentLine);
+  parentLine.hidden = !parent;
+  if (!parent) return;
+  const link = el("a", "", chatName(parent));
+  link.href = `/?thread=${encodeURIComponent(chatKey(parent))}${inboxReturn}`;
+  link.addEventListener("click", (event) => {
+    if (threadId || !wideDetail.matches || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    showPanel(chatKey(parent));
+  });
+  // A parent guessed from the relay folder says so, since it is not recorded by the agent.
+  const guessed = inferred.has(key);
+  parentLine.replaceChildren(guessed ? "Likely subtask of " : "Subtask of ", link);
+  parentLine.title = guessed ? "Inferred from the .relay folder this chat runs in" : "";
+}
+
 function renderThread(thread) {
   const title = threadId ? $("title") : $("panel-title");
   const openingPanel = !threadId && title.textContent === "Loading…";
@@ -1965,7 +2111,8 @@ function renderThread(thread) {
     $("status-body").dataset.kind = "none";
     $("next-kind").hidden = true;
     setStatusText("It may have been archived. Go back to the inbox.");
-    for (const id of ["open-codex", "next-options", "reminder-toggle", "quiet-note", "pending-step", "failed-check", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "more"]) $(id).hidden = true;
+    for (const id of ["open-codex", "next-options", "reminder-toggle", "quiet-note", "pending-step", "failed-check", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "subtasks-wrap", "more"]) $(id).hidden = true;
+    parentLine.hidden = true;
     if (openingPanel) title.focus({ preventScroll: true });
     return;
   }
@@ -1980,6 +2127,7 @@ function renderThread(thread) {
   renderEvidence(thread, turn);
   renderChanges(thread, turn);
   renderDecisions(thread);
+  renderSubtasks(thread);
   renderEarlier(thread.turns);
   renderSessionFiles(thread, turn);
   renderTimeline(thread);
@@ -2030,7 +2178,8 @@ function resetThread() {
   $("status-card").dataset.settled = "false";
   $("status-icon").setAttribute("href", "#i-turn");
   $("status-title").textContent = "Loading…";
-  for (const id of ["status-body", "open-codex", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "more"]) $(id).hidden = true;
+  for (const id of ["status-body", "open-codex", "evidence", "outcome-wrap", "checks-wrap", "decisions-wrap", "subtasks-wrap", "more"]) $(id).hidden = true;
+  parentLine.hidden = true;
   for (const details of $("thread-view").querySelectorAll("details")) details.open = false;
   $("thread-view").scrollTop = 0;
 }
@@ -2255,6 +2404,7 @@ function renderDeckFleet(groups) {
   for (const button of fleet.querySelectorAll("button[data-kind]")) {
     const kind = button.dataset.kind;
     button.firstChild.textContent = counts[kind];
+    button.dataset.empty = String(counts[kind] === 0);
     // Working counts every open turn; the quiet ones (maybe stuck) are named beside it.
     const quiet = kind === "working" ? groups.get(kind).filter((chat) => chat.quiet).length : 0;
     button.lastChild.textContent = quiet ? `${DECK_NAMES[kind]} · ${quiet} QUIET` : DECK_NAMES[kind];
@@ -3808,6 +3958,7 @@ if (threadId) {
   stream("/api/stream", (source) => source.addEventListener("inbox", (message) => {
     attentionData = JSON.parse(message.data);
     stateSync.retain(attentionData.map(chatKey));
+    if (threadData) renderSubtasks(threadData);
     syncNavigation(attentionData);
     notifyChanges(attentionData);
     setFavicon(attentionData.some(needsAttention));

@@ -232,6 +232,27 @@ body:not([data-origin="deck"]) #thread-view .group-title > .tone { display: none
 .tag--reading[data-tone="amber"] { color: var(--color-waiting); }
 .tag--reading[data-tone="red"] { color: var(--color-danger); }.tag--interrupted { color: var(--color-danger); }
 .tag--idle, .tag--dismissed, .tag--unknown { color: var(--color-text-muted); }
+/* A parent's subtask roll-up is muted until a subtask is an exception, then it takes that exception's color. */
+.tag--subtasks { color: var(--color-text-muted); font-weight: var(--weight-medium); }
+:is(.tag--subtasks, .group-count)[data-tone="waiting"], :is(.tag--subtasks, .group-count)[data-tone="quiet"] { color: var(--color-waiting); }
+:is(.tag--subtasks, .group-count)[data-tone="failed"], :is(.tag--subtasks, .group-count)[data-tone="stopped"] { color: var(--color-danger); }
+.group-count { margin-inline-start: var(--space-2); color: var(--color-text-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
+.subtask { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 2px var(--space-3); color: var(--color-text); text-decoration: none; }
+.subtask:hover { background: var(--color-surface-pressed); }
+.subtask > .glyph { width: 24px; height: 24px; grid-row: 1 / span 2; align-self: start; border-radius: var(--radius-sm); }
+.subtask > .glyph svg { width: 14px; height: 14px; }
+.subtask[data-kind="quiet"] > .glyph { background-color: var(--color-waiting-fill); }
+.subtask-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.subtask-title { min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.subtask-state { flex: none; color: var(--color-text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.subtask:is([data-kind="waiting"], [data-kind="quiet"]) .subtask-state { color: var(--color-waiting); }
+.subtask:is([data-kind="failed"], [data-kind="stopped"]) .subtask-state { color: var(--color-danger); }
+.subtask-summary { grid-column: 2; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); }
+.parent-link { color: var(--color-text-muted); font-size: var(--text-sm); }
+.parent-link a { color: var(--color-text); text-decoration: underline; text-decoration-color: var(--color-separator); text-underline-offset: 3px; }
+.parent-link a:hover { text-decoration-color: currentColor; }
+/* The Deck has its own delegated list in its cards and a fixed HUD grid. */
+body[data-origin="deck"] #subtasks-wrap { display: none; }
 
 /* Chat */
 .status-card {
@@ -290,13 +311,16 @@ body:not([data-origin="deck"]) :is(.status-kind, .recap-label) { font-size: var(
 .status-steps-label { margin: 0; color: var(--color-text-muted); font-size: var(--text-md); font-weight: var(--weight-medium); }
 .status-steps { display: grid; gap: var(--space-2); margin: 0; padding-inline-start: var(--space-6); list-style: decimal; }
 .status-steps li { padding-inline-start: var(--space-1); }
-/* At this card width, keeping the action inline can wrap the status title. */
-@container (max-width: 64rem) { .status-actions > :is(.open-codex, .open-claude-desktop) { flex: 1 1 100%; } }
 /* A settled chat (Done, nothing asked, no failed check) is one quiet line: no frame, and its actions are plain links,
    so the solid primary and the framed card stay a signal that a chat needs you. The Deck keeps its own frame. */
 body:not([data-origin="deck"]) .status-card[data-settled="true"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-4); padding: 0 var(--space-2); border: 0; background: none; }
 body:not([data-origin="deck"]) .status-card[data-settled="true"] :is(.status-head, .status-heading) { flex: none; }
-body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-body { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-body { flex: 1 1 0; min-width: min(100%, 12rem); display: flex; flex-wrap: nowrap; align-items: baseline; gap: 0 var(--space-2); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-kind { flex: none; }
+body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-text { flex: 1 1 0; min-width: 0; }
+/* A long command keeps the quiet line to one row; focus (Tab or a tap) unfolds it. */
+body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-text .command { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-text .command:focus { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; cursor: auto; }
 body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions { margin-inline-start: auto; }
 body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-text { color: var(--color-text-muted); font-size: var(--text-md); }
 body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-text:empty { display: none; }
@@ -605,6 +629,8 @@ html { --scroll-thumb: color-mix(in srgb, var(--color-text) 22%, transparent); s
 .segments [data-kind="new"] .segment-count.is-incoming { background: var(--color-danger-fill); color: var(--color-on-status); }
 :root[data-theme="dark"] .segments [data-kind="new"] .segment-count.is-incoming { color: var(--color-bg); }
 .segments .segment-label { color: inherit; font: inherit; }
+/* A zero needs nothing, so its count drops the status tint. */
+.segments .segment[data-empty="true"] { --count-tone: var(--color-text-muted); }
 .segments .segment[aria-current="page"] { color: var(--segment-tone); box-shadow: inset 0 -3px var(--segment-tone); }
 .segments .segment:hover { background: var(--color-surface-pressed); }
 @keyframes badge-arrival { 0% { transform: scale(.88); } 50% { transform: scale(1.14); } 100% { transform: scale(1); } }
@@ -641,6 +667,8 @@ html { --scroll-thumb: color-mix(in srgb, var(--color-text) 22%, transparent); s
 .section-toggle[aria-expanded="true"] .disclosure-chevron { transform: rotate(90deg); }
 /* Section icons stay smaller than the row icons they head: the heading text carries the hierarchy, and a bigger tile
    above every group made the section mark the loudest thing on the page. */
+/* Section headings carry the grouping by name and count; the tinted tile repeated each row's own glyph. */
+#sections .group-title > .section-toggle > .tone, #sections .group-title > .tone { display: none; }
 #sections .tone { width: calc(var(--size-section-glyph) * .75); height: calc(var(--size-section-glyph) * .75); border-radius: 9px; }
 #sections .tone svg { width: 18px; height: 18px; stroke-width: 1.8; }
 #sections .list { margin-inline-start: var(--space-3); background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
@@ -654,6 +682,8 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
 .row[data-status="interrupted"] { --row-tone: var(--color-danger); }
 .row > .glyph { width: var(--size-row-glyph); height: var(--size-row-glyph); border-radius: 12px; color: var(--row-tone); background: color-mix(in srgb, var(--row-tone) var(--tint-tone), transparent); }
 .row > .glyph svg { width: 26px; height: 26px; stroke-width: 1.7; }
+/* A routine finished chat keeps its mark but not a tile, so the tinted glyphs left are the ones that differ. */
+.row[data-section="earlier"][data-status="done"]:not([data-check="failed"]) > .glyph { background: none; color: var(--color-text-muted); opacity: .6; }
 .row-body { display: grid; gap: 0; min-width: 0; }
 .row-head { min-width: 0; }
 .row-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-row); font-weight: var(--weight-regular); letter-spacing: -.025em; line-height: 1.3; }
@@ -669,7 +699,9 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
 .row[data-check="failed"] { box-shadow: inset 3px 0 0 var(--color-danger); }
 .row[data-check="failed"] .tag--interrupted { box-shadow: inset 0 0 0 var(--size-hairline) currentColor; }
 .row-tags { display: flex; gap: var(--space-1); flex: none; flex-wrap: wrap; max-width: 40%; }
-.row-tags .tag { font-size: var(--text-label); }
+/* Exceptions are the reason to scan the inbox, so their tags read at body size rather than as the smallest text. */
+.row-tags .tag { font-size: var(--text-sm); }
+body:is([data-panel="open"], [data-aside]) .row-tags .tag { font-size: var(--text-xs); }
 .row-project { display: flex; align-items: center; gap: var(--space-1); min-width: 0; color: var(--color-text-muted); font-size: var(--text-preview); }
 .row-project > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-project > .harness-pill { margin-inline-end: var(--space-1); }
@@ -698,8 +730,7 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
   #sections li:has(> .row-dismiss:hover) > .row { background: var(--color-surface-pressed); }
   /* The open chat's row keeps its selection fill on hover, so Dismiss adds no tint there. */
   #sections .list > li:has(> .row[aria-current="true"]) { --row-tint: transparent; }
-  #sections li:has(> .row[aria-current="true"][data-section="waiting"]) { --row-base: color-mix(in srgb, var(--color-waiting) 14%, var(--color-surface)); }
-  #sections li:has(> .row[aria-current="true"][data-section="new"]) { --row-base: color-mix(in srgb, var(--color-new) 14%, var(--color-surface)); }
+  #sections li:has(> .row[aria-current="true"]) { --row-base: color-mix(in srgb, var(--color-text) 7%, var(--color-surface)); }
   .row-dismiss { display: flex; align-items: center; gap: var(--space-1); width: auto; height: 32px; inset-inline-end: var(--space-2);
     padding-inline: calc(var(--space-6) + var(--space-1)) var(--space-2); border-radius: var(--radius-md);
     background: linear-gradient(to right, transparent, var(--row-tint) var(--space-6)), linear-gradient(to right, transparent, var(--row-base) var(--space-6)); color: var(--color-text-muted); }
@@ -729,7 +760,8 @@ body[data-panel="open"] #sections .list { margin-inline-start: var(--space-2); }
 .undo-toast-body > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .undo-toast-body .button { flex: none; background: none; box-shadow: none; color: inherit; }
 .undo-toast-body .button:hover, .undo-toast-body .button:focus-visible { background: color-mix(in srgb, var(--color-bg) 16%, transparent); }
-.row[aria-current="true"] { border-radius: 0; background: color-mix(in srgb, var(--row-tone) 14%, var(--color-surface)); }
+/* Selection is neutral: the glyph and tags already carry the status, so the fill only says which chat is open. */
+.row[aria-current="true"] { border-radius: 0; background: color-mix(in srgb, var(--color-text) 7%, var(--color-surface)); }
 .row[aria-current="true"] .row-title { font-weight: var(--weight-medium); }
 .show-all { display: inline-flex; align-items: center; min-height: var(--size-control); padding: 0 var(--inset-control); color: var(--color-accent); font-size: 16px; text-decoration: none; white-space: nowrap; }
 .show-all:hover { text-decoration: underline; }
@@ -765,20 +797,21 @@ body[data-panel="open"] .compact-filter { display: grid; grid-template-columns: 
 body[data-panel="open"] #sections { padding-top: 0; }
 body[data-panel="open"] #sections .group-title { padding-inline: 0 var(--space-2); font-size: 16px; }
 body[data-panel="open"] #sections .tone { width: 30px; height: 30px; }
-/* Beside an open chat, titles get two lines before the preview and quieter project metadata. */
-body[data-panel="open"] .row { grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-3); }
-body[data-panel="open"] .row > .glyph { width: 30px; height: 30px; grid-row: 1 / span 2; }
-body[data-panel="open"] .row-body { grid-column: 2; grid-row: 1; }
-body[data-panel="open"] .row-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; font-size: 16px; }
-body[data-panel="open"] .row-description { flex-wrap: wrap; }
-body[data-panel="open"] .row-tags { max-width: none; }
-body[data-panel="open"] .row-text { font-size: 13px; }
-body[data-panel="open"] .row-project { grid-column: 2 / -1; grid-row: 2; font-size: 11px; }
-body[data-panel="open"] .row-project .project-icon { width: 11px; height: 11px; }
-body[data-panel="open"] .row-project > .harness-pill { margin: 0; padding: 0; box-shadow: none; font-size: inherit; line-height: inherit; }
-body[data-panel="open"] .row-project > .harness-pill::after { content: " ·"; }
-body[data-panel="open"] .row-time { grid-column: 3; grid-row: 1; font-size: 12px; line-height: calc(16px * 1.3); }
-body[data-panel="open"] .row-chevron { display: none; }
+/* Beside an open chat, or with Settings or Help open, the inbox is narrow: titles get two lines before the preview,
+   and project metadata moves under them instead of holding a fixed column that squeezes the title. */
+body:is([data-panel="open"], [data-aside]) .row { grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-3); }
+body:is([data-panel="open"], [data-aside]) .row > .glyph { width: 30px; height: 30px; grid-row: 1 / span 2; }
+body:is([data-panel="open"], [data-aside]) .row-body { grid-column: 2; grid-row: 1; }
+body:is([data-panel="open"], [data-aside]) .row-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; font-size: 16px; }
+body:is([data-panel="open"], [data-aside]) .row-description { flex-wrap: wrap; }
+body:is([data-panel="open"], [data-aside]) .row-tags { max-width: none; }
+body:is([data-panel="open"], [data-aside]) .row-text { font-size: 13px; }
+body:is([data-panel="open"], [data-aside]) .row-project { grid-column: 2 / -1; grid-row: 2; font-size: 11px; }
+body:is([data-panel="open"], [data-aside]) .row-project .project-icon { width: 11px; height: 11px; }
+body:is([data-panel="open"], [data-aside]) .row-project > .harness-pill { margin: 0; padding: 0; box-shadow: none; font-size: inherit; line-height: inherit; }
+body:is([data-panel="open"], [data-aside]) .row-project > .harness-pill::after { content: " ·"; }
+body:is([data-panel="open"], [data-aside]) .row-time { grid-column: 3; grid-row: 1; font-size: 12px; line-height: calc(16px * 1.3); }
+body:is([data-panel="open"], [data-aside]) .row-chevron { display: none; }
 body[data-panel="open"] #thread-view { grid-column: 2; grid-row: 1; min-height: 0; align-content: start; grid-auto-rows: max-content; overflow-y: auto; padding: 0 var(--content-inset) var(--content-inset); border-left: 1px solid var(--color-separator); }
 /* Beside the inbox the chat pane can be very wide: its content keeps the same centered column as the full chat page, so
    frames hug the capped prose and title, chips, Inbox and body share one pair of edges. The header's divider still
@@ -810,6 +843,11 @@ body[data-panel="open"] .panel-head { position: sticky; top: 0; z-index: 2; padd
 .aside-panel { position: fixed; z-index: 4; inset: 0 var(--sidebar-width) 0 auto; width: 380px; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-2) var(--content-inset) var(--content-inset); color: var(--color-text); background: var(--color-sidebar); border-left: 1px solid var(--color-separator); }
 @media (min-width: 1280px) { body[data-aside] { --aside-width: 380px; } }
 @media (min-width: 1280px) { body[data-aside="help"] { --aside-width: 560px; } }
+/* With the panel beside it the filter bar cannot fit five labels, so the other filters show icon and count only;
+   the label stays as their accessible name and the current filter keeps its word. */
+@media (min-width: 1280px) {
+  body[data-aside] .segments .segment:not([aria-current="page"]) .segment-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 @media (min-width: 960px) {
   body[data-aside] .row-description { flex-wrap: wrap; }
   body[data-aside] .row-tags { max-width: none; }
@@ -1148,6 +1186,7 @@ body[data-view="deck"] .deck-cockpit .bar { top: var(--space-1); left: auto; rig
 .deck-fleet-readout strong { font-size: 20px; color: var(--deck-amber); font-variant-numeric: tabular-nums; }
 .deck-fleet-readout[data-kind="working"] strong { color: var(--deck-purple); }
 .deck-fleet-readout[data-kind="new"] strong { color: var(--deck-green); }
+.deck-fleet-readout[data-empty="true"] strong { color: var(--deck-muted); }
 .deck-brand-row { display: flex; justify-content: space-between; align-items: center; width: 100%; min-width: 0; gap: var(--space-3); flex-wrap: wrap; }
 .deck-layout { display: flex; gap: var(--space-1); padding: var(--space-1); border: 1px solid var(--deck-line); border-radius: 8px; }
 .deck-layout button { border: 0; border-radius: 5px; padding: var(--space-2) var(--space-3); background: none; color: var(--deck-muted); font: 600 12px / 1.4 var(--font-sans); cursor: pointer; }
@@ -2066,4 +2105,24 @@ body[data-view="deck"] .connection .connection-dot { background: currentColor; }
 .deck-delegate-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--deck-muted); }
 
 /* Inbox: a delegated chat sits indented under its orchestrator's row, a rule marking the branch. */
-#sections li[data-delegate] > .row { padding-inline-start: calc(var(--space-5) + var(--size-row-glyph)); background-image: linear-gradient(var(--color-separator), var(--color-separator)); background-size: 2px 100%; background-position: calc(var(--space-5) + var(--size-row-glyph) / 2 - 1px) 0; background-repeat: no-repeat; }
+/* Subtasks read as one group under their parent: a smaller mark and title, one stationary line from under the
+   parent's glyph to the last subtask, and no dividers inside the group. The line sits on the item, so a swiped row
+   slides over it and focus outlines stay on the row. */
+#sections { --tree-x: calc(var(--space-5) + var(--size-row-glyph) / 2); }
+body:is([data-panel="open"], [data-aside]) #sections { --tree-x: calc(var(--space-3) + 15px); }
+#sections li[data-delegate] { position: relative; }
+#sections li[data-delegate]::before { content: ""; position: absolute; z-index: 1; inset-block: 0; inset-inline-start: calc(var(--tree-x) - 1px); width: 2px; background: color-mix(in srgb, var(--color-text-muted) 40%, transparent); pointer-events: none; }
+#sections li[data-delegate]:not(:has(+ li[data-delegate]))::before { bottom: 50%; }
+#sections li:has(+ li[data-delegate]) > .row { border-bottom-color: transparent; }
+#sections li[data-delegate] > .row { --size-row-glyph: 24px; min-height: 0; padding-block: var(--space-2); padding-inline-start: calc(var(--tree-x) + var(--space-4)); }
+#sections li[data-delegate] > .row > .glyph { border-radius: var(--radius-sm); }
+#sections li[data-delegate] > .row > .glyph svg { width: 14px; height: 14px; }
+#sections li[data-delegate] .row-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; font-size: var(--text-preview); }
+body:is([data-panel="open"], [data-aside]) #sections li[data-delegate] > .row { grid-template-columns: 24px minmax(0, 1fr) auto; }
+body:is([data-panel="open"], [data-aside]) #sections li[data-delegate] > .row > .glyph { width: 24px; height: 24px; }
+body:is([data-panel="open"], [data-aside]) #sections li[data-delegate] .row-title { font-size: var(--text-sm); }
+.delegate-fold { border-bottom: 1px solid var(--color-separator); }
+.delegate-fold-button { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--size-control); margin-inline-start: calc(var(--tree-x) + var(--space-4)); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.delegate-fold-button svg { width: 16px; height: 16px; }
+.delegate-fold-button[aria-expanded="true"] svg { transform: rotate(-90deg); }
+.delegate-fold-button:hover, .delegate-fold-button:focus-visible { background: var(--color-surface-pressed); color: var(--color-text); }
