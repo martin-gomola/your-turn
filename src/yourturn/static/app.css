@@ -1257,6 +1257,8 @@ body[data-view="deck"] .deck-cockpit .bar { top: var(--space-1); left: auto; rig
 .deck-telemetry:active { background: rgb(255 255 255 / .08); }
 .deck-telemetry:focus-visible { outline: 2px solid var(--deck-text); outline-offset: 3px; }
 .deck-stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); min-width: 0; }
+/* The featured card gets the same air above it as the groups get below it (8px cockpit margin + 16px = 24px). */
+.deck-stage:not(:empty) { margin-top: var(--space-4); }
 .deck-feature { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
 .deck-matrix { display: none; min-width: 0; min-height: 0; border: 1px solid var(--deck-line); border-radius: 12px; background: #0b0e10; padding: var(--space-4); }
 .deck-matrix h2 { margin: 0 0 var(--space-3); color: var(--deck-muted); font-size: 12px; line-height: 1.4; font-weight: 700; letter-spacing: .04em; }
@@ -1747,6 +1749,9 @@ body[data-origin="deck"] :is(.open-codex, .open-claude-desktop) { min-height: 44
 /* Metrics read as instruments: monospaced digits. */
 :is(.deck-timer, .deck-percent, .deck-fleet-readout strong, .deck-telemetry strong, .deck-mini-time) { font-family: var(--font-mono); letter-spacing: 0; }
 .deck-history { flex: none; border-top: 1px solid var(--hud-frame); padding: var(--space-2) var(--space-4); font: 12px / 1.5 var(--font-mono); }
+/* In Supporting evidence the setup line follows the recorded log: a little air above it, so it reads as its own row
+   rather than the log's caption. */
+.deck-supporting-body > .deck-setup { display: block; margin-top: var(--space-3); }
 .deck-history ol { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 .deck-history li { overflow: hidden; color: var(--deck-text); white-space: nowrap; text-overflow: ellipsis; }
 .deck-history li::before { content: "▸ "; color: var(--deck-tone); }
@@ -1861,6 +1866,7 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
   .deck-fleet-readout { min-height: 44px; padding: var(--space-1); gap: var(--space-1); font-size: 12px; }
   .deck-fleet-readout strong { font: 700 16px / 1 var(--font-mono); }
   .deck-cockpit { margin-bottom: var(--space-4); }
+  .deck-stage:not(:empty) { margin-top: 0; }
   .deck-hero { padding: var(--space-4); gap: var(--space-4); }
   /* clip-path would also clip the fixed action bar; the 1px chamfer ring still draws the frame. */
   .deck-card { overflow: visible; clip-path: none; }
@@ -1881,6 +1887,10 @@ body[data-connection="offline"] :is(.deck-trace-bar, .deck-trace-chart::after) {
 .deck-handoff p[data-label="next"] { color: var(--deck-text); }
 .deck-card[data-kind="waiting"] .deck-handoff p[data-label="next"] { padding: var(--space-3) var(--space-4); border-left: 3px solid var(--deck-tone); background: #191710; font-size: 18px; line-height: 1.5; font-weight: 600; }
 .deck-card[data-kind="waiting"] .deck-handoff p[data-label="next"] strong { display: block; margin-bottom: var(--space-1); color: var(--deck-tone); font: 700 12px / 1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+/* Reading measure, as in the chat (54ch is about 66 characters in this face): the Outcome line stops there, and the
+   request box keeps its full-width band while its text wraps at the same measure through end padding. */
+.deck-handoff p { max-inline-size: 54ch; }
+.deck-card[data-kind="waiting"] .deck-handoff p[data-label="next"] { max-inline-size: none; padding-inline-end: max(var(--space-4), 100% - 54ch - var(--space-4)); }
 .deck-evidence { font-size: 12px; }
 .deck-time-label { color: var(--deck-muted); font: 600 12px / 1.4 var(--font-mono); letter-spacing: .06em; }
 .deck-readout > .deck-timer { margin-top: var(--space-1); font-size: 24px; font-weight: 600; color: var(--deck-muted); }
