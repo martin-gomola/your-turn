@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from yourturn import usage
-from yourturn.install import APPS, detect, doctor, install, rule_text, uninstall
+from yourturn.install import APPS, detect, doctor, install, install_loop_skills, loop_agents, rule_text, uninstall
 
 SERVE = "uvx your-turn@latest serve"
 PORT = 8787
@@ -187,6 +187,8 @@ def main(argv: list[str] | None = None) -> int | None:
             done = (install if args.command == "install" else uninstall)(harnesses, homes)
         except subprocess.CalledProcessError as error:
             parser.exit(1, f"Plugin install failed: {' '.join(error.cmd)}\n")
+        if args.command == "install":
+            install_loop_skills(loop_agents(harnesses, gemini=args.harness is None))
         if args.claude_usage:
             try:
                 change = usage.install if args.command == "install" else usage.uninstall

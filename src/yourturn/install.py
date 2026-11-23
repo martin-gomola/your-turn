@@ -507,6 +507,46 @@ def doctor(harnesses: list[str], homes: dict[str, Path]) -> int:
     return 1 if any(state in ("missing", "content mismatch", "unreadable") for _, _, state, _ in results) else 0
 
 
+# --- Loop skills ---------------------------------------------------------------------------------
+
+LOOP_REPO = "martin-gomola/your-turn-loop"
+LOOP_PAGE = "https://martin-gomola.github.io/your-turn-loop/"
+# ponytail: fixed list of the Loop's skills other than the handoff, which this package installs itself
+# in each app's wording; add a name here when the Loop gains a skill.
+LOOP_SKILLS = ("what-to-ask", "second-opinion", "delegate-code", "codex-image")
+# Skills CLI agent names; `antigravity` installs to ~/.gemini/config/skills, which the Gemini app reads too.
+LOOP_AGENTS = {"codex": "codex", "claude": "claude-code", "cursor": "cursor"}
+
+
+def loop_agents(harnesses: list[str], gemini: bool) -> list[str]:
+    """Skills CLI agents for the chosen apps, plus Antigravity and the Gemini app when `~/.gemini` exists."""
+    agents = [LOOP_AGENTS[harness] for harness in harnesses]
+    if gemini and (Path.home() / ".gemini").is_dir():
+        agents.append("antigravity")
+    return agents
+
+
+def install_loop_skills(agents: list[str]) -> bool:
+    """Install the Loop skills globally through the Skills CLI, the same command the Loop page builds."""
+    if not agents:
+        return True
+    if not shutil.which("npx"):
+        print(f"{_paint('!', '33')} Loop skills skipped: Node.js (npx) not found. Pick them on {LOOP_PAGE}", flush=True)
+        return False
+    command = ["npx", "--yes", "skills", "add", LOOP_REPO, "--skill", *LOOP_SKILLS, "--agent", *agents, "--global", "--yes"]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, timeout=300,
+                              env={**os.environ, "DISABLE_TELEMETRY": "1"}).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        done = False
+    if done:
+        print(f"{_paint('✓', '32')} {_paint('Loop skills', '1;36')}", flush=True)
+        print(f"  {', '.join(LOOP_SKILLS)} for {', '.join(agents)}", flush=True)
+    else:
+        print(f"{_paint('!', '33')} Loop skills not installed. Run: {' '.join(command)}", flush=True)
+    return done
+
+
 def install(harnesses: list[str], homes: dict[str, Path]) -> list[str]:
     """Set up each app and return the ones that got the handoff, which need a restart to load it."""
     print(_paint("Your Turn setup", "1;36"), flush=True)

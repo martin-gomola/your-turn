@@ -480,3 +480,27 @@ def test_cursor_rule_prints_only_the_rule_and_changes_nothing(tmp_path: Path, mo
     assert captured.out == rule_text("cursor") and captured.err == ""
     assert _tree(tmp_path) == before and not (tmp_path / "home").exists()
     assert not codex_log.exists() and not claude_log.exists()
+
+
+def test_loop_skills_install_through_the_skills_cli_for_found_agents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    import yourturn.install as installer
+    (tmp_path / ".gemini").mkdir()
+    monkeypatch.setattr(installer.Path, "home", lambda: tmp_path)
+    assert installer.loop_agents(["claude", "cursor"], gemini=True) == ["claude-code", "cursor", "antigravity"]
+    assert installer.loop_agents(["claude"], gemini=False) == ["claude-code"]
+    calls = []
+    monkeypatch.setattr(installer.shutil, "which", lambda name: name)
+    monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs["env"])) or
+                        subprocess.CompletedProcess(args, 0))
+    assert installer.install_loop_skills(["claude-code", "antigravity"])
+    (args, env), = calls
+    assert args[:5] == ["npx", "--yes", "skills", "add", installer.LOOP_REPO] and "your-turn-handoff" not in args
+    assert args[args.index("--agent") + 1:args.index("--global")] == ["claude-code", "antigravity"]
+    assert env["DISABLE_TELEMETRY"] == "1"
+
+
+def test_loop_skills_are_skipped_without_node(no_clis: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from yourturn.install import LOOP_PAGE, install_loop_skills
+    assert not install_loop_skills(["codex"])
+    assert LOOP_PAGE in capsys.readouterr().out

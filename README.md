@@ -196,7 +196,7 @@ cd your-turn
 make install
 ```
 
-`make install` sets up the handoff from this checkout and starts the inbox. Open [http://localhost:8787](http://localhost:8787). Later, from the same folder:
+`make install` sets up the handoff from this checkout, adds the [Your Turn Loop](https://github.com/martin-gomola/your-turn-loop) skills to every agent it finds (including Antigravity and the Gemini app; needs Node.js), and starts the inbox. Open [http://localhost:8787](http://localhost:8787). Later, from the same folder:
 
 ```bash
 make up        # start the inbox in the background
