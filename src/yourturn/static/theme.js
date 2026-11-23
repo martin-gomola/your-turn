@@ -36,7 +36,9 @@ try {
     const theme = preference;
     const dark = deckChat || theme === "dark" || (theme !== "light" && system.matches);
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#151515" : "#fcfbfa");
+    // The browser and PWA bar match the page: a chat page sits on the grouped gray (--color-bg-grouped), the inbox on
+    // near-white (--color-bg). In dark both are the same.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#151515" : query.has("thread") ? "#f5f4f1" : "#fcfbfa");
     document.dispatchEvent(new Event("themechange"));
   };
   window.YourTurnTheme = {
