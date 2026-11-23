@@ -1695,7 +1695,7 @@ function renderDecisions(thread) {
     const alternatives = answer ? decision.options.filter((option) => option !== decision.chosen) : decision.options;
     // A single rejected option is the comparison that gives the choice its meaning, so it shows inline.
     const inlineAlternative = answer && alternatives.length === 1;
-    const over = inlineAlternative ? el("p", "decision-over", `Over: ${alternatives[0]}`) : null;
+    const over = inlineAlternative ? el("span", "decision-over", `instead of ${alternatives[0]}`) : null;
     const answerAction = longAnswer ? el("button", "decision-full-button", "Show full decision") : null;
     answerAction?.addEventListener("click", () => showFullDecision({
       question: decision.question,
@@ -1756,9 +1756,14 @@ function renderDecisions(thread) {
       actions.append(optionsButton, popover);
     }
     if (answerAction) actions.append(answerAction);
-    footer.append(actions, meta);
-    // Question, then the choice and what it beat, then why; without an answer the question leads.
-    item.replaceChildren(...(answer ? [context, lead] : [lead, context]), ...(over ? [over] : []), ...(decision.reason ? [el("p", "reason", decision.reason)] : []), footer);
+    footer.append(actions);
+    const choice = over ? el("div", "decision-choice") : lead;
+    if (over) choice.append(lead, over);
+    // Question with its turn set apart on the right, then the choice and what it beat, then why; without an answer the
+    // question leads and the note follows.
+    const head = el("div", "decision-head");
+    head.append(answer ? context : choice, ...(meta.textContent ? [el("span", "decision-turn", meta.textContent)] : []));
+    item.replaceChildren(head, answer ? choice : context, ...(decision.reason ? [el("p", "reason", decision.reason)] : []), ...(actions.childElementCount ? [footer] : []));
     return item;
   });
   const older = items.slice(DECISION_PREVIEW_LIMIT);
