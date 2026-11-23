@@ -37,7 +37,7 @@ def test_install_reuses_existing_marketplace(tmp_path: Path, monkeypatch: pytest
     assert log.read_text().splitlines() == ["plugin list --json", "plugin marketplace list", "plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
 
 
-def test_install_stops_when_codex_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_stops_when_codex_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     fake_codex(tmp_path, monkeypatch, "")
 
     def hang(args: list[str], **kwargs: object) -> None:
@@ -45,6 +45,8 @@ def test_install_stops_when_codex_hangs(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr("yourturn.install.subprocess.run", hang)
     assert not install_plugin()
+    out = capsys.readouterr().out
+    assert "✓" not in out and "!" in out and "Run install again" in out
 
 
 def test_install_continues_when_marketplace_upgrade_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -104,8 +104,9 @@ def _paint(text: str, code: str) -> str:
     return f"\033[{code}m{text}\033[0m"
 
 
-def _install_result(harness: str, detail: str, home: Path | None = None) -> None:
-    print(f"{_paint('✓', '32')} {_paint(APPS[harness], '1;36')}", flush=True)
+def _install_result(harness: str, detail: str, home: Path | None = None, ok: bool = True) -> None:
+    mark = _paint("✓", "32") if ok else _paint("!", "33")
+    print(f"{mark} {_paint(APPS[harness], '1;36')}", flush=True)
     print(f"  {detail}", flush=True)
     if home is not None:
         print(f"  {_paint(str(home), '2')}", flush=True)
@@ -240,10 +241,11 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Skill {skill} (Codex CLI not found, so no plugin)", agents_home() / "skills")
         return skill in ("written", "unchanged")
     env = {**os.environ, "CODEX_HOME": str(home)} if home is not None else None
+    # The first CLI start after a Codex update can take tens of seconds; later ones take about a second.
     try:
-        inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env, timeout=15)
+        inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env, timeout=60)
     except subprocess.TimeoutExpired:
-        _install_result("codex", "Plugin list timed out; install stopped")
+        _install_result("codex", "Plugin list timed out; plugin not updated. Run install again", ok=False)
         return False
     try:
         entries = json.loads(inventory.stdout).get("installed", []) if inventory.returncode == 0 else []
@@ -268,9 +270,9 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Plugin {PLUGIN} {__version__} unchanged{shared}")
         return True
     try:
-        listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=15)
+        listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=60)
     except subprocess.TimeoutExpired:
-        _install_result("codex", "Marketplace list timed out; install stopped")
+        _install_result("codex", "Marketplace list timed out; plugin not updated. Run install again", ok=False)
         return False
     if not any(line.split()[:1] == [MARKETPLACE] for line in listed.stdout.splitlines()):
         _codex(["plugin", "marketplace", "add", MARKETPLACE_SOURCE], home)
