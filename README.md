@@ -81,7 +81,7 @@ Keep the terminal open while using the inbox. Stop it with Ctrl+C.
 Use a persistent installation, then opt in to a user-level Codex hook:
 
 ```bash
-uv tool install your-turn
+uv tool install your-turn@latest
 your-turn autostart enable
 ```
 

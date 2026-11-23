@@ -123,7 +123,7 @@ Windows and runs in the foreground.
 Use a persistent Python environment rather than an evictable `uvx` cache:
 
 ```sh
-uv tool install your-turn
+uv tool install your-turn@latest
 your-turn autostart enable
 ```
 

@@ -25,7 +25,7 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
-from yourturn import usage
+from yourturn import __version__, usage
 
 MARKETPLACE_SOURCE = "martin-gomola/your-turn"
 MARKETPLACE = "your-turn"
@@ -260,6 +260,13 @@ def install_plugin(home: Path | None = None) -> bool:
             _remove_skill(agents_home())
         _install_result("codex", f"Using installed handoff {standalone}")
         return True
+    # A Git marketplace ships the skill with the release, so the same version needs no refresh.
+    if any(isinstance(entry, dict) and entry.get("pluginId") == PLUGIN and entry.get("installed") and entry.get("enabled")
+           and entry.get("version") == __version__ and (entry.get("marketplaceSource") or {}).get("sourceType") == "git"
+           for entry in entries):
+        shared = ", shared skill removed" if _shared_skill() and _remove_skill(agents_home()) == "removed" else ""
+        _install_result("codex", f"Plugin {PLUGIN} {__version__} unchanged{shared}")
+        return True
     try:
         listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=15)
     except subprocess.TimeoutExpired:
@@ -306,7 +313,16 @@ def _legacy_claude_mcp(home: Path) -> str:
     """Remove the `your-turn` MCP server an earlier version registered at user scope."""
     if not shutil.which("claude"):
         return ""
-    removed = subprocess.run(["claude", "mcp", "remove", "--scope", "user", NAME], capture_output=True, text=True, env=_claude_env(home))
+    env = _claude_env(home)
+    config = Path(env["CLAUDE_CONFIG_DIR"]) / ".claude.json" if "CLAUDE_CONFIG_DIR" in env else Path.home() / ".claude.json"
+    try:
+        servers = json.loads(config.read_text(encoding="utf-8")).get("mcpServers", {})
+    except (OSError, ValueError, AttributeError):
+        servers = None
+    # Skips a slow CLI start when the config shows no server; anything unreadable is left to the CLI.
+    if isinstance(servers, dict) and NAME not in servers:
+        return ""
+    removed = subprocess.run(["claude", "mcp", "remove", "--scope", "user", NAME], capture_output=True, text=True, env=env)
     return ", old MCP server removed" if removed.returncode == 0 else ""
 
 

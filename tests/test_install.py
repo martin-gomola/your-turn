@@ -285,6 +285,35 @@ def test_claude_legacy_mcp_server_is_removed_through_the_cli(tmp_path: Path, mon
     assert log.read_text().splitlines() == [f"{home}|mcp remove --scope user your-turn"] * 2
 
 
+def test_claude_cli_is_skipped_when_its_config_has_no_legacy_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    homes = _homes(tmp_path)
+    log = _fake(tmp_path, "claude", monkeypatch)
+    (homes["claude"] / ".claude.json").write_text(json.dumps(OTHER))
+    install(["claude"], homes)
+    assert not log.exists()
+
+
+def test_codex_reinstall_is_skipped_for_the_same_git_release(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    import yourturn.install as installer
+    calls = []
+    entry = {"pluginId": installer.PLUGIN, "installed": True, "enabled": True, "version": installer.__version__,
+             "marketplaceSource": {"sourceType": "git"}}
+
+    def run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps({"installed": [entry]}), stderr="")
+    monkeypatch.setattr(installer.shutil, "which", lambda name: "codex")
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    assert installer.install_plugin(tmp_path / "codex")
+    assert calls == [["codex", "plugin", "list", "--json"]]
+    entry["version"] = "0.0.1"
+    calls.clear()
+    assert installer.install_plugin(tmp_path / "codex")
+    assert ["codex", "plugin", "add", installer.PLUGIN] in calls
+
+
 def test_codex_uninstall_removes_the_plugin_and_marketplace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     homes = _homes(tmp_path)
     log = _fake(tmp_path, "codex", monkeypatch)
