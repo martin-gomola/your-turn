@@ -11,7 +11,7 @@ Commands, flags, the handoff install, and the handoff format. What each app reco
 | `your-turn start` | Starts or reuses one verified inbox in the background; does not open a browser |
 | `your-turn stop` | Stops only the matching inbox owned by the background launcher |
 | `your-turn status` | Checks the identity of the inbox on the selected port |
-| `your-turn install` | Sets up the handoff for each app it finds. Run in a terminal, it then starts the inbox, or says so when it is already running; from a script, or with input or output redirected, it exits |
+| `your-turn install` | Sets up the handoff for each app it finds, then installs the other Your Turn Loop skills through the Skills CLI (`npx skills add`, Node.js required) for those apps, plus Antigravity and the Gemini app when `~/.gemini` exists and no `--harness` is given. Run in a terminal, it then starts the inbox, or says so when it is already running; from a script, or with input or output redirected, it exits |
 | `your-turn uninstall` | Removes what `install` added; for Codex, also disables the owned autostart hook. Leaves a running shared inbox alone |
 | `your-turn doctor` | Checks, without changing anything, whether the installed handoff matches this version |
 | `your-turn cursor-rule` | Prints the [Cursor User Rule](#cursor-user-rule) to paste into Cursor, without changing anything |
