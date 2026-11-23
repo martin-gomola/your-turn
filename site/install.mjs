@@ -5,7 +5,7 @@ const getUv = {
 };
 // One command per line, in the order to run them. `install` comes last because it starts the inbox and keeps the terminal.
 // PyPI through uv is the one promoted path; Nix stays documented in the README only.
-export function installation({uv = 'have', doctor = true, autostart = false} = {}) {
+export function installation({uv = 'have', doctor = false, autostart = true} = {}) {
   if (!Object.hasOwn(getUv, uv)) throw Error('Unknown uv choice');
   if (typeof doctor !== 'boolean' || typeof autostart !== 'boolean') throw Error('Invalid option');
   const run = autostart ? 'your-turn' : 'uvx your-turn@latest';

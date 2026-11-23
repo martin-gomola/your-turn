@@ -2,9 +2,13 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {installation} from '../site/install.mjs';
 
-test('default is a uv dry run, then install', () => {
-  assert.equal(installation(), 'uvx your-turn@latest doctor\nuvx your-turn@latest install');
-  assert.equal(installation({doctor: false}), 'uvx your-turn@latest install');
+test('default is a persistent install with Codex autostart, no dry run', () => {
+  assert.equal(installation(), 'uv tool install your-turn@latest\nyour-turn autostart enable\nyour-turn install');
+});
+
+test('without autostart, uvx runs the dry run and install', () => {
+  assert.equal(installation({doctor: true, autostart: false}), 'uvx your-turn@latest doctor\nuvx your-turn@latest install');
+  assert.equal(installation({autostart: false}), 'uvx your-turn@latest install');
 });
 
 test('missing uv is installed first', () => {
@@ -13,7 +17,7 @@ test('missing uv is installed first', () => {
 });
 
 test('autostart uses a persistent install and ends with install', () => {
-  assert.equal(installation({autostart: true}),
+  assert.equal(installation({doctor: true}),
     'uv tool install your-turn@latest\nyour-turn doctor\nyour-turn autostart enable\nyour-turn install');
 });
 
