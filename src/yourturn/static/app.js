@@ -387,6 +387,14 @@ let searchQuery = "";
 let awaySnapshot = null;
 let searchReturnFocus = null;
 
+// A recorded option, with an agent's trailing "(Recommended)" shown as a quiet label instead of raw text.
+function optionItem(option) {
+  const match = /^(.+?)\s*\(recommended\)\s*$/i.exec(option);
+  const item = el("li", "", match ? match[1] : option);
+  if (match) item.append(el("span", "option-recommended", "Recommended"));
+  return item;
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -1352,7 +1360,7 @@ function renderStatus(thread, turn) {
   $("next-kind").textContent = label;
   const options = pending && thread.status !== "working" ? pending.options : [];
   $("next-options").hidden = options.length === 0;
-  $("next-options").replaceChildren(...options.map((option) => el("li", "", option)));
+  $("next-options").replaceChildren(...options.map(optionItem));
 
   $("reminder-toggle").hidden = !hasAttention(chat) || !thread.attention_key;
   const dismissed = reminderDismissed(chat);

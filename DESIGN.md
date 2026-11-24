@@ -635,7 +635,9 @@ Inbox/chat scale in `tokens.css`.
   Its body depends on state:
   - Needs you: the title adds how long the request has waited ("Needs you · 12d ago"), so fresh and
     stale requests read differently. Then the action label and the request, with recorded options as
-    a plain read-only list, then the reminder control and its note ("Hidden in every Your Turn
+    flush read-only rows split by status-tinted hairlines (no bullets, no hover or pointer, since the
+    answer is given in the agent's app); an agent's trailing "(Recommended)" becomes a quiet
+    Recommended label after the option. Then the reminder control and its note ("Hidden in every Your Turn
     tab"). Numbered "Next steps for you" text appears as an ordered list; other request text stays
     as written. The action label is omitted when the request already starts with it, so one fact is
     never stated twice ("Approve pending action in Cursor" needs no Approve label above it).
