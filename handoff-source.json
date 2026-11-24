@@ -1,9 +1,9 @@
 {
   "repository": "https://github.com/martin-gomola/your-turn-loop.git",
-  "commit": "bbcadee958d5c046b82f6bf5bd5e22e228be33f7",
+  "commit": "f9de397a870cb0a41a9f78c66635b10a959d7b46",
   "path": "skills/your-turn-handoff",
   "files": {
-    "SKILL.md": "a554233232e296642bc66106e2323b21751ee450454cc00877dbcbe0bf7812dc",
+    "SKILL.md": "afa5379d567aa028d9e9ffcc3b18732123ed47ca5532ad723d09bdf5fe875355",
     "LICENSE": "83bfc3c5dbb0abde2c5ba3a2af509b4a3b89095a487e0f04416b5d4b740bd18e"
   }
 }
