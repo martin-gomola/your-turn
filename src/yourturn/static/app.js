@@ -2159,12 +2159,18 @@ function renderThread(thread) {
     // CSS `order`, keeps keyboard and reading order equal to what is on screen.
     $("more").querySelector(".list").append(...["hero-meta", "tools-wrap", "activity-wrap", "session-files-wrap", "earlier-wrap"].map($));
   }
-  if (turn?.ended_at && seen.get(chatKey(thread)) < turn.ended_at) {
-    seen.set(chatKey(thread), turn.ended_at);
-    if (inboxData) renderInbox(inboxData);
-    else if (attentionData) syncNavigation(attentionData);
-  }
+  markThreadSeen();
   if (openingPanel) title.focus({ preventScroll: true });
+}
+
+// A turn that ends while its chat sits open in a page you are not using (another window, a background tab)
+// stays a new result; it is marked seen once this page has focus again.
+function markThreadSeen() {
+  const turn = threadData?.turns[threadData.turns.length - 1];
+  if (!turn?.ended_at || seen.get(chatKey(threadData)) >= turn.ended_at || !document.hasFocus()) return;
+  seen.set(chatKey(threadData), turn.ended_at);
+  if (inboxData) renderInbox(inboxData);
+  else if (attentionData) syncNavigation(attentionData);
 }
 
 // Wide-screen detail pane (independent of the inbox list presentation).
@@ -3767,6 +3773,7 @@ if (!threadId && !deckView) {
     awaySnapshot = { at: Date.now(), keys: new Set(inboxData.filter(needsAttention).map(chatKey)) };
   });
   window.addEventListener("focus", () => {
+    markThreadSeen();
     if (!awaySnapshot || !inboxData) return;
     const delta = awayDelta(awaySnapshot.keys, new Set(inboxData.filter(needsAttention).map(chatKey)), Date.now() - awaySnapshot.at);
     awaySnapshot = null;
