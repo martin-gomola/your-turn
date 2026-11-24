@@ -373,7 +373,12 @@ body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="wo
   body:not([data-origin="deck"]) .status-card[data-settled="true"] .status-actions > :is(.open-codex, .open-claude-desktop) { min-height: 36px; font-size: var(--text-sm); }
 }
 .status-text .command { display: block; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--color-fill); }
-.options { display: grid; gap: var(--space-1); padding-inline-start: var(--space-5); list-style: disc; overflow-wrap: anywhere; }
+/* A pending question's options are read-only (the answer is given in the agent's app): flush rows split by hairlines,
+   no bullets, no hover or pointer, so they read as the choices on record and not as controls. */
+.options { display: grid; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
+.options li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); padding-block: var(--space-2); border-block-end: var(--size-hairline) solid color-mix(in srgb, var(--status-tone, var(--color-separator)) 25%, var(--color-separator)); }
+.options li:last-child { border-block-end: 0; }
+.option-recommended { flex: none; padding: 0 var(--space-2); border-radius: var(--radius-sm); background: var(--color-fill); color: var(--color-text-muted); font-size: var(--text-xs); font-weight: var(--weight-medium); }
 /* One secondary button for the inbox and thread (Back, Inbox, Load more, Close): surface, hairline edge (shared rule
    above), ink text. Accent green is the Ready status, so a control never wears it. The one primary action is
    .open-codex--primary, in solid ink. */
@@ -1706,6 +1711,14 @@ body[data-panel="open"] #thread-view { box-shadow: 0 0 0 64px var(--color-bg); c
 /* The ring is absolutely placed; the filter bar is already positioned (absolute or sticky), so only these need it. */
 :is(.card, .list) { position: relative; }
 :is(.card, .list, .segments)::before { content: ""; position: absolute; z-index: 3; inset: 0; background: var(--hud-frame); pointer-events: none; clip-path: var(--hud-ring); }
+/* The inbox filter bar mirrors the chamfer (top-left and bottom-right), so it reads apart from the cards below. */
+.segments {
+  --hud-shape: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  --hud-ring: polygon(evenodd,
+    8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px, 8px 0,
+    8.41px 1px, calc(100% - 1px) 1px, calc(100% - 1px) calc(100% - 8.41px), calc(100% - 8.41px) calc(100% - 1px),
+    1px calc(100% - 1px), 1px 8.41px, 8.41px 1px);
+}
 .status-card { --hud-frame: color-mix(in srgb, var(--status-tone) 55%, var(--color-separator)); }
 .status-card[data-settled="true"], #sections .list { clip-path: none; }
 .status-card[data-settled="true"]::before, #sections .list::before { content: none; }

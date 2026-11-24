@@ -17,7 +17,7 @@ import json
 import threading
 import time
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -743,6 +743,7 @@ class SessionHub:
         self.rescan_seconds = rescan_seconds
         self._tracked: dict[SessionKey, _Tracked] = {}
         self._scanned_at: float | None = None
+        self._initial_loaded = False
         # Request threads and the event stream share the folders and cursors.
         self._lock = threading.RLock()
 
@@ -867,8 +868,38 @@ class SessionHub:
         """One row per user-facing chat written to in the window, newest first."""
         with self._lock:
             rows = [self._json(tracked, detail=False) for tracked in self._recent(history_days, pump=True)]
+            self._initial_loaded = True
         rows.sort(key=lambda row: row["updated_at"], reverse=True)
         return rows
+
+    def inbox_batches(
+        self, history_days: int = DEFAULT_HISTORY_DAYS, batch_size: int = 12,
+    ) -> Iterator[tuple[list[dict[str, Any]], int, int]]:
+        """Yield the first inbox snapshot in small batches so the UI can show chats while the rest load."""
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        with self._lock:
+            if self._initial_loaded:
+                return
+            cutoff = (time.time() - history_days * 86400) * 1e9
+            recent = [tracked for tracked in self._recent(history_days, pump=False)
+                      if (tracked.adapter.mtime_ns(tracked.ref) or 0) >= cutoff]
+            recent.sort(key=lambda tracked: tracked.adapter.mtime_ns(tracked.ref) or 0, reverse=True)
+        total = len(recent)
+        if not total:
+            with self._lock:
+                self._initial_loaded = True
+            return
+        for offset in range(0, total, batch_size):
+            with self._lock:
+                batch = recent[offset:offset + batch_size]
+                for tracked in batch:
+                    self._pump(tracked)
+                rows = [self._json(tracked, detail=False) for tracked in batch]
+            rows.sort(key=lambda row: row["updated_at"], reverse=True)
+            yield rows, min(offset + len(batch), total), total
+        with self._lock:
+            self._initial_loaded = True
 
     def inbox_fingerprint(self, history_days: int = DEFAULT_HISTORY_DAYS) -> str:
         """Changes when a chat file changes, and when a working chat whose source writes as it works turns quiet."""

@@ -717,6 +717,27 @@ def test_inbox_dict_keys_and_values(tmp_path: Path) -> None:
     assert (quiet["status"], quiet["quiet"], quiet["title"]) == ("working", True, "")
 
 
+def test_inbox_batches_yield_rows_incrementally(tmp_path: Path) -> None:
+    _write(tmp_path, SID, [_meta(SID), *_turn()])
+    _write(tmp_path, SID_B, [_meta(SID_B), *_turn()])
+    hub = SessionHub.for_codex_home(tmp_path, scan_ttl=0)
+
+    batches = list(hub.inbox_batches(batch_size=1))
+
+    assert [scanned for _, scanned, _ in batches] == [1, 2]
+    assert [total for _, _, total in batches] == [2, 2]
+    assert {rows[0]["id"] for rows, _, _ in batches} == {SID, SID_B}
+    assert {row["id"] for row in hub.inbox_dicts()} == {SID, SID_B}
+    assert list(hub.inbox_batches(batch_size=1)) == []
+
+
+def test_inbox_batches_reject_nonpositive_size(tmp_path: Path) -> None:
+    hub = SessionHub.for_codex_home(tmp_path)
+
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        list(hub.inbox_batches(batch_size=0))
+
+
 def test_working_activity_stream_is_current_turn_only_and_preserves_recorded_commands(tmp_path: Path) -> None:
     records = [_meta(SID), _event(1,{"type":"task_started","turn_id":"t1"}),
                _item(2,{"type":"CommandExecution","command":"old-command","exit_code":0}),
