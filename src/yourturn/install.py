@@ -30,6 +30,8 @@ from yourturn import __version__, usage
 MARKETPLACE_SOURCE = "martin-gomola/your-turn"
 MARKETPLACE = "your-turn"
 PLUGIN = f"your-turn@{MARKETPLACE}"
+# Each Codex plugin command can take minutes on some machines (2.5 measured), not only on the first start after an update.
+CODEX_TIMEOUT = 300
 # The Quickstart's form: run through uvx, `your-turn` is not on PATH.
 CURSOR_RULE = "uvx your-turn@latest cursor-rule"
 # The same text in a Markdown block, which GitHub gives a copy button.
@@ -241,9 +243,10 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Skill {skill} (Codex CLI not found, so no plugin)", agents_home() / "skills")
         return skill in ("written", "unchanged")
     env = {**os.environ, "CODEX_HOME": str(home)} if home is not None else None
-    # The first CLI start after a Codex update can take tens of seconds; later ones take about a second.
+    # A silent wait of minutes reads as a hang, so say what is running.
+    print("Checking Codex plugins (this can take a few minutes)…", flush=True)
     try:
-        inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env, timeout=60)
+        inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env, timeout=CODEX_TIMEOUT)
     except subprocess.TimeoutExpired:
         _install_result("codex", "Plugin list timed out; plugin not updated. Run install again", ok=False)
         return False
@@ -270,7 +273,7 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Plugin {PLUGIN} {__version__} unchanged{shared}")
         return True
     try:
-        listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=60)
+        listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=CODEX_TIMEOUT)
     except subprocess.TimeoutExpired:
         _install_result("codex", "Marketplace list timed out; plugin not updated. Run install again", ok=False)
         return False
@@ -279,7 +282,7 @@ def install_plugin(home: Path | None = None) -> bool:
     else:
         # Refresh a Git marketplace so an installed plugin picks up the current skill (a local one has nothing to refresh).
         try:
-            subprocess.run(["codex", "plugin", "marketplace", "upgrade", MARKETPLACE], capture_output=True, text=True, env=env, timeout=60)
+            subprocess.run(["codex", "plugin", "marketplace", "upgrade", MARKETPLACE], capture_output=True, text=True, env=env, timeout=CODEX_TIMEOUT)
         except subprocess.TimeoutExpired:
             pass
     _codex(["plugin", "add", PLUGIN], home)
