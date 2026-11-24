@@ -373,6 +373,7 @@ pageFooter.before(footerHome);
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const WORKING_SPIN_PERIOD_MS = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-status-working"));
 let inboxData = null;
+const inboxProgressRows = new Map();
 let inboxChildren = new Map(); // orchestrator key -> delegated chats nested under its row, from renderInbox
 let inboxRelations = new Map(); // orchestrator key -> every delegated chat, whatever the filter shows, from renderInbox
 const delegateOpen = new Set(); // orchestrator keys whose finished subtasks are unfolded in the inbox
@@ -540,6 +541,7 @@ function showUnreachable(offline) {
     $("deck-standby-title").textContent = "NO CONNECTION · RETRYING";
     $("deck-standby-description").textContent = "Can't reach the local Your Turn server. Retrying on its own; if it stopped, start it again with your-turn serve (or make up in a clone).";
   } else {
+    $("inbox-loading").hidden = Boolean(inboxData) || offline;
     $("inbox-unreachable").hidden = !offline || Boolean(inboxData);
   }
 }
@@ -561,7 +563,12 @@ function stream(url, setup) {
 }
 
 function connect(url, event, render) {
-  return stream(url, (source) => connected(source, event, render));
+  return stream(url, (source) => {
+    connected(source, event, render);
+    if (event === "inbox" && !deckView) {
+      source.addEventListener("inbox-progress", (message) => renderInboxProgress(JSON.parse(message.data)));
+    }
+  });
 }
 
 function connected(source, event, render) {
@@ -901,12 +908,20 @@ function transition(update, { rows = true } = {}) {
 }
 
 function liveInbox(chats) {
+  inboxProgressRows.clear();
   stateSync.retain(chats.map(chatKey));
   migrateLocalMarks(chats);
   notifyChanges(chats);
   if (inboxLayout && layoutOf(groupChats(chats)) !== inboxLayout) transition(() => renderInbox(chats));
   else renderInbox(chats);
   if (threadData) renderSubtasks(threadData);
+}
+
+function renderInboxProgress({ chats, scanned, total }) {
+  for (const chat of chats) inboxProgressRows.set(chatKey(chat), chat);
+  previousNewResultsCount = null;
+  renderInbox([...inboxProgressRows.values()], { loading: true });
+  $("inbox-loading").textContent = `Loading chats… ${scanned} of ${total}`;
 }
 
 // An orchestrator's nested subtasks. With three or more, finished ones already seen fold into one line, unless a
@@ -945,8 +960,9 @@ function renderDelegates(chat) {
   return [...rows, item];
 }
 
-function renderInbox(chats) {
+function renderInbox(chats, { loading = false } = {}) {
   inboxData = chats;
+  $("inbox-loading").hidden = !loading;
   const focusedHref = document.activeElement.closest(".row, .show-all")?.getAttribute("href");
   // Delegated chats nest under their orchestrator's row, unless they need you or a status filter would hide it.
   const delegates = deckDelegates(filterInbox(chats, searchQuery), (parent, child) => !needsAttention(child)
@@ -969,12 +985,12 @@ function renderInbox(chats) {
   }
   const fold = (key) => foldable ? ((sectionOpen.get(key) ?? key !== "earlier") ? "open" : "closed") : "";
   $("sections").replaceChildren(...shown.map((section) => renderSection(section, groups.get(section.key), fold(section.key))));
-  $("inbox-empty").hidden = chats.length > 0 || Boolean(searchQuery);
+  $("inbox-empty").hidden = loading || chats.length > 0 || Boolean(searchQuery);
   $("inbox-unreachable").hidden = true;
   const noMatches = Boolean(searchQuery.trim()) && shown.length === 0;
-  $("search-empty").hidden = !noMatches;
+  $("search-empty").hidden = loading || !noMatches;
   $("search-empty").textContent = noMatches ? `No chats match '${searchQuery}'` : "";
-  $("filter-empty").hidden = noMatches || !inboxStatus || shown.length > 0 || chats.length === 0;
+  $("filter-empty").hidden = loading || noMatches || !inboxStatus || shown.length > 0 || chats.length === 0;
   $("filter-empty").textContent = inboxStatus ? INBOX_FILTERS[inboxStatus].empty : "";
   syncNavigation(chats);
   if (focusedHref) [...$("sections").querySelectorAll("a")].find((link) => link.getAttribute("href") === focusedHref)?.focus({ preventScroll: true });

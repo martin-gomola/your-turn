@@ -19,6 +19,12 @@ def client(codex_home: Path) -> TestClient:
     return TestClient(create_app(codex_home), base_url="http://127.0.0.1")
 
 
+def test_inbox_shows_loading_until_the_first_chat_snapshot(codex_home: Path) -> None:
+    page = client(codex_home).get("/").text
+
+    assert '<p class="empty card" id="inbox-loading" role="status">Loading chats…</p>' in page
+
+
 def test_launcher_renders_two_pages_and_escapes_configured_names(codex_home: Path, tmp_path: Path) -> None:
     (tmp_path / "launcher.toml").write_text(
         '[[shortcut]]\nslot = 5\nlabel = "Ghostty & Tools"\napp = "Ghostty"\n'
@@ -142,8 +148,12 @@ def test_stream_sends_the_current_inbox_first(codex_home: Path) -> None:
     with app.stream("GET", "/api/stream") as response:
         body = response.read().decode()
     # The shared state comes first, so the first inbox already shows dismissed reminders.
-    head, data = body.split("\n\n", 1)[1].split("\n", 2)[:2]
-    assert body.startswith("event: state\n") and head == "event: inbox"
+    events = [block for block in body.split("\n\n") if block]
+    inbox_events = [block for block in events if block.startswith("event: inbox\n")]
+    assert events[0].startswith("event: state\n")
+    assert any(block.startswith("event: inbox-progress\n") for block in events)
+    assert inbox_events
+    data = inbox_events[-1].split("\n", 1)[1]
     assert [entry["id"] for entry in json.loads(data.removeprefix("data: "))] == [THREAD]
 
 

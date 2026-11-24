@@ -269,12 +269,23 @@ def create_app(
             marker = hub.inbox_fingerprint(history_days)
             return marker, hub.inbox_dicts(history_days) if marker != last else None
 
+        def next_batch(batches: Any) -> tuple[list[dict[str, Any]], int, int] | None:
+            try:
+                return next(batches)
+            except StopIteration:
+                return None
+
         async def events() -> AsyncIterator[str]:
             last, idle, shared = None, 0.0, -1
             while not should_stop() and not await request.is_disconnected():
                 if state.version != shared:
                     shared = state.version
                     yield f"event: state\ndata: {json.dumps(state.snapshot())}\n\n"
+                if key is None and last is None:
+                    batches = iter(hub.inbox_batches(history_days))
+                    while batch := await asyncio.to_thread(next_batch, batches):
+                        rows, scanned, total = batch
+                        yield f"event: inbox-progress\ndata: {json.dumps({'chats': rows, 'scanned': scanned, 'total': total})}\n\n"
                 marker, data = await asyncio.to_thread(current, last)
                 if marker != last:
                     last, idle = marker, 0.0
