@@ -20,3 +20,4 @@ result
 
 # Install page images, copied by make site
 site/images/
+.DS_Store
