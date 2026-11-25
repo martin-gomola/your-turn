@@ -17,12 +17,14 @@ def test_existing_standalone_handoff_prevents_second_codex_install(tmp_path, mon
     import subprocess
     import yourturn.install as installer
     calls = []
-    entries = [{"pluginId": "your-turn-handoff@my-agent-skills", "installed": True, "enabled": True}]
+    (tmp_path / "codex").mkdir()
+    config = '[plugins."your-turn-handoff@my-agent-skills"]\nenabled = true\n'
     if legacy:
-        entries.append({"pluginId": installer.PLUGIN, "installed": True, "enabled": True})
+        config += f'[plugins."{installer.PLUGIN}"]\nenabled = true\n'
+    (tmp_path / "codex" / "config.toml").write_text(config)
     def run(args, **kwargs):
         calls.append(args)
-        return subprocess.CompletedProcess(args, 0, stdout=json.dumps({"installed": entries}), stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
     monkeypatch.setattr(installer.shutil, "which", lambda name: "codex")
     monkeypatch.setattr(installer.subprocess, "run", run)
     monkeypatch.setattr(installer, "agents_home", lambda: tmp_path / "agents")
@@ -298,20 +300,21 @@ def test_codex_reinstall_is_skipped_for_the_same_git_release(tmp_path: Path, mon
 
     import yourturn.install as installer
     calls = []
-    entry = {"pluginId": installer.PLUGIN, "installed": True, "enabled": True, "version": installer.__version__,
-             "marketplaceSource": {"sourceType": "git"}}
+    home = tmp_path / "codex"
+    release = home / "plugins" / "cache" / "your-turn" / "your-turn" / installer.__version__
+    release.mkdir(parents=True)
+    (home / "config.toml").write_text(f'[marketplaces.your-turn]\nsource_type = "git"\n\n[plugins."{installer.PLUGIN}"]\nenabled = true\n')
 
     def run(args, **kwargs):
         calls.append(args)
-        return subprocess.CompletedProcess(args, 0, stdout=json.dumps({"installed": [entry]}), stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
     monkeypatch.setattr(installer.shutil, "which", lambda name: "codex")
     monkeypatch.setattr(installer.subprocess, "run", run)
-    assert installer.install_plugin(tmp_path / "codex")
-    assert calls == [["codex", "plugin", "list", "--json"]]
-    entry["version"] = "0.0.1"
-    calls.clear()
-    assert installer.install_plugin(tmp_path / "codex")
-    assert ["codex", "plugin", "add", installer.PLUGIN] in calls
+    assert installer.install_plugin(home)
+    assert calls == []
+    release.rename(release.with_name("0.0.1"))
+    assert installer.install_plugin(home)
+    assert calls[-1] == ["codex", "plugin", "add", installer.PLUGIN]
 
 
 def test_codex_uninstall_removes_the_plugin_and_marketplace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

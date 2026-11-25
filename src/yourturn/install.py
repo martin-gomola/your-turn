@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from importlib.resources import files
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from yourturn import __version__, usage
 MARKETPLACE_SOURCE = "martin-gomola/your-turn"
 MARKETPLACE = "your-turn"
 PLUGIN = f"your-turn@{MARKETPLACE}"
-# Each Codex plugin command can take minutes on some machines (2.5 measured), not only on the first start after an update.
+# `codex plugin list` can take minutes (2.5 measured), so install reads Codex's config instead; this bounds the fetch.
 CODEX_TIMEOUT = 300
 # The Quickstart's form: run through uvx, `your-turn` is not on PATH.
 CURSOR_RULE = "uvx your-turn@latest cursor-rule"
@@ -243,41 +244,35 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Skill {skill} (Codex CLI not found, so no plugin)", agents_home() / "skills")
         return skill in ("written", "unchanged")
     env = {**os.environ, "CODEX_HOME": str(home)} if home is not None else None
-    # A silent wait of minutes reads as a hang, so say what is running.
-    print("Checking Codex plugins (this can take a few minutes)…", flush=True)
+    root = home if home is not None else Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    # Codex's own record of installed plugins; anything unreadable just means a full install, which is idempotent.
     try:
-        inventory = subprocess.run(["codex", "plugin", "list", "--json"], capture_output=True, text=True, env=env, timeout=CODEX_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        _install_result("codex", "Plugin list timed out; plugin not updated. Run install again", ok=False)
-        return False
-    try:
-        entries = json.loads(inventory.stdout).get("installed", []) if inventory.returncode == 0 else []
-    except (ValueError, AttributeError):
-        entries = []
-    if not isinstance(entries, list):
-        entries = []
+        config = tomllib.loads((root / "config.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        config = {}
+    plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
+    marketplaces = config.get("marketplaces") if isinstance(config.get("marketplaces"), dict) else {}
+
+    def enabled(plugin: str) -> bool:
+        return isinstance(plugins.get(plugin), dict) and plugins[plugin].get("enabled") is True
+
     # Marketplace name from before the repo became your-turn-loop and dropped its Codex plugin; only older installs carry it.
     standalone = "your-turn-handoff@my-agent-skills"
-    if any(isinstance(entry, dict) and entry.get("pluginId") == standalone and entry.get("installed") and entry.get("enabled") for entry in entries):
-        if any(isinstance(entry, dict) and entry.get("pluginId") == PLUGIN and entry.get("installed") for entry in entries):
+    if enabled(standalone):
+        if PLUGIN in plugins:
             _codex(["plugin", "remove", PLUGIN], home, check=False)
         if _shared_skill():
             _remove_skill(agents_home())
         _install_result("codex", f"Using installed handoff {standalone}")
         return True
+    marketplace = marketplaces.get(MARKETPLACE)
     # A Git marketplace ships the skill with the release, so the same version needs no refresh.
-    if any(isinstance(entry, dict) and entry.get("pluginId") == PLUGIN and entry.get("installed") and entry.get("enabled")
-           and entry.get("version") == __version__ and (entry.get("marketplaceSource") or {}).get("sourceType") == "git"
-           for entry in entries):
+    if (enabled(PLUGIN) and isinstance(marketplace, dict) and marketplace.get("source_type") == "git"
+            and (root / "plugins" / "cache" / MARKETPLACE / NAME / __version__).is_dir()):
         shared = ", shared skill removed" if _shared_skill() and _remove_skill(agents_home()) == "removed" else ""
         _install_result("codex", f"Plugin {PLUGIN} {__version__} unchanged{shared}")
         return True
-    try:
-        listed = subprocess.run(["codex", "plugin", "marketplace", "list"], capture_output=True, text=True, env=env, timeout=CODEX_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        _install_result("codex", "Marketplace list timed out; plugin not updated. Run install again", ok=False)
-        return False
-    if not any(line.split()[:1] == [MARKETPLACE] for line in listed.stdout.splitlines()):
+    if marketplace is None:
         _codex(["plugin", "marketplace", "add", MARKETPLACE_SOURCE], home)
     else:
         # Refresh a Git marketplace so an installed plugin picks up the current skill (a local one has nothing to refresh).
