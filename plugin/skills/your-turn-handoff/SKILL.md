@@ -1,7 +1,7 @@
 ---
 name: your-turn-handoff
 metadata:
-  version: "0.9.5"
+  version: "0.9.6"
 description: End every final user-facing answer with the Your Turn handoff (Outcome and Next step, plus Recap on multi-turn chats and Decision for settled trade-offs), and check your last code edit. Always active for every task and every turn; supports coding agents with or without the Your Turn inbox.
 ---
 
