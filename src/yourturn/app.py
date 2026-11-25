@@ -196,23 +196,25 @@ def create_app(
                 origin and urlsplit(origin).hostname not in origins):
             raise HTTPException(status_code=403)
 
-    if phone_token:
-        @app.post("/api/open/{thread}", status_code=204)
-        async def open_on_host(thread: str, request: Request) -> None:
-            """A phone or tablet opens the chat in its app on this computer: only the chat's own link, never a URL it sends."""
-            from_this_page(request)
-            key = checked(thread)
-            data = await asyncio.to_thread(hub.detail_dict, key)
-            if data is None:
-                raise HTTPException(status_code=404, detail="no session file for this thread")
-            uri = f"codex://threads/{key.native_id}" if key.harness == Harness.CODEX else (data.get("handoff") or {}).get("open_uri")
-            if not uri:
-                raise HTTPException(status_code=404, detail="this chat has no app link")
-            try:
-                await asyncio.to_thread(subprocess.run, ["open" if sys.platform == "darwin" else "xdg-open", uri],
-                                        check=True, capture_output=True, timeout=10)
-            except (OSError, subprocess.SubprocessError):
-                raise HTTPException(status_code=502, detail="could not open the app on this computer") from None
+    @app.post("/api/open/{thread}", status_code=204)
+    async def open_on_host(thread: str, request: Request) -> None:
+        """Open the chat in its app on this computer: only the chat's own link, never a URL the page sends.
+
+        Every browser uses it: a phone has no such app, and embedded browsers drop custom-scheme links.
+        """
+        from_this_page(request)
+        key = checked(thread)
+        data = await asyncio.to_thread(hub.detail_dict, key)
+        if data is None:
+            raise HTTPException(status_code=404, detail="no session file for this thread")
+        uri = f"codex://threads/{key.native_id}" if key.harness == Harness.CODEX else (data.get("handoff") or {}).get("open_uri")
+        if not uri:
+            raise HTTPException(status_code=404, detail="this chat has no app link")
+        try:
+            await asyncio.to_thread(subprocess.run, ["open" if sys.platform == "darwin" else "xdg-open", uri],
+                                    check=True, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            raise HTTPException(status_code=502, detail="could not open the app on this computer") from None
 
     @app.post("/api/open-app/{app}", status_code=204)
     async def open_app(app: str, request: Request) -> None:

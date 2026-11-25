@@ -1146,11 +1146,12 @@ $("open-codex").addEventListener("click", async (event) => {
   }, 2000);
 });
 
-// On a phone or tablet an app link would try to open the app there; ask the computer running Your Turn instead.
+// Ask the computer running Your Turn to open the app: a phone has no such app, and embedded browsers (the Claude
+// app's pane, IDE previews) drop custom-scheme links. Locally, a failed call falls back to the link itself.
 const REMOTE = !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
 document.addEventListener("click", async (event) => {
   const link = event.target.closest?.("a[data-open-key]");
-  if (!REMOTE || !link) return;
+  if (!link) return;
   event.preventDefault();
   const text = link.firstChild;
   const label = text.textContent;
@@ -1161,6 +1162,11 @@ document.addEventListener("click", async (event) => {
       headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(10000) });
     opened = response.ok;
   } catch { /* Shown as not opened below. */ }
+  if (!opened && !REMOTE) {
+    delete link.dataset.copied;
+    location.href = link.href;
+    return;
+  }
   text.textContent = opened ? "Opened on your Mac" : "Couldn’t open on your Mac";
   setTimeout(() => {
     delete link.dataset.copied;
