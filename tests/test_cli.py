@@ -10,47 +10,42 @@ from yourturn.cli import main
 from yourturn.install import install_plugin
 
 
-def fake_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, marketplaces: str) -> Path:
+GIT_MARKETPLACE = '[marketplaces.your-turn]\nsource_type = "git"\nsource = "https://github.com/martin-gomola/your-turn.git"\n'
+
+
+def fake_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: str) -> Path:
     log = tmp_path / "calls.txt"
     script = tmp_path / "codex"
-    script.write_text(f"#!/bin/sh\necho \"$@\" >> {log}\n"
-                      f"[ \"$3\" = list ] && printf '{marketplaces}'\nexit 0\n")
+    script.write_text(f"#!/bin/sh\necho \"$@\" >> {log}\nexit 0\n")
     script.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / "config.toml").write_text(config)
+    monkeypatch.setenv("CODEX_HOME", str(home))
     return log
 
 
 def test_install_adds_marketplace_when_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nother  /x\\n")
+    log = fake_codex(tmp_path, monkeypatch, '[marketplaces.other]\nsource_type = "local"\nsource = "/x"\n')
     assert install_plugin()
-    assert log.read_text().splitlines() == [
-        "plugin list --json",
-        "plugin marketplace list",
-        "plugin marketplace add martin-gomola/your-turn",
-        "plugin add your-turn@your-turn",
-    ]
+    assert log.read_text().splitlines() == ["plugin marketplace add martin-gomola/your-turn", "plugin add your-turn@your-turn"]
 
 
 def test_install_reuses_existing_marketplace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nyour-turn  /Users/me/your-turn\\n")  # pii:allow (fake path)
+    log = fake_codex(tmp_path, monkeypatch, GIT_MARKETPLACE)
     assert install_plugin()
-    assert log.read_text().splitlines() == ["plugin list --json", "plugin marketplace list", "plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
+    assert log.read_text().splitlines() == ["plugin marketplace upgrade your-turn", "plugin add your-turn@your-turn"]
 
 
-def test_install_stops_when_codex_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    fake_codex(tmp_path, monkeypatch, "")
-
-    def hang(args: list[str], **kwargs: object) -> None:
-        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
-
-    monkeypatch.setattr("yourturn.install.subprocess.run", hang)
-    assert not install_plugin()
-    out = capsys.readouterr().out
-    assert "✓" not in out and "!" in out and "Run install again" in out
+def test_install_treats_an_unreadable_codex_config_as_a_fresh_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = fake_codex(tmp_path, monkeypatch, "not = [toml")
+    assert install_plugin()
+    assert log.read_text().splitlines() == ["plugin marketplace add martin-gomola/your-turn", "plugin add your-turn@your-turn"]
 
 
 def test_install_continues_when_marketplace_upgrade_hangs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    log = fake_codex(tmp_path, monkeypatch, "MARKETPLACE  ROOT\\nyour-turn  /Users/me/your-turn\\n")  # pii:allow (fake path)
+    log = fake_codex(tmp_path, monkeypatch, GIT_MARKETPLACE)
     real_run = subprocess.run
 
     def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
