@@ -629,6 +629,8 @@ a.brand { border-radius: 12px; text-decoration: none; }
 a.brand:hover { background: var(--color-surface-pressed); }
 .nav-link { display: flex; align-items: center; justify-content: center; gap: var(--space-5); width: 44px; min-height: 48px; padding: var(--space-2); border: 0; border-radius: 12px; color: var(--color-text); background: none; font: inherit; font-size: var(--text-navigation); text-decoration: none; cursor: pointer; }
 .nav-text { display: none; }
+/* Marks a feature still settling, raised like an exponent; it lives in the label, so the icon-only rail hides it too. */
+.nav-badge { display: inline-block; margin-inline-start: 2px; padding: 1px 4px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)); color: var(--color-accent); font-size: .5em; font-weight: var(--weight-semibold); line-height: 1.2; letter-spacing: .02em; vertical-align: super; }
 .rail-tooltip { position: fixed; right: 72px; z-index: 20; padding: var(--space-2) var(--space-3); transform: translateY(-50%); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-separator); border-radius: var(--radius-md); box-shadow: var(--dialog-shadow); font-size: var(--text-sm); pointer-events: none; }
 .nav-link svg { width: 24px; height: 24px; stroke-width: 1.7; }
 .nav-link:is([aria-current="page"], [aria-expanded="true"]) { color: var(--color-nav-selected); background: color-mix(in srgb, var(--color-accent-fill) 11%, var(--color-sidebar)); }
@@ -1091,6 +1093,8 @@ html[data-header="compact"] body[data-view="inbox"]:not([data-panel="open"]) .se
    the status card leads. From 1200px it is a no-scroll HUD with nothing folded (see the F1 frames
    block); phones keep history folded. Spacing consumes the shared 4px-step tokens. */
 body[data-origin="deck"] {
+  /* A chat page sets --color-bg to the grouped gray; in Deck that stays the Deck black, even with a light inbox. */
+  --color-bg-grouped: #0d0f12;
   --color-bg: #0d0f12; --color-surface: #0d0f12; --color-sidebar: #0d0f12; --color-fill: #171b21;
   --color-separator: #41464d; --color-text: #ffffff; --color-text-muted: #b4b8bf;
   --edge: inset 0 0 0 var(--size-hairline) var(--color-separator);
@@ -1104,9 +1108,8 @@ body[data-origin="deck"] .back {
   background: var(--color-bg); box-shadow: none; color: var(--color-text-muted);
   font: 600 12px / 1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase;
 }
-body[data-origin="deck"] .back:hover { border-color: #10b981; background: var(--color-fill); color: var(--color-text); }
+body[data-origin="deck"] .back:hover { background: var(--color-fill); color: var(--color-text); }
 body[data-origin="deck"] .back:active { background: #20262d; }
-body[data-origin="deck"] .back:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
 body[data-origin="deck"] .top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-4); }
 body[data-origin="deck"] #title { flex: 1 0 100%; }
 body[data-origin="deck"] .top .evidence { order: 1; margin: 0; }
@@ -1173,6 +1176,9 @@ body[data-view="deck"] .deck-cockpit .menu-toggle { margin-inline-end: 0; }
 #deck-view[data-mode="simple"] :is(.deck-reload, .deck-slots, .deck-layout, #deck-fleet, #deck-stage, #deck-groups, #deck-empty) { display: none !important; }
 .deck-mode-switch { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--deck-line); }
 .deck-mode-switch button { position: relative; border-radius: 0; clip-path: var(--hud-shape); color: var(--deck-muted); }
+/* Dashboard and Launcher are a navigation pair: the first cuts top-left, the last bottom-right (the frame grammar). */
+.deck-mode-switch button:first-of-type { --hud-shape: var(--hud-back-shape); --hud-ring: var(--hud-back-ring); }
+.deck-mode-switch button:last-of-type { --hud-shape: var(--hud-next-shape); --hud-ring: var(--hud-next-ring); }
 .deck-mode-switch .nav-text { min-width: 0; overflow-wrap: anywhere; }
 .deck-mode-switch button[aria-pressed="true"] { background: color-mix(in srgb, var(--deck-text) 9%, var(--color-sidebar)); color: var(--deck-text); }
 .deck-mode-switch button[aria-pressed="true"]::before { content: ""; position: absolute; inset: 0; background: var(--deck-muted); clip-path: var(--hud-ring); pointer-events: none; }
@@ -1690,12 +1696,54 @@ body[data-view="deck"] .deck-cockpit .bar { position: static; flex: none; width:
 @media (max-width: 480px) { .deck-card-footer > .deck-card-jump { flex-basis: 100%; } }
 /* F1 HUD frames: top-right and bottom-left corners chamfered. A clip-path also cuts a CSS border,
    so the 1px line is an even-odd ring (outer outline minus the same outline 1px in) on ::before. */
+/* Frame grammar: cut corners say what a thing does and how much it weighs, the same everywhere in the app, in the
+   inbox, the chat and Deck, in every theme (themes change the ring colour, never the cut).
+   Direction is the role: cuts on the top-right/bottom-left diagonal face forward (content, actions); cuts on the
+   top-left/bottom-right diagonal face back (navigation, filters, paging).
+   Count is the weight: two cuts for what leads (a surface, the filter bar, the primary action), one for a lighter
+   control on its own (back, a secondary action), none for what yields or only reads out (a secondary action beside a
+   primary one, evidence, harness and context tags).
+   Balance: a two-cut shape is point-symmetric, so it balances itself. A group shares its role's two cuts the same
+   way: the first control takes the leading corner, the last the trailing one (‹ and ›, Key steps and Everything).
+   A primary and a secondary action side by side: the primary takes both cuts, the secondary stays square.
+   Status is a surface whose ring takes the status tone; quiet rows, a settled status and its link actions stay
+   unframed.
+     --hud-surface-shape  two cuts, forward  cards, lists, a primary action, Deck launch cards (the default --hud-shape)
+     --hud-nav-shape      two cuts, back     the inbox filter bar, the Deck layout toggle
+     --hud-action-shape   one cut, forward   a secondary action on its own
+     --hud-back-shape     one cut, back      back; the first of a navigation pair (‹, Key steps, Dashboard)
+     --hud-next-shape     one cut, back      the last of a navigation pair (›, Everything, Launcher), bottom-right
+     --hud-square-shape   no cut             a secondary action beside a primary one; framed readouts (Deck
+                                             telemetry, the live indicator) */
 :root {
-  --hud-shape: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
-  --hud-ring: polygon(evenodd,
+  --hud-shape: var(--hud-surface-shape);
+  --hud-ring: var(--hud-surface-ring);
+  --hud-surface-shape: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  --hud-surface-ring: polygon(evenodd,
     0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px), 0 0,
     1px 1px, calc(100% - 8.41px) 1px, calc(100% - 1px) 8.41px, calc(100% - 1px) calc(100% - 1px),
     8.41px calc(100% - 1px), 1px calc(100% - 8.41px), 1px 1px);
+  --hud-nav-shape: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  --hud-nav-ring: polygon(evenodd,
+    8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px, 8px 0,
+    8.41px 1px, calc(100% - 1px) 1px, calc(100% - 1px) calc(100% - 8.41px), calc(100% - 8.41px) calc(100% - 1px),
+    1px calc(100% - 1px), 1px 8.41px, 8.41px 1px);
+  --hud-action-shape: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+  --hud-action-ring: polygon(evenodd,
+    0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%, 0 0,
+    1px 1px, calc(100% - 8.41px) 1px, calc(100% - 1px) 8.41px, calc(100% - 1px) calc(100% - 1px), 1px calc(100% - 1px), 1px 1px);
+  --hud-back-shape: polygon(8px 0, 100% 0, 100% 100%, 0 100%, 0 8px);
+  --hud-back-ring: polygon(evenodd,
+    8px 0, 100% 0, 100% 100%, 0 100%, 0 8px, 8px 0,
+    8.41px 1px, calc(100% - 1px) 1px, calc(100% - 1px) calc(100% - 1px), 1px calc(100% - 1px), 1px 8.41px, 8.41px 1px);
+  --hud-next-shape: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  --hud-next-ring: polygon(evenodd,
+    0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 0,
+    1px 1px, calc(100% - 1px) 1px, calc(100% - 1px) calc(100% - 8.41px), calc(100% - 8.41px) calc(100% - 1px), 1px calc(100% - 1px), 1px 1px);
+  --hud-square-shape: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  --hud-square-ring: polygon(evenodd,
+    0 0, 100% 0, 100% 100%, 0 100%, 0 0,
+    1px 1px, calc(100% - 1px) 1px, calc(100% - 1px) calc(100% - 1px), 1px calc(100% - 1px), 1px 1px);
 }
 /* The brand outside the Deck: the same chamfered corners and 1px ring, quiet in the light inbox, on framed
    surfaces only (chat cards and lists, the inbox filter bar). A loud status card rings in its status tone; the
@@ -1711,14 +1759,8 @@ body[data-panel="open"] #thread-view { box-shadow: 0 0 0 64px var(--color-bg); c
 /* The ring is absolutely placed; the filter bar is already positioned (absolute or sticky), so only these need it. */
 :is(.card, .list) { position: relative; }
 :is(.card, .list, .segments)::before { content: ""; position: absolute; z-index: 3; inset: 0; background: var(--hud-frame); pointer-events: none; clip-path: var(--hud-ring); }
-/* The inbox filter bar mirrors the chamfer (top-left and bottom-right), so it reads apart from the cards below. */
-.segments {
-  --hud-shape: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-  --hud-ring: polygon(evenodd,
-    8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px, 8px 0,
-    8.41px 1px, calc(100% - 1px) 1px, calc(100% - 1px) calc(100% - 8.41px), calc(100% - 8.41px) calc(100% - 1px),
-    1px calc(100% - 1px), 1px 8.41px, 8.41px 1px);
-}
+/* The inbox filter bar is navigation, so it takes the mirrored cut and reads apart from the cards below. */
+.segments { --hud-shape: var(--hud-nav-shape); --hud-ring: var(--hud-nav-ring); }
 .status-card { --hud-frame: color-mix(in srgb, var(--status-tone) 55%, var(--color-separator)); }
 .status-card[data-settled="true"], #sections .list { clip-path: none; }
 .status-card[data-settled="true"]::before, #sections .list::before { content: none; }
@@ -1731,6 +1773,31 @@ body[data-origin="deck"] .status-card { --hud-frame: var(--status-tone); }
 /* Telemetry type and 44px actions in the chat HUD. */
 body[data-origin="deck"] :is(.evidence-chip, .evidence-chip[data-tone], .decision-meta, .top .subtitle, .group-title, .recap-label, .usage-total, .timeline time) { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 body[data-origin="deck"] :is(.open-codex, .open-claude-desktop) { min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid rgb(255 255 255 / .15); border-radius: 0; }
+/* Framed buttons take their role's cut and weight (see the frame grammar); clip-path would cut an outside focus ring,
+   so it sits inside. */
+:is(.back, .open-codex, .open-claude-desktop, .button, .chip, .deck-card-review, .deck-card-open, .deck-card-jump, .deck-carousel button) { --hud-frame: color-mix(in srgb, var(--color-text-muted) 38%, transparent); position: relative; border: 0; border-radius: 0; box-shadow: none; clip-path: var(--hud-shape); }
+:is(.back, .open-codex, .open-claude-desktop, .button, .chip, .deck-card-review, .deck-card-open, .deck-card-jump, .deck-carousel button)::before { content: ""; position: absolute; inset: 0; background: var(--hud-frame); clip-path: var(--hud-ring); pointer-events: none; }
+:is(.back, .open-codex, .open-claude-desktop, .button, .chip, .deck-card-review, .deck-card-open, .deck-card-jump, .deck-carousel button):hover { --hud-frame: color-mix(in srgb, var(--color-text-muted) 70%, transparent); }
+:is(.back, .open-codex, .open-claude-desktop, .button, .chip, .deck-card-review, .deck-card-open, .deck-card-jump, .deck-carousel button):focus-visible { outline-offset: -4px; }
+/* Role and weight. */
+:is(.open-codex, .open-claude-desktop, .button, .deck-card-jump):not(.open-codex--primary) { --hud-shape: var(--hud-action-shape); --hud-ring: var(--hud-action-ring); }
+.back, .deck-carousel button:first-of-type, .chip:first-of-type { --hud-shape: var(--hud-back-shape); --hud-ring: var(--hud-back-ring); }
+.deck-carousel button:last-of-type, .chip + .chip { --hud-shape: var(--hud-next-shape); --hud-ring: var(--hud-next-ring); }
+.status-actions:has(> .open-codex--primary:not([hidden])) > #open-claude-desktop, .deck-card-review:has(+ .deck-card-open) { --hud-shape: var(--hud-square-shape); --hud-ring: var(--hud-square-ring); }
+/* A settled status's link actions are quiet text links: no frame. */
+.status-card[data-settled="true"] .status-actions > :is(.open-codex, .open-claude-desktop) { clip-path: none; }
+.status-card[data-settled="true"] .status-actions > :is(.open-codex, .open-claude-desktop)::before { content: none; }
+/* Ring colours: Deck's line, its tone and amber; a filled primary needs no ring. */
+body[data-origin="deck"] :is(.back, .open-codex, .open-claude-desktop, .button, .chip) { --hud-frame: rgb(255 255 255 / .15); }
+body[data-origin="deck"] :is(.back, .open-codex, .open-claude-desktop, .button, .chip):hover { --hud-frame: #10b981; }
+body[data-origin="deck"] :is(.back, .open-codex, .open-claude-desktop, .button, .chip):focus-visible { outline: 2px solid #10b981; }
+:is(.open-codex--primary, .deck-card-open) { --hud-frame: transparent; }
+:is(.open-codex--primary, .deck-card-open):hover { --hud-frame: transparent; }
+.deck-carousel button { --hud-frame: var(--deck-line); }
+.deck-carousel button:hover:not(:disabled) { --hud-frame: var(--deck-muted); }
+.deck-card-review { --hud-frame: color-mix(in srgb, var(--deck-tone) 35%, var(--deck-line)); }
+.deck-card-review:hover { --hud-frame: var(--deck-tone); }
+.deck-card-jump, .deck-card-jump:hover { --hud-frame: var(--deck-amber); }
 @media (min-width: 1200px) and (pointer: fine) {
   /* No-scroll chat HUD: status, what happened and checks | decisions | everything else, each column
      scrolling inside itself. Sections still fold. */
@@ -2134,18 +2201,22 @@ body[data-connection="offline"] #deck-view *, body[data-connection="offline"] #d
 :root[data-deck-theme="warm"] .deck-mini-gauge { --mini-context: #b8ada6; }
 :root[data-deck-theme="warm"] .deck-context { --context-tone: #d6ccc4; }
 :root[data-deck-theme="warm"] .deck-terminal { background: #221f23; }
-/* Top-strip telemetry and the layout toggle wear the Deck frame: square, chamfered, 1px ring (neutral, or
-   the reading's colour once it signals), monospace labels. The crop would hide an outside focus outline,
-   so focus draws inside. */
+/* Top-strip telemetry and the layout toggle wear the Deck's 1px ring (neutral, or the reading's colour once it
+   signals), monospace labels. By the frame grammar a telemetry slot is a readout, so it is square, and the layout
+   toggle is a filter group, so it takes the mirrored two cuts like the inbox filter bar. The crop would hide an
+   outside focus outline, so focus draws inside. */
+.deck-telemetry { --hud-shape: var(--hud-square-shape); --hud-ring: var(--hud-square-ring); }
+.deck-layout { --hud-shape: var(--hud-nav-shape); --hud-ring: var(--hud-nav-ring); }
 :is(.deck-telemetry, .deck-layout) { --hud-frame: var(--deck-line); position: relative; border: 0; border-radius: 0; clip-path: var(--hud-shape); }
 :is(.deck-telemetry, .deck-layout)::before { content: ""; position: absolute; inset: 0; background: var(--hud-frame); clip-path: var(--hud-ring); pointer-events: none; }
 .deck-telemetry:is([data-tone="amber"], [data-tone="red"]) { --hud-frame: currentColor; }
 .deck-telemetry > span:first-child { font: 600 12px / 1.4 var(--font-mono); letter-spacing: .06em; }
 :is(.deck-telemetry, .deck-layout button):focus-visible { outline: 2px solid var(--deck-text); outline-offset: -4px; }
-/* Live indicator as a Deck instrument: chamfered 1px frame and monospace caps in the state's colour
-   (emerald live, red reconnecting, muted connecting); the word always names the state. */
+/* Live indicator as a Deck instrument: a readout, so a square 1px frame (the frame grammar), monospace caps in the
+   state's colour (emerald live, red reconnecting, muted connecting); the word always names the state. */
 body[data-view="deck"] .connection {
   --hud-frame: color-mix(in srgb, currentColor 45%, transparent);
+  --hud-shape: var(--hud-square-shape); --hud-ring: var(--hud-square-ring);
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-width: 44px; min-height: 44px; padding: 0 var(--space-3); clip-path: var(--hud-shape);
   background: color-mix(in srgb, currentColor 8%, transparent); color: var(--deck-muted);
