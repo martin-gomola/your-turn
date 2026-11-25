@@ -312,8 +312,10 @@ def test_phone_opens_the_chat_link_on_this_computer_only(codex_home: Path, tmp_p
     assert phone.post(f"/api/open/{OTHER}", json={}, headers=page).status_code == 404
     assert TestClient(app, base_url="http://172.20.10.2").post(f"/api/open/{THREAD}", json={}).status_code == 403
     assert len(opened) == 1
-    # Without phone mode nothing but this computer can reach the page, so there is nothing to open remotely.
-    assert client(codex_home).post(f"/api/open/{THREAD}", json={}).status_code in (404, 405)
+    # Without phone mode the local page uses it too: embedded browsers drop custom-scheme links.
+    assert client(codex_home).post(f"/api/open/{THREAD}", json={}).status_code == 204
+    assert client(codex_home).post(f"/api/open/{THREAD}", json={}, headers={"origin": "http://evil.example"}).status_code == 403
+    assert len(opened) == 2
 
 
 def test_pages_and_assets_revalidate_but_chat_data_is_never_stored(codex_home: Path) -> None:
