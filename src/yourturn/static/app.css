@@ -802,12 +802,16 @@ body:is([data-panel="open"], [data-aside]) .row-tags .tag { font-size: var(--tex
 @media (hover: none) and (prefers-reduced-motion: no-preference) {
   #sections li:not([data-swiping]) > .row:has(~ .row-dismiss) { transition: translate var(--motion-enter) var(--ease-standard); }
 }
-.undo-toast { position: fixed; inset-inline: 0; bottom: var(--space-5); z-index: 20; display: flex; justify-content: center; padding-inline: var(--space-3); pointer-events: none; }
+/* Undo sits at the top, over the header: dismissing happens in the list and at the bottom (swipes, Deck's fixed
+   card footer), so a bottom toast covered the rows being worked on. A transient surface, so two cuts. */
+.undo-toast { position: fixed; inset-inline: 0; top: calc(env(safe-area-inset-top) + var(--space-3)); z-index: 20; display: flex; justify-content: center; padding-inline: var(--space-3); pointer-events: none; }
 .undo-toast:empty { display: none; }
-.undo-toast-body { display: flex; align-items: center; gap: var(--space-3); max-width: 100%; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-radius: var(--radius-lg); background: var(--color-text); color: var(--color-bg); box-shadow: var(--dialog-shadow); font-size: var(--text-sm); pointer-events: auto; }
-@media (prefers-reduced-motion: no-preference) { .undo-toast-body { animation: rise var(--motion-enter) var(--ease-standard); } }
+.undo-toast-body { display: flex; align-items: center; gap: var(--space-3); max-width: 100%; padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-radius: 0; clip-path: var(--hud-shape); background: var(--color-text); color: var(--color-bg); font-size: var(--text-sm); pointer-events: auto; }
+@keyframes drop { from { opacity: 0; transform: translateY(calc(-1 * var(--space-2))); } }
+@media (prefers-reduced-motion: no-preference) { .undo-toast-body { animation: drop var(--motion-enter) var(--ease-standard); } }
 .undo-toast-body > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.undo-toast-body .button { flex: none; background: none; box-shadow: none; color: inherit; }
+.undo-toast .undo-toast-body .button { --hud-frame: color-mix(in srgb, var(--color-bg) 35%, transparent); flex: none; background: none; box-shadow: none; color: inherit; }
+.undo-toast .undo-toast-body .button:hover { --hud-frame: color-mix(in srgb, var(--color-bg) 60%, transparent); }
 .undo-toast-body .button:hover, .undo-toast-body .button:focus-visible { background: color-mix(in srgb, var(--color-bg) 16%, transparent); }
 /* Selection is neutral: the glyph and tags already carry the status, so the fill only says which chat is open. */
 .row[aria-current="true"] { border-radius: 0; background: color-mix(in srgb, var(--color-text) 7%, var(--color-surface)); }
