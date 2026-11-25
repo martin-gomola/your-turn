@@ -1118,13 +1118,17 @@ body[data-origin="deck"] .top { display: flex; flex-wrap: wrap; align-items: cen
 body[data-origin="deck"] #title { flex: 1 0 100%; }
 body[data-origin="deck"] .top .evidence { order: 1; margin: 0; }
 body[data-origin="deck"] .top .subtitle { order: 2; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+/* Evidence is a readout in the frame grammar: square, a 1px ring in the Deck line that takes the reading's colour once
+   it signals, like the telemetry slots. A plain border draws it, since ::before is the dot and ::after the 44px tap
+   area, which a clip-path cut would clip. */
 body[data-origin="deck"] .evidence-chip {
   gap: var(--space-2); padding-inline: var(--space-2);
-  border: var(--size-hairline) solid var(--color-separator); border-radius: var(--hud-radius);
+  border: 1px solid rgb(255 255 255 / .15); border-radius: 0;
   background: none; box-shadow: none; color: var(--color-text-muted);
   font-family: var(--font-mono); font-size: var(--text-xs); font-variant-numeric: tabular-nums slashed-zero;
 }
-body[data-origin="deck"] .evidence-chip:hover { border-color: var(--color-border-strong); background: var(--color-fill); }
+body[data-origin="deck"] .evidence-chip:hover { border-color: #10b981; background: var(--color-fill); }
+body[data-origin="deck"] .evidence-chip:is([data-tone="danger"], [data-tone="warning"]) { border-color: var(--chip-tone); }
 body[data-origin="deck"] .evidence-chip[data-tone] { color: var(--color-text); font-family: var(--font-sans); font-weight: var(--weight-semibold); }
 body[data-origin="deck"] .evidence-chip[data-tone]::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--chip-tone); }
 body[data-origin="deck"] .evidence-chip[data-tone="passed"] { --chip-tone: var(--color-text-muted); }
