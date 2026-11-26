@@ -24,6 +24,28 @@ test('relay workers and Codex subagents ride under their orchestrator', () => {
   assert.deepEqual(ids(children.get('boss')), ['relay', 'sub']);
 });
 
+test('a delegate-code worker rides under the latest chat that started before it in its repo', () => {
+  const chats = [
+    { id: 'old', cwd: '/r', started_at: '1' },
+    { id: 'boss', cwd: '/r', started_at: '2' },
+    { id: 'worker', cwd: '/r/.delegate-code/loop-gaps', started_at: '3' },
+    { id: 'later', cwd: '/r', started_at: '4' },
+  ];
+  const { top, children, inferred } = context.deckDelegates(chats);
+  assert.deepEqual(ids(top), ['old', 'boss', 'later']);
+  assert.deepEqual(ids(children.get('boss')), ['worker']);
+  assert.deepEqual([...inferred], ['worker']);
+});
+
+test('a worker prefers the orchestrator still running over a newer idle chat in the repo', () => {
+  const chats = [
+    { id: 'boss', cwd: '/r', started_at: '2', status: 'working', updated_at: '2' },
+    { id: 'idle', cwd: '/r', started_at: '3', status: 'done', updated_at: '3' },
+    { id: 'worker', cwd: '/r/.delegate-code/a', started_at: '5', status: 'working', updated_at: '6' },
+  ];
+  assert.equal(context.deckDelegates(chats).parents.get('worker').id, 'boss');
+});
+
 test('a parent the Deck hides leaves its children in the queue', () => {
   const chats = [{ id: 'boss', cwd: '/r', started_at: '1' }, { id: 'relay', cwd: '/r/.relay/a', started_at: '2' }];
   const { top, children } = context.deckDelegates(chats, (parent) => parent.id !== 'boss');

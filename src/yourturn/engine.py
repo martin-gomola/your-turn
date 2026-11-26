@@ -568,6 +568,8 @@ class TurnFolder:
         row: dict[str, Any] = {
             "id": self.id,
             "cwd": self.cwd,
+            "parent_id": self.parent_id,
+            "started_at": self.started_at,
             "status": self._status(),
             "updated_at": iso(mtime_ns / 1e9) if mtime_ns is not None else self.updated_at,
             "turn_ended_at": turn.ended_at if turn else "",
