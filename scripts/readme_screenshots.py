@@ -131,6 +131,8 @@ def deck_gif(browser) -> None:
         page.wait_for_selector('.deck-card[data-phase="run"]')
         page.mouse.move(0, 0)
         page.wait_for_timeout(800)
+        page.screenshot(path=str(OUT / "deck-still.png"))
+        print("wrote docs/images/deck-still.png")
         with tempfile.TemporaryDirectory() as tmp:
             frames: list[tuple[Path, float]] = []
             end = time.monotonic() + 4
