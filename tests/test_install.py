@@ -223,7 +223,8 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
 
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "missing", ("claude", "CLAUDE.md block"): "missing",
                         ("claude", "plan usage capture"): "unverified (off)",
-                        ("cursor", "skill"): "missing", ("cursor", "rule"): "missing", ("cursor", "rule loaded"): "unverified"}
+                        ("cursor", "skill"): "missing", ("cursor", "rule"): "missing", ("cursor", "rule loaded"): "unverified",
+                        ("loop", "skills"): "not installed"}
     install(["claude", "cursor"], homes)
     install_log.unlink(missing_ok=True)
     claude_log.unlink()
@@ -232,7 +233,8 @@ def test_doctor_reports_each_artifact_without_writing_or_running_anything(tmp_pa
     # A saved rule is current text, never proof that Cursor loaded it.
     assert states() == {("codex", "plugin"): "unverified", ("claude", "skill"): "current", ("claude", "CLAUDE.md block"): "current",
                         ("claude", "plan usage capture"): "unverified (off)",
-                        ("cursor", "skill"): "current", ("cursor", "rule"): "current", ("cursor", "rule loaded"): "unverified"}
+                        ("cursor", "skill"): "current", ("cursor", "rule"): "current", ("cursor", "rule loaded"): "unverified",
+                        ("loop", "skills"): "not installed"}
 
     (homes["cursor"] / "skills" / "your-turn" / "SKILL.md").write_bytes(b"\xff\xfe not text")
     (homes["claude"] / "CLAUDE.md").write_text(secret + f"{START}\nedited by hand\n{END}\n")
@@ -508,3 +510,140 @@ def test_loop_skills_are_skipped_without_node(no_clis: Path, capsys: pytest.Capt
     from yourturn.install import LOOP_PAGE, install_loop_skills
     assert not install_loop_skills(["codex"])
     assert LOOP_PAGE in capsys.readouterr().out
+
+
+def test_doctor_verifies_codex_plugin_cache_when_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import yourturn.install as installer
+
+    homes = _homes(tmp_path)
+    _fake(tmp_path, "codex", monkeypatch)
+    (homes["codex"] / "config.toml").write_text(f'[plugins."{installer.PLUGIN}"]\nenabled = true\n')
+    cached = homes["codex"] / "plugins" / "cache" / "your-turn" / "your-turn" / installer.__version__ / "skills" / "your-turn-handoff" / "SKILL.md"
+    cached.parent.mkdir(parents=True)
+    current_text = installer.plugin_text("skills/your-turn-handoff/SKILL.md")
+    cached.write_text(current_text, encoding="utf-8")
+
+    plugin = [r for r in check(["codex"], homes) if r[:2] == ("codex", "plugin")][0]
+    assert plugin[2] == "current" and f"v{installer.handoff_version()}" in plugin[3]
+
+    cached.write_text(_stale(current_text), encoding="utf-8")
+    drifted = [r for r in check(["codex"], homes) if r[:2] == ("codex", "plugin")][0]
+    assert drifted[2] == "content mismatch" and "install" in drifted[3]
+
+    old_root = homes["codex"] / "plugins" / "cache" / "your-turn" / "your-turn"
+    (old_root / installer.__version__).rename(old_root / "0.8.0")
+    older = [r for r in check(["codex"], homes) if r[:2] == ("codex", "plugin")][0]
+    assert older[2] == "content mismatch" and "0.8.0" in older[3]
+
+
+def test_codex_reinstall_refreshes_when_same_version_cache_drifted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+    import yourturn.install as installer
+
+    calls = []
+    home = tmp_path / "codex"
+    cached = home / "plugins" / "cache" / "your-turn" / "your-turn" / installer.__version__ / "skills" / "your-turn-handoff" / "SKILL.md"
+    cached.parent.mkdir(parents=True)
+    cached.write_text(_stale(installer.plugin_text("skills/your-turn-handoff/SKILL.md")), encoding="utf-8")
+    (home / "config.toml").write_text(f'[marketplaces.your-turn]\nsource_type = "git"\n\n[plugins."{installer.PLUGIN}"]\nenabled = true\n')
+    monkeypatch.setattr(installer.shutil, "which", lambda name: "codex")
+    monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args, 0, "", ""))
+
+    assert installer.install_plugin(home)
+    assert calls[-1] == ["codex", "plugin", "add", installer.PLUGIN]
+
+
+def test_install_removes_duplicate_standalone_handoff_and_doctor_flags_it(tmp_path: Path, no_clis: Path,
+                                                                          capsys: pytest.CaptureFixture[str]) -> None:
+    import yourturn.install as installer
+
+    homes = _homes(tmp_path)
+    install(["claude", "cursor"], homes)
+    dup = installer.agents_home() / "skills" / "your-turn-handoff"
+    (dup / "tests").mkdir(parents=True)
+    (dup / "SKILL.md").write_text("---\nname: your-turn-handoff\nmetadata:\n  version: \"0.8.0\"\n---\n\n# Your Turn handoff\n\nOld.\n")
+    (dup / "LICENSE").write_text("MIT\n")
+    (dup / "tests" / "triggers.yaml").write_text("cases: []\n")
+    claude_link = homes["claude"] / "skills" / "your-turn-handoff"
+    claude_link.symlink_to(dup, target_is_directory=True)
+    lock_path = installer.agents_home() / ".skill-lock.json"
+    lock_path.write_text(json.dumps({
+        "skills": {
+            "your-turn-handoff": {"source": installer.LOOP_REPO, "updatedAt": "2026-11-19T14:41:20.709Z"},
+            "orchestrate": {"source": installer.LOOP_REPO, "updatedAt": "2026-11-26T11:38:33.824Z"},
+        }
+    }))
+
+    assert main(["doctor", "--codex-home", str(tmp_path / "none"), "--claude-home", str(homes["claude"]),
+                 "--cursor-home", str(homes["cursor"])]) == 1
+    assert "duplicate handoff: duplicate" in capsys.readouterr().out
+
+    install(["claude", "cursor"], homes)
+    out = capsys.readouterr().out
+    assert "Removed duplicate your-turn-handoff (v0.8.0)" in out
+    assert not dup.exists() and not claude_link.is_symlink()
+    remaining_lock = json.loads(lock_path.read_text())["skills"]
+    assert "your-turn-handoff" not in remaining_lock and "orchestrate" in remaining_lock
+    assert main(["doctor", "--codex-home", str(tmp_path / "none"), "--claude-home", str(homes["claude"]),
+                 "--cursor-home", str(homes["cursor"])]) == 0
+
+
+@pytest.mark.parametrize("kind", ["symlink", "foreign"])
+def test_install_keeps_symlinked_or_foreign_standalone_handoff(tmp_path: Path, no_clis: Path,
+                                                               capsys: pytest.CaptureFixture[str], kind: str) -> None:
+    import yourturn.install as installer
+
+    homes = _homes(tmp_path)
+    dup = installer.agents_home() / "skills" / "your-turn-handoff"
+    dup.parent.mkdir(parents=True, exist_ok=True)
+    if kind == "symlink":
+        target = tmp_path / "external-handoff"
+        target.mkdir()
+        (target / "SKILL.md").write_text("---\nname: your-turn-handoff\n---\n\n# Your Turn handoff\n")
+        dup.symlink_to(target, target_is_directory=True)
+    else:
+        dup.mkdir()
+        (dup / "SKILL.md").write_text("---\nname: your-turn-handoff\n---\n\n# My own notes\n")
+
+    install(["claude"], homes)
+    out = capsys.readouterr().out
+    assert dup.exists()
+    if kind == "symlink":
+        assert "kept (symlink" in out
+    else:
+        assert "Removed duplicate" not in out
+
+
+def test_doctor_and_install_report_loop_skill_versions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                       capsys: pytest.CaptureFixture[str]) -> None:
+    import subprocess
+    import yourturn.install as installer
+
+    homes = _homes(tmp_path)
+    skills_dir = installer.agents_home() / "skills"
+    versions = {"orchestrate": "0.2.0", "what-to-ask": "0.5.1", "second-opinion": "0.7.0",
+                "delegate-code": "0.11.0", "codex-image": "0.3.0"}
+    for name, ver in list(versions.items())[:2]:
+        folder = skills_dir / name
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(f'---\nname: {name}\nmetadata:\n  version: "{ver}"\n---\n')
+
+    partial = [r for r in check(["claude"], homes) if r[:2] == ("loop", "skills")][0]
+    assert partial[2] == "partial" and "orchestrate 0.2.0" in partial[3] and "codex-image" in partial[3]
+
+    for name, ver in list(versions.items())[2:]:
+        folder = skills_dir / name
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(f'---\nname: {name}\nmetadata:\n  version: "{ver}"\n---\n')
+    (installer.agents_home() / ".skill-lock.json").write_text(json.dumps({
+        "skills": {name: {"source": installer.LOOP_REPO, "updatedAt": "2026-11-26T11:38:33Z"} for name in versions}
+    }))
+
+    installed = [r for r in check(["claude"], homes) if r[:2] == ("loop", "skills")][0]
+    assert installed[2] == "installed" and "delegate-code 0.11.0" in installed[3] and "updated 2026-11-26" in installed[3]
+
+    monkeypatch.setattr(installer.shutil, "which", lambda name: name)
+    monkeypatch.setattr(installer.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 0))
+    assert installer.install_loop_skills(["claude-code"])
+    out = capsys.readouterr().out
+    assert "orchestrate 0.2.0" in out and "codex-image 0.3.0" in out

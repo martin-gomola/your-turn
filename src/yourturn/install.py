@@ -38,7 +38,9 @@ CURSOR_RULE = "uvx your-turn@latest cursor-rule"
 # The same text in a Markdown block, which GitHub gives a copy button.
 CURSOR_RULE_DOCS = "https://github.com/martin-gomola/your-turn/blob/main/docs/configuration.md#cursor-user-rule"
 NAME = "your-turn"  # Skill folder in Claude Code and Cursor, and the name of the legacy MCP server.
+STANDALONE_HANDOFF = "your-turn-handoff"  # Standalone skill name in your-turn-loop and Codex plugin.
 APPS = {"codex": "Codex", "claude": "Claude Code", "cursor": "Cursor"}
+SECTIONS = {**APPS, "loop": "Loop skills"}
 ASK_TOOLS = {"claude": "AskUserQuestion", "cursor": "AskQuestion"}
 # Each app's own edit tools, named in place of Codex's `apply_patch`.
 EDIT_TOOLS = {"claude": "`Edit` or `Write`", "cursor": "`StrReplace`, `Write` or `ApplyPatch`"}
@@ -122,6 +124,31 @@ def plugin_text(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _skill_version(text: str) -> str | None:
+    """Read `metadata.version` from a skill's leading YAML frontmatter."""
+    front = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    if not front:
+        return None
+    match = re.search(r'(?m)^\s*version:\s*["\']?([^"\'\n]+?)["\']?\s*$', front.group(1))
+    return match.group(1).strip() if match else None
+
+
+def _read_skill_version(path: Path) -> str | None:
+    try:
+        return _skill_version(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def handoff_version() -> str:
+    return _skill_version(plugin_text(f"skills/{STANDALONE_HANDOFF}/SKILL.md")) or __version__
+
+
+def _version_banner() -> str:
+    handoff = handoff_version()
+    return f"v{__version__}" if handoff == __version__ else f"v{__version__} (handoff v{handoff})"
+
+
 def skill_text(harness: str) -> str:
     """The Codex handoff skill, renamed and worded for another app, plus how it asks questions."""
     text = plugin_text("skills/your-turn-handoff/SKILL.md")
@@ -176,13 +203,13 @@ def _write(path: Path, text: str) -> str:
     return "written"
 
 
-def _ours(path: Path) -> bool:
+def _ours(path: Path, name: str = NAME) -> bool:
     """A skill file Your Turn wrote, in any version: its name and heading, whatever the wording."""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return False
-    return text.startswith(f"---\nname: {NAME}\n") and "\n# Your Turn handoff\n" in text
+    return text.startswith(f"---\nname: {name}\n") and "\n# Your Turn handoff\n" in text
 
 
 def _linked(folder: Path) -> str:
@@ -266,9 +293,12 @@ def install_plugin(home: Path | None = None) -> bool:
         _install_result("codex", f"Using installed handoff {standalone}")
         return True
     marketplace = marketplaces.get(MARKETPLACE)
-    # A Git marketplace ships the skill with the release, so the same version needs no refresh.
+    # A Git marketplace ships the skill with the release, so the same version needs no refresh unless its text drifted.
+    release = root / "plugins" / "cache" / MARKETPLACE / NAME / __version__
+    cached_skill = release / "skills" / STANDALONE_HANDOFF / "SKILL.md"
     if (enabled(PLUGIN) and isinstance(marketplace, dict) and marketplace.get("source_type") == "git"
-            and (root / "plugins" / "cache" / MARKETPLACE / NAME / __version__).is_dir()):
+            and release.is_dir()
+            and (not cached_skill.exists() or _state(cached_skill, plugin_text(f"skills/{STANDALONE_HANDOFF}/SKILL.md")) == "current")):
         shared = ", shared skill removed" if _shared_skill() and _remove_skill(agents_home()) == "removed" else ""
         _install_result("codex", f"Plugin {PLUGIN} {__version__} unchanged{shared}")
         return True
@@ -445,6 +475,17 @@ def _state(path: Path, expected: str) -> str:
         return "unreadable"
 
 
+def _skill_note(path: Path, state: str, suffix: str = "") -> str:
+    ver = handoff_version()
+    if state == "current":
+        return f"{path}{suffix} (v{ver})"
+    if state == "content mismatch":
+        got = _read_skill_version(path)
+        detail = f"installed v{got}, expected v{ver}" if got and got != ver else f"differs from v{ver}"
+        return f"{path}{suffix} ({detail})"
+    return f"{path}{suffix}"
+
+
 def _block_state(memory: Path) -> str:
     """Our CLAUDE.md block against the current one; the rest of the file is never compared or shown."""
     try:
@@ -459,6 +500,97 @@ def _block_state(memory: Path) -> str:
     return "current" if found.group(0).rstrip("\n") == CLAUDE_BLOCK.rstrip("\n") else "content mismatch"
 
 
+def _codex_plugin_state(home: Path) -> tuple[str, str]:
+    """Verify the cached Codex plugin skill when present, without invoking the slow Codex CLI."""
+    try:
+        config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        config = {}
+    plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
+
+    def enabled(plugin: str) -> bool:
+        return isinstance(plugins.get(plugin), dict) and plugins[plugin].get("enabled") is True
+
+    if enabled("your-turn-handoff@my-agent-skills"):
+        return "unverified", "Using standalone plugin your-turn-handoff@my-agent-skills."
+    if enabled(PLUGIN):
+        expected = plugin_text(f"skills/{STANDALONE_HANDOFF}/SKILL.md")
+        ver = handoff_version()
+        cache_root = home / "plugins" / "cache" / MARKETPLACE / NAME
+        cached = cache_root / __version__ / "skills" / STANDALONE_HANDOFF / "SKILL.md"
+        if cached.exists():
+            state = _state(cached, expected)
+            if state == "current":
+                return state, f"{cached} (v{ver})"
+            got = _read_skill_version(cached)
+            detail = f"cached v{got}, expected v{ver}" if got and got != ver else f"differs from v{ver}"
+            return state, f"{cached} ({detail}; run `install` to refresh)"
+        if cache_root.is_dir():
+            others = sorted(cache_root.glob(f"*/skills/{STANDALONE_HANDOFF}/SKILL.md"), reverse=True)
+            if others:
+                other = others[0]
+                got = _read_skill_version(other) or other.parents[2].name
+                return "content mismatch", f"{other} (cached v{got}, expected v{ver}; run `install` to refresh)"
+    return ("unverified", "Codex keeps the plugin from its marketplace in its own cache, "
+            "which Your Turn did not find here; `install` refreshes it.")
+
+
+def _installed_loop_skills() -> tuple[list[tuple[str, str | None]], list[str], str | None]:
+    """Read installed Loop skill versions and the newest lockfile date from `~/.agents`."""
+    skills_dir = agents_home() / "skills"
+    installed: list[tuple[str, str | None]] = []
+    missing: list[str] = []
+    for name in LOOP_SKILLS:
+        path = skills_dir / name / "SKILL.md"
+        if path.is_file():
+            installed.append((name, _read_skill_version(path)))
+        else:
+            missing.append(name)
+    latest_date: str | None = None
+    try:
+        lock = json.loads((agents_home() / ".skill-lock.json").read_text(encoding="utf-8"))
+        entries = lock.get("skills") if isinstance(lock, dict) else None
+        if isinstance(entries, dict):
+            dates = [
+                str(entries[name].get("updatedAt", ""))[:10]
+                for name in LOOP_SKILLS
+                if isinstance(entries.get(name), dict) and entries[name].get("updatedAt")
+            ]
+            latest_date = max(dates) if dates else None
+    except (OSError, UnicodeDecodeError, ValueError):
+        pass
+    return installed, missing, latest_date
+
+
+def _format_loop_skills(installed: list[tuple[str, str | None]]) -> str:
+    return ", ".join(f"{name} {ver}" if ver else name for name, ver in installed)
+
+
+def _check_loop_skills() -> list[tuple[str, str, str, str]]:
+    skills_dir = agents_home() / "skills"
+    installed, missing, latest_date = _installed_loop_skills()
+    results: list[tuple[str, str, str, str]] = []
+    if installed and not missing:
+        updated = f", updated {latest_date}" if latest_date else ""
+        results.append(("loop", "skills", "installed",
+                        f"{_format_loop_skills(installed)} · {skills_dir}{updated} "
+                        "(run `DISABLE_TELEMETRY=1 npx skills check` to compare with GitHub)"))
+    elif installed:
+        results.append(("loop", "skills", "partial",
+                        f"installed: {_format_loop_skills(installed)}; missing: {', '.join(missing)} "
+                        "(run `install` to sync)"))
+    else:
+        results.append(("loop", "skills", "not installed",
+                        f"Optional Loop skills not found in {skills_dir}; `install` adds them when Node.js is available."))
+    dup = skills_dir / STANDALONE_HANDOFF / "SKILL.md"
+    if dup.exists() or (skills_dir / STANDALONE_HANDOFF).is_symlink():
+        dup_ver = _read_skill_version(dup) if dup.exists() else None
+        ver_label = f"v{dup_ver}, " if dup_ver else ""
+        results.append(("loop", "duplicate handoff", "duplicate",
+                        f"{dup} ({ver_label}duplicates Your Turn v{handoff_version()}; run `install` to remove it)"))
+    return results
+
+
 def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, str, str]]:
     """(app, artifact, state, note) for each handoff artifact, read-only and without running any app CLI."""
     results: list[tuple[str, str, str, str]] = []
@@ -467,16 +599,19 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
         shared = agents_home() / "skills" / NAME / "SKILL.md"
         if harness == "codex":
             if shutil.which("codex"):
-                results.append(("codex", "plugin", "unverified", "Codex keeps the plugin from its marketplace in its own cache, "
-                                "which Your Turn does not read; `install` refreshes it."))
+                state, note = _codex_plugin_state(home)
+                results.append(("codex", "plugin", state, note))
             else:
-                results.append(("codex", "shared skill", _state(shared, shared_skill_text()), str(shared)))
+                state = _state(shared, shared_skill_text())
+                results.append(("codex", "shared skill", state, _skill_note(shared, state)))
             continue
         if harness == "cursor" and _shared_skill():
-            results.append(("cursor", "skill", _state(shared, shared_skill_text()), f"{shared} (shared)"))
+            state = _state(shared, shared_skill_text())
+            results.append(("cursor", "skill", state, _skill_note(shared, state, " (shared)")))
         else:
-            results.append((harness, "skill", _state(home / "skills" / NAME / "SKILL.md", skill_text(harness)),
-                            str(home / "skills" / NAME / "SKILL.md")))
+            skill_path = home / "skills" / NAME / "SKILL.md"
+            state = _state(skill_path, skill_text(harness))
+            results.append((harness, "skill", state, _skill_note(skill_path, state)))
         if harness == "claude":
             results.append(("claude", "CLAUDE.md block", _block_state(home / "CLAUDE.md"), str(home / "CLAUDE.md")))
             capture = usage.state(home)
@@ -489,22 +624,25 @@ def check(harnesses: list[str], homes: dict[str, Path]) -> list[tuple[str, str, 
                             "Cursor applies the rule file in new chats, and Your Turn cannot see whether it did; Customize → "
                             "Rules lists it as your-turn under User. Without it, add a User Rule with the text from "
                             f"{CURSOR_RULE_DOCS}, or the text that `{CURSOR_RULE}` prints."))
+    if harnesses:
+        results.extend(_check_loop_skills())
     return results
 
 
 def doctor(harnesses: list[str], homes: dict[str, Path]) -> int:
-    """Print each artifact's state; 1 when one is missing, differs from the current text, or cannot be read."""
-    print(_paint("Your Turn doctor (read-only)", "1;36"), flush=True)
+    """Print each artifact's state; 1 when one is missing, differs from the current text, cannot be read, or duplicates."""
+    print(_paint(f"Your Turn doctor · {_version_banner()} (read-only)", "1;36"), flush=True)
     results = check(harnesses, homes)
     for app in dict.fromkeys(app for app, *_ in results):
-        print(_paint(APPS[app], "1;36"), flush=True)
+        print(_paint(SECTIONS.get(app, app), "1;36"), flush=True)
         for _, artifact, state, note in (result for result in results if result[0] == app):
-            color = "32" if state == "current" else "33" if "unverified" in state else "31"
+            color = ("32" if state in ("current", "installed")
+                     else "33" if ("unverified" in state or state in ("not installed", "partial")) else "31")
             print(f"  {artifact}: {_paint(state, color)}", flush=True)
             print(f"    {_paint(note, '2')}", flush=True)
     if not results:
         print("No Codex, Claude Code or Cursor folder found, so there is nothing to check.", flush=True)
-    return 1 if any(state in ("missing", "content mismatch", "unreadable") for _, _, state, _ in results) else 0
+    return 1 if any(state in ("missing", "content mismatch", "unreadable", "duplicate") for _, _, state, _ in results) else 0
 
 
 # --- Loop skills ---------------------------------------------------------------------------------
@@ -540,17 +678,72 @@ def install_loop_skills(agents: list[str]) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         done = False
     if done:
+        installed, _, _ = _installed_loop_skills()
+        summary = _format_loop_skills(installed) if installed else ", ".join(LOOP_SKILLS)
+        where = f"for {', '.join(agents)} · {agents_home() / 'skills'}"
         print(f"{_paint('✓', '32')} {_paint('Loop skills', '1;36')}", flush=True)
-        print(f"  {', '.join(LOOP_SKILLS)} for {', '.join(agents)}", flush=True)
+        print(f"  {summary}", flush=True)
+        print(f"  {_paint(where, '2')}", flush=True)
     else:
         print(f"{_paint('!', '33')} Loop skills not installed. Run: {' '.join(command)}", flush=True)
     return done
 
 
+def _remove_standalone_handoff(homes: dict[str, Path]) -> str:
+    """Remove a duplicate standalone `your-turn-handoff` from `~/.agents/skills` when Your Turn owns it."""
+    folder = agents_home() / "skills" / STANDALONE_HANDOFF
+    skill = folder / "SKILL.md"
+    if not folder.exists() and not folder.is_symlink():
+        return ""
+    if linked := _linked(folder):
+        print(f"{_paint('!', '33')} {_paint('Standalone handoff', '1;36')}", flush=True)
+        print(f"  Duplicate {STANDALONE_HANDOFF} {linked}; remove it to avoid loading two handoff skills", flush=True)
+        return "kept"
+    if not skill.is_file() or not _ours(skill, STANDALONE_HANDOFF):
+        return ""
+    old_ver = _read_skill_version(skill)
+    target = folder.resolve()
+    for home in homes.values():
+        link = home / "skills" / STANDALONE_HANDOFF
+        try:
+            if link.is_symlink() and link.resolve() == target:
+                link.unlink()
+        except OSError:
+            pass
+    skill.unlink(missing_ok=True)
+    license_file = folder / "LICENSE"
+    if license_file.is_file() and not license_file.is_symlink():
+        license_file.unlink()
+    tests_dir = folder / "tests"
+    if tests_dir.is_dir() and not tests_dir.is_symlink():
+        files_in_tests = [p for p in tests_dir.rglob("*") if p.is_file() or p.is_symlink()]
+        if all(not p.is_symlink() and p.suffix in {".yaml", ".yml", ".md"} for p in files_in_tests):
+            shutil.rmtree(tests_dir)
+    if folder.is_dir() and not any(folder.iterdir()):
+        folder.rmdir()
+    lock_path = agents_home() / ".skill-lock.json"
+    if lock_path.is_file() and not lock_path.is_symlink():
+        try:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            skills = lock.get("skills") if isinstance(lock, dict) else None
+            if (isinstance(skills, dict) and isinstance(skills.get(STANDALONE_HANDOFF), dict)
+                    and skills[STANDALONE_HANDOFF].get("source") == LOOP_REPO):
+                del skills[STANDALONE_HANDOFF]
+                lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+        except (OSError, UnicodeDecodeError, ValueError):
+            pass
+    label = f" (v{old_ver})" if old_ver else ""
+    print(f"{_paint('✓', '32')} {_paint('Standalone handoff', '1;36')}", flush=True)
+    print(f"  Removed duplicate {STANDALONE_HANDOFF}{label}; Your Turn manages v{handoff_version()}", flush=True)
+    print(f"  {_paint(str(agents_home() / 'skills'), '2')}", flush=True)
+    return "removed"
+
+
 def install(harnesses: list[str], homes: dict[str, Path]) -> list[str]:
     """Set up each app and return the ones that got the handoff, which need a restart to load it."""
-    print(_paint("Your Turn setup", "1;36"), flush=True)
-    print(_paint("───────────────", "2"), flush=True)
+    title = f"Your Turn setup · {_version_banner()}"
+    print(_paint(title, "1;36"), flush=True)
+    print(_paint("─" * len(title), "2"), flush=True)
     if not harnesses:
         print("No Codex, Claude Code or Cursor folder found, so nothing was installed.", flush=True)
     done = []
@@ -561,6 +754,8 @@ def install(harnesses: list[str], homes: dict[str, Path]) -> list[str]:
             continue
         {"claude": install_claude, "cursor": install_cursor}[harness](homes[harness])
         done.append(harness)
+    if done:
+        _remove_standalone_handoff(homes)
     return done
 
 
