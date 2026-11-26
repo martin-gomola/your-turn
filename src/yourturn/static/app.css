@@ -365,6 +365,12 @@ body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="wo
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-text > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Focusing a cut command (Tab or a tap) is the reader's choice, so only then may the line grow to show all of it. */
 body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body:focus-within { height: auto; }
+/* The live-check note is prose, not output: it takes its own wrapped line in the text face, and without a step to
+   show the terminal frame goes away so the note reads as a plain sentence. */
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body:has(> .quiet-note:not([hidden])) { height: auto; min-height: 32px; flex-wrap: wrap; padding-block: var(--space-2); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .quiet-note { flex-basis: 100%; margin: 0; font-family: var(--font-sans); line-height: var(--leading-normal); }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body:has(> .status-text:empty) { margin-inline: 0; padding: 0; border: 0; background: none; }
+body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-body:has(> .status-text:empty)::before { content: none; }
 @media (max-width: 599px) {
   body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "body" "actions"; }
   body:not([data-origin="deck"]) .status-card[data-settled="true"][data-status="working"] .status-actions { justify-self: start; }
