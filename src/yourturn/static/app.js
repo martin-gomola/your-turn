@@ -176,8 +176,16 @@ function deckOrder(groups) {
 }
 
 // Delegated chats ride under their orchestrator instead of filling the queue: a Codex subagent names its
-// parent thread, and a relay worker runs in <repo>/.relay/<slug>, so its parent is the latest chat in <repo>
-// that started before it. A child `canParent(parent, chat)` refuses (say a parent the view hides) stays on its own.
+// parent thread, and a relay or delegate-code worker runs in <repo>/.relay/<slug> or <repo>/.delegate-code/<slug>,
+// so its parent is the latest chat in <repo> that started before it, preferring one still active when it started
+// (working, or written to since) over a newer idle chat. A child `canParent(parent, chat)` refuses (say a parent
+// the view hides) stays on its own.
+const WORKER_FOLDER = /\/\.(?:relay|delegate-code)\//;
+
+function workerFolder(chat) {
+  return (chat.cwd || "").match(WORKER_FOLDER)?.[0].slice(1, -1) || "";
+}
+
 // Returns the top-level chats, parent key -> children, child key -> parent, and the child keys whose parent was
 // inferred from the relay folder rather than named.
 function deckDelegates(chats, canParent = () => true) {
@@ -188,10 +196,12 @@ function deckDelegates(chats, canParent = () => true) {
   const top = [];
   for (const chat of chats) {
     let parent = chat.parent_id && byId.get(chat.parent_id);
-    const relay = !parent && (chat.cwd || "").split("/.relay/");
+    const relay = !parent && (chat.cwd || "").split(WORKER_FOLDER);
     if (relay?.length === 2) {
-      parent = chats.filter((other) => other.cwd === relay[0] && (other.started_at || "") <= (chat.started_at || ""))
-        .sort((a, b) => (b.started_at || "").localeCompare(a.started_at || ""))[0];
+      const started = chat.started_at || "";
+      const before = chats.filter((other) => other.cwd === relay[0] && (other.started_at || "") <= started);
+      const active = before.filter((other) => other.status === "working" || (other.updated_at || "") >= started);
+      parent = (active.length ? active : before).sort((a, b) => (b.started_at || "").localeCompare(a.started_at || ""))[0];
     }
     if (!parent || parent === chat || !canParent(parent, chat)) { top.push(chat); continue; }
     const key = chatKey(parent);
@@ -2136,10 +2146,10 @@ function renderSubtasks(thread) {
     event.preventDefault();
     showPanel(chatKey(parent));
   });
-  // A parent guessed from the relay folder says so, since it is not recorded by the agent.
+  // A parent guessed from the worker folder says so, since it is not recorded by the agent.
   const guessed = inferred.has(key);
   parentLine.replaceChildren(guessed ? "Likely subtask of " : "Subtask of ", link);
-  parentLine.title = guessed ? "Inferred from the .relay folder this chat runs in" : "";
+  parentLine.title = guessed ? `Inferred from the ${workerFolder(thread)} folder this chat runs in` : "";
 }
 
 function renderThread(thread) {

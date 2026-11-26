@@ -251,7 +251,7 @@ body:not([data-origin="deck"]) #thread-view .group-title > .tone { display: none
 .tag--reading[data-tone="red"] { color: var(--color-danger); }.tag--interrupted { color: var(--color-danger); }
 .tag--idle, .tag--dismissed, .tag--unknown { color: var(--color-text-muted); }
 /* A parent's subtask roll-up is muted until a subtask is an exception, then it takes that exception's color. */
-.tag--subtasks { color: var(--color-text-muted); font-weight: var(--weight-medium); }
+.tag--subtasks { color: var(--color-text-muted); font-weight: var(--weight-medium); white-space: normal; }
 :is(.tag--subtasks, .group-count)[data-tone="waiting"], :is(.tag--subtasks, .group-count)[data-tone="quiet"] { color: var(--color-waiting); }
 :is(.tag--subtasks, .group-count)[data-tone="failed"], :is(.tag--subtasks, .group-count)[data-tone="stopped"] { color: var(--color-danger); }
 .group-count { margin-inline-start: var(--space-2); color: var(--color-text-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
