@@ -32,7 +32,7 @@ process runs, so no app asks for a permission and nothing breaks when a tool is 
 | Line | Answers | Parsed into |
 | --- | --- | --- |
 | `**Outcome:** <sentence>` | What happened? | The turn's outcome |
-| `**Next step:** none \| answer: … \| review: … \| approve: … \| run: …` | What do I do next? | Next kind and text; an action puts the chat in Needs you |
+| `**Next step:** none \| answer: … \| decide: … \| review: … \| approve: … \| run: …` | What do I do next? | Next kind and text; an action puts the chat in Needs you |
 | `**Recap:** <sentences>` (second turn on) | What is this chat about? | The chat recap |
 | `**Decision:** <question> -> <chosen> (over <alternatives>). <reason>` | Why this way? | One agent decision per line (`→` accepted, `(over …)` optional) |
 

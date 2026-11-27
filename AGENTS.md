@@ -2,13 +2,14 @@
 
 ## Direction
 
-Your Turn is the queue for a person who already runs several paid coding agents. The handoff contract (`Outcome`, `Next step`) is the product. This inbox answers four questions in order: Notice, Understand, Judge, Act. `DESIGN.md` is the contract.
+Your Turn is the queue for a person who already runs several paid coding agents. The handoff contract (`Outcome`, `Next step`) is the product. This inbox answers four questions in order: Notice, Understand, Judge, Act. `DESIGN.md` is the design contract. The handoff contract is defined in your-turn-loop, and the Handoff contract section of `DESIGN.md` mirrors it.
 
 - Read-only and local. No agent controls, no new runtime, no MCP.
 - Vendor-neutral. An inbox that only flatters one agent is out of scope.
 - A change belongs only when it shortens Notice, Understand, Judge, or Act. The inbox measure is fewer false Needs you and a faster true one. A dashboard read for its own sake is out.
 - Ship only fields the transcripts record. A dollar price, or a passed check with no recorded exit code, is not one of them.
-- `plugin/skills/your-turn-handoff/` stays a generated snapshot. The contract lives in your-turn-loop.
+- A claim that this is faster or cheaper ships with a public comparison and an answer key: handoff against a raw chat, or delegate against pasting a diff. The comparison table in this repository's README is not that comparison.
+- `plugin/skills/your-turn-handoff/` stays a generated snapshot of that handoff contract.
 
 ## Development artifacts stay out of the repository
 
