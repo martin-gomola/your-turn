@@ -260,9 +260,13 @@ body:not([data-origin="deck"]) #thread-view .group-title > .tone { display: none
 .subtask > .glyph { width: 24px; height: 24px; grid-row: 1 / span 2; align-self: start; border-radius: var(--radius-sm); }
 .subtask > .glyph svg { width: 14px; height: 14px; }
 .subtask[data-kind="quiet"] > .glyph { background-color: var(--color-waiting-fill); }
-.subtask-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
-.subtask-title { min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.subtask-state { flex: none; color: var(--color-text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+/* Title, then the neutral agent pill and check tag, then the state line pushed right; on a narrow pane the state
+   line drops under the title instead of squeezing it. */
+.subtask-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+.subtask-head > :is(.harness-pill, .tag) { flex: none; align-self: center; }
+.subtask-title { flex: 0 1 auto; min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.subtask-title--slug { font-family: var(--font-mono); font-size: var(--text-sm); }
+.subtask-state { flex: 0 1 auto; margin-inline-start: auto; text-align: end; color: var(--color-text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .subtask:is([data-kind="waiting"], [data-kind="quiet"]) .subtask-state { color: var(--color-waiting); }
 .subtask:is([data-kind="failed"], [data-kind="stopped"]) .subtask-state { color: var(--color-danger); }
 .subtask-summary { grid-column: 2; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; color: var(--color-text-muted); font-size: var(--text-sm); }

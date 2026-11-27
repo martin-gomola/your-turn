@@ -85,6 +85,19 @@ const CHECK_TAGS = {
   failed: { label: "Check failed", className: "tag--interrupted" },
   unchecked: { label: "Edits unchecked", className: "tag--idle" },
 };
+const CHECK_REASONS = {
+  edited_after_check: "Edited after last check",
+  unproven: "Check exit code was not captured (piped or chained)",
+  no_check: "No check command recorded after code edits",
+};
+
+function checkTag(state, reason) {
+  const check = CHECK_TAGS[state];
+  if (!check) return null;
+  const node = el("span", `tag ${check.className}`, check.label);
+  if (state === "unchecked" && CHECK_REASONS[reason]) node.title = CHECK_REASONS[reason];
+  return node;
+}
 const NEXT_LABEL = { answer: "Answer", review: "Review", approve: "Approve", run: "Run", decide: "Decide", do: "To do" };
 // The primary action names the step it completes ("Approve in Codex"), so a waiting step is never a generic "Open".
 function stepVerb(chat, waiting) {
@@ -211,6 +224,62 @@ function deckDelegates(chats, canParent = () => true) {
     if (relay?.length === 2) inferred.add(chatKey(chat));
   }
   return { top, children, parents, inferred };
+}
+
+// The worktree slug a relay or delegate-code worker runs in: /r/.delegate-code/fix-csv/src -> "fix-csv".
+function workerSlug(chat) {
+  return (chat.cwd || "").split(WORKER_FOLDER)[1]?.split("/")[0] || "";
+}
+
+const LIVE = ["working", "waiting"];
+const endedAt = (chat) => Date.parse(chat.turn_ended_at || chat.updated_at || "");
+
+// A worker's finished handoff was meant for its orchestrator, so once the orchestrator settled a later recorded
+// turn it no longer needs you; a worker whose worktree is gone is settled even with its orchestrator out of view.
+// A live run, a source-level approval or question, and a failed check are never superseded. A file mtime is no
+// turn end, so a parent without `turn_ended_at` supersedes nothing.
+function isSupersededSubtask(chat, parent) {
+  if (LIVE.includes(chat.status) || chat.next_basis === "source" || chat.check_state === "failed") return false;
+  if (chat.worktree_removed) return true;
+  if (!parent || parent.needs_you || LIVE.includes(parent.status)) return false;
+  const parentEnded = Date.parse(parent.turn_ended_at || "");
+  const chatEnded = endedAt(chat);
+  return Number.isFinite(parentEnded) && Number.isFinite(chatEnded) && parentEnded > chatEnded;
+}
+
+// Flags superseded subtasks on the chats as they arrive, so every view (rows, roll-ups, counts) reads one answer.
+function markSuperseded(chats) {
+  const { parents } = deckDelegates(chats);
+  for (const chat of chats) chat.superseded = isSupersededSubtask(chat, parents.get(chatKey(chat)));
+  return chats;
+}
+
+// An unchecked subtask its orchestrator verified with a passing check after the subtask ended raises no warning;
+// an earlier or undated parent check never clears it, and a failed check always shows.
+function effectiveCheckState(chat, parent) {
+  const checked = Date.parse(parent?.check_passed_at || "");
+  const ended = endedAt(chat);
+  const verified = Number.isFinite(checked) && Number.isFinite(ended) && checked > ended;
+  return chat.check_state === "unchecked" && verified && isSupersededSubtask(chat, parent) ? "" : chat.check_state || "";
+}
+
+function formatCompactTokens(n) {
+  return n.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 1 });
+}
+
+// Time spent in finished turns: "45s", "9m 16s", "1h 5m".
+function formatActive(seconds) {
+  const s = Math.round(seconds), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s % 60}s` : `${s}s`;
+}
+
+// Work done across subtasks (or one), "9m 16s · 41K out"; "" when nothing was recorded. Output tokens, not the
+// session total, which is mostly cache reads and overstates the work.
+function subtaskMetrics(children) {
+  const sum = (field) => children.reduce((total, chat) => total + (Number(chat[field]) || 0), 0);
+  const seconds = sum("active_seconds");
+  const output = sum("output_tokens");
+  return [seconds && formatActive(seconds), output && `${formatCompactTokens(output)} out`].filter(Boolean).join(" · ");
 }
 
 // Subtask states from most to least urgent: a parent lists its subtasks in this order and takes the tone of the
@@ -584,7 +653,10 @@ function connect(url, event, render) {
 function connected(source, event, render) {
   source.onopen = () => { setConnection("live", "Live"); stateSync.flush(); };
   source.onerror = () => setConnection("offline", "Reconnecting");
-  source.addEventListener(event, (message) => render(JSON.parse(message.data)));
+  source.addEventListener(event, (message) => {
+    const data = JSON.parse(message.data);
+    render(event === "inbox" ? markSuperseded(data) : data);
+  });
   source.addEventListener("state", (message) => {
     stateSync.receive(JSON.parse(message.data));
     renderShared();
@@ -599,7 +671,7 @@ function needsAttention(chat) {
 }
 
 function hasAttention(chat) {
-  return Boolean(chat.needs_you);
+  return Boolean(chat.needs_you) && !chat.superseded;
 }
 
 function reminderDismissed(chat) {
@@ -645,7 +717,7 @@ function chatSummary(chat) {
   return chat.outcome;
 }
 
-function renderRow(chat) {
+function renderRow(chat, parent = null) {
   const state = attentionState(chat);
   const status = STATUS[state] || STATUS.idle;
   const unread = isNewResult(chat);
@@ -723,8 +795,9 @@ function renderRow(chat) {
     if (["amber", "red"].includes(delta.dataset.tone)) meta.append(delta);
   }
   // A Run step already says the check is still to do.
-  const check = state === "working" || (chat.check_state === "unchecked" && chat.next_kind === "run") ? "" : CHECK_TAGS[chat.check_state];
-  if (check) meta.append(el("span", `tag ${check.className}`, check.label));
+  const checkState = effectiveCheckState(chat, parent);
+  const check = state === "working" || (checkState === "unchecked" && chat.next_kind === "run") ? null : checkTag(checkState, chat.check_reason);
+  if (check) meta.append(check);
   if (meta.childNodes.length) description.append(meta);
   description.append(summaryNode);
   body.append(description);
@@ -918,19 +991,21 @@ function transition(update, { rows = true } = {}) {
 }
 
 function liveInbox(chats) {
+  // Set now, not in the view transition's deferred callback, so the open chat below reads this update.
+  inboxData = chats;
   inboxProgressRows.clear();
   stateSync.retain(chats.map(chatKey));
   migrateLocalMarks(chats);
   notifyChanges(chats);
   if (inboxLayout && layoutOf(groupChats(chats)) !== inboxLayout) transition(() => renderInbox(chats));
   else renderInbox(chats);
-  if (threadData) renderSubtasks(threadData);
+  syncOpenThread();
 }
 
 function renderInboxProgress({ chats, scanned, total }) {
   for (const chat of chats) inboxProgressRows.set(chatKey(chat), chat);
   previousNewResultsCount = null;
-  renderInbox([...inboxProgressRows.values()], { loading: true });
+  renderInbox(markSuperseded([...inboxProgressRows.values()]), { loading: true });
   $("inbox-loading").textContent = `Loading chats… ${scanned} of ${total}`;
 }
 
@@ -944,7 +1019,7 @@ function renderDelegates(chat) {
   const canFold = foldable.length >= 2;
   const folded = canFold && !delegateOpen.has(key);
   const rows = (folded ? kids.filter((child) => !foldable.includes(child)) : kids).map((child) => {
-    const item = renderRow(child);
+    const item = renderRow(child, chat);
     item.dataset.delegate = "";
     item.querySelector(".row-title").prepend(el("span", "sr-only", `Delegated by ${chatName(chat)}: `));
     // The parent's row already names the agent; a subtask repeats it only when it differs.
@@ -2092,7 +2167,7 @@ function chatRelations() {
   return deckDelegates(inboxData || attentionData || []);
 }
 
-function subtaskRow(chat, kind) {
+function subtaskRow(chat, kind, parent) {
   const state = attentionState(chat);
   const link = el("a", "list-row subtask");
   link.href = `/?thread=${encodeURIComponent(chatKey(chat))}${inboxReturn}`;
@@ -2103,8 +2178,19 @@ function subtaskRow(chat, kind) {
   if (state === "working") syncSpin(glyph.querySelector("use"));
   // The age says what it measures: a quiet run since its last activity, a running one since it started.
   const when = kind === "quiet" ? `last activity ${ago(chat.updated_at)}` : kind === "working" ? workingFor(chat.working_since) : ago(chat.updated_at);
+  // A worker's slug names it at a glance; its brief's first line (often a raw "Task: …" heading) stays in the tooltip.
+  const slug = workerSlug(chat);
   const head = el("span", "subtask-head");
-  head.append(el("span", "subtask-title", chatName(chat)), el("span", "subtask-state", [SUBTASK_LABEL[kind], when].filter(Boolean).join(" · ")));
+  const title = el("span", `subtask-title${slug ? " subtask-title--slug" : ""}`, slug || chatName(chat));
+  // The parent already names its agent; a subtask names its own only when it differs.
+  const pill = HARNESS_LABEL[chat.harness] && chat.harness !== parent?.harness ? [harnessPill(chat.harness, HARNESS_LABEL[chat.harness])] : [];
+  const status = el("span", "subtask-state", [SUBTASK_LABEL[kind], subtaskMetrics([chat]), when].filter(Boolean).join(" · "));
+  // A failed check already is the row's state; an unchecked one is shown unless its orchestrator verified it.
+  // A Run step already says the check is still to do, as on the inbox row.
+  const checkState = effectiveCheckState(chat, parent);
+  const check = kind === "failed" || kind === "working" || (checkState === "unchecked" && chat.next_kind === "run") ? null
+    : checkTag(checkState, chat.check_reason);
+  head.append(title, ...pill, ...(check ? [check] : []), status);
   const summary = chatSummary(chat);
   link.append(glyph, head, ...(summary ? [el("span", "subtask-summary", summary)] : []));
   link.title = [chatName(chat), summary].filter(Boolean).join("\n");
@@ -2131,9 +2217,11 @@ function renderSubtasks(thread) {
     const rows = kids.map((chat) => ({ chat, kind: subtaskKind(chat) }))
       .sort((a, b) => SUBTASK_ORDER.indexOf(a.kind) - SUBTASK_ORDER.indexOf(b.kind));
     const rollup = subtaskRollup(rows.map(({ kind }) => kind));
-    $("subtasks-count").textContent = rollup.text;
+    $("subtasks-count").textContent = [rollup.text, subtaskMetrics(kids)].filter(Boolean).join(" · ");
     $("subtasks-count").dataset.tone = rollup.tone;
-    $("subtasks").replaceChildren(...rows.map(({ chat, kind }) => subtaskRow(chat, kind)));
+    // The inbox's own row for this chat, which carries the check fields the thread view lacks.
+    const parent = parents.get(chatKey(kids[0])) || thread;
+    $("subtasks").replaceChildren(...rows.map(({ chat, kind }) => subtaskRow(chat, kind, parent)));
   }
   const parent = parents.get(key);
   (threadId ? $("subtitle") : $("panel-subtitle")).after(parentLine);
@@ -2150,6 +2238,18 @@ function renderSubtasks(thread) {
   const guessed = inferred.has(key);
   parentLine.replaceChildren(guessed ? "Likely subtask of " : "Subtask of ", link);
   parentLine.title = guessed ? `Inferred from the ${workerFolder(thread)} folder this chat runs in` : "";
+}
+
+function inboxRow(thread) {
+  const key = chatKey(thread);
+  return (inboxData || attentionData || []).find((chat) => chatKey(chat) === key);
+}
+
+// After an inbox update, an open chat whose superseded state flipped renders again; otherwise only its subtasks do.
+function syncOpenThread() {
+  if (!threadData) return;
+  if (Boolean(inboxRow(threadData)?.superseded) !== Boolean(threadData.superseded)) renderThread(threadData);
+  else renderSubtasks(threadData);
 }
 
 function renderThread(thread) {
@@ -2175,6 +2275,8 @@ function renderThread(thread) {
     return;
   }
   threadData = thread;
+  // The thread stream carries no relations: a superseded worker reads as settled here too, its handoff kept as history.
+  thread.superseded = Boolean(inboxRow(thread)?.superseded);
   const turn = thread.turns[thread.turns.length - 1];
   title.textContent = chatName(thread);
   if (threadId) document.title = `${chatName(thread)} · Your Turn`;
@@ -3227,9 +3329,11 @@ function deckHero(chat, kind) {
   left.append(cardHeader);
   const telemetry = el("div", "deck-evidence");
   telemetry.setAttribute("aria-label", "Recorded chat telemetry");
-  const check = el("span", "", `CHECKS ${chat.check_state || "—"}`);
-  check.dataset.state = chat.check_state || "unknown";
-  if (!chat.check_state) check.title = "Checks not reported";
+  // The same check reading as the inbox and Subtasks: a worker its orchestrator verified later is not unchecked.
+  const checkState = effectiveCheckState(chat, deckParents.get(chatKey(chat)));
+  const check = el("span", "", `CHECKS ${checkState || "—"}`);
+  check.dataset.state = checkState || "unknown";
+  if (!checkState) check.title = "Checks not reported";
   const count = (label, n) => {
     const item = el("span", "", `${label} ${n}`);
     if (!n) item.dataset.zero = "true";
@@ -3730,7 +3834,9 @@ if (deckView && !threadId) document.addEventListener("keydown", (event) => {
   }
 });
 
+let deckParents = new Map(); // child key -> orchestrator, for the Deck's check reading
 function liveDeck(chats) {
+  deckParents = deckDelegates(chats).parents;
   stateSync.retain(chats.map(chatKey));
   migrateLocalMarks(chats);
   notifyChanges(chats);
@@ -4025,9 +4131,9 @@ if (threadId) {
   connect(`/api/stream?thread=${encodeURIComponent(threadId)}`, "thread", renderThread);
   // The favicon and notifications cover every chat, not just this one; the live label follows this chat's stream.
   stream("/api/stream", (source) => source.addEventListener("inbox", (message) => {
-    attentionData = JSON.parse(message.data);
+    attentionData = markSuperseded(JSON.parse(message.data));
     stateSync.retain(attentionData.map(chatKey));
-    if (threadData) renderSubtasks(threadData);
+    syncOpenThread();
     syncNavigation(attentionData);
     notifyChanges(attentionData);
     setFavicon(attentionData.some(needsAttention));

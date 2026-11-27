@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from conftest import Parser
 
-from yourturn.heuristics import check_name, check_result, check_state, is_check_command, parse_answer, parse_decisions, parse_recap, prompt_text
+from yourturn.heuristics import check_name, check_passed_at, check_reason, check_result, check_state, is_check_command, parse_answer, parse_decisions, parse_recap, prompt_text
 from yourturn.model import Check, Harness, SessionKey, Turn
 
 UUID = "019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8"
@@ -30,6 +30,35 @@ def turn(files: list[str], checks: tuple[int | None, ...] = (), edited_after_che
 )
 def test_check_state(value: Turn | None, expected: str) -> None:
     assert check_state(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "unproven", "reason"),
+    [
+        (None, False, ""),
+        (turn(["/w/repo/README.md"]), True, ""),
+        (turn(["/w/repo/app.py"]), False, "no_check"),
+        (turn(["/w/repo/app.py"]), True, "unproven"),
+        (turn(["/w/repo/app.py"], [0], edited_after_check=True), False, "edited_after_check"),
+        (turn(["/w/repo/app.py"], [0], edited_after_check=True), True, "unproven"),
+        (turn(["/w/repo/app.py"], [0]), True, ""),
+        (turn(["/w/repo/app.py"], [1]), False, ""),
+    ],
+)
+def test_check_reason(value: Turn | None, unproven: bool, reason: str) -> None:
+    assert check_reason(value, unproven_check=unproven) == reason
+
+
+def test_check_passed_at_is_the_latest_proven_pass_covering_the_edits() -> None:
+    def at(*checks: tuple[int | None, str], edited: bool = False) -> str:
+        return check_passed_at(Turn(1, files=["/w/repo/app.py"], checks=[Check("pytest", code, when) for code, when in checks],
+                                    edited_after_check=edited))
+
+    assert check_passed_at(None) == ""
+    assert at((0, "2026-11-27T10:00:00Z"), (None, "2026-11-27T10:05:00Z"), (0, "2026-11-27T10:03:00Z")) == "2026-11-27T10:03:00Z"
+    assert at((None, "2026-11-27T10:00:00Z")) == ""
+    assert at((0, "2026-11-27T10:00:00Z"), (1, "2026-11-27T10:01:00Z")) == ""
+    assert at((0, "2026-11-27T10:00:00Z"), edited=True) == ""
 
 
 @pytest.mark.parametrize(

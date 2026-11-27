@@ -37,6 +37,18 @@ def test_telemetry_counts_deltas_without_recounting_cumulative_history():
     folder.fold(AgentMessage(ts=at, text="Done"))
     folder.fold(AgentMessage(ts=at, text="More"))
     assert folder.inbox_fields()["message_minutes"] == ["2026-11-04T12:00:00Z"]
+    assert folder.inbox_fields()["total_tokens"] == 50
+
+
+def test_worktree_removed_only_for_a_missing_worker_folder(tmp_path: Path) -> None:
+    folder = TurnFolder(SessionRef(harness="codex", session_id=SID))
+    for cwd, removed in [("", False), (str(tmp_path / "gone"), False), (str(tmp_path / ".delegate-code/gone"), True),
+                         (str(tmp_path / ".relay/gone/src"), True), (str(tmp_path), False)]:
+        folder.cwd = cwd
+        assert folder.inbox_fields()["worktree_removed"] is removed, cwd
+    (tmp_path / ".delegate-code/here").mkdir(parents=True)
+    folder.cwd = str(tmp_path / ".delegate-code/here")
+    assert folder.inbox_fields()["worktree_removed"] is False
 
 
 def _ts(second: int) -> str:
@@ -247,6 +259,8 @@ def test_codex_unprovable_check_does_not_clear_an_edit_after_a_passing_one() -> 
                      _run(5, "make test | tail -3", 0), _complete(6)])
     assert folder.turns[-1].edited_after_check is True
     assert folder.inbox_fields()["check_state"] == "unchecked"
+    # The latest check after the edit was piped, so the reason names that, not the stale pass before it.
+    assert folder.inbox_fields()["check_reason"] == "unproven"
 
 
 def test_codex_rerun_check_replaces_its_earlier_result() -> None:
@@ -620,6 +634,8 @@ INBOX_KEYS = {
     "project", "title", "content_available", "summary", "capabilities", "recap", "decisions", "changed_files",
     "context_used", "context_window", "git_branch", "rate_limits", "rate_limits_at", "usage_minutes", "message_minutes",
     "laps", "tool_calls", "model", "reasoning_effort", "cache_hit",
+    "check_reason", "check_passed_at", "worktree_removed", "turn_count", "total_tokens",
+    "output_tokens", "active_seconds",
 }
 DETAIL_KEYS = {
     "id", "title", "cwd", "project", "parent_id", "subagent", "started_at", "updated_at", "status",
@@ -849,6 +865,40 @@ def test_version_and_fingerprint_change_only_on_append(tmp_path: Path) -> None:
     assert hub.inbox_fingerprint() == settled
     final = hub.detail_dict(SID)
     assert final is not None and final["version"] == after["version"]
+
+
+def test_fingerprint_changes_when_a_worker_worktree_is_removed(tmp_path: Path) -> None:
+    worktree = tmp_path / "repo" / ".delegate-code" / "fix-csv"
+    worktree.mkdir(parents=True)
+    meta = _meta(SID)
+    meta["payload"]["cwd"] = str(worktree)
+    _write(tmp_path / "home", SID, [meta, *_turn()])
+    hub = SessionHub.for_codex_home(tmp_path / "home", scan_ttl=0)
+    assert hub.inbox_dicts()[0]["worktree_removed"] is False
+    fingerprint = hub.inbox_fingerprint()
+    worktree.rmdir()
+    assert hub.inbox_fingerprint() != fingerprint
+    assert hub.inbox_dicts()[0]["worktree_removed"] is True
+
+
+def test_piped_check_leaves_edits_unchecked_as_unproven() -> None:
+    folder = _codex([*_start(1), _edit(2, "/work/repo/app.py"), _run(3, "pytest | tail -3", 0), _complete(4)])
+    assert folder.inbox_fields()["check_state"] == "unchecked"
+    assert folder.inbox_fields()["check_reason"] == "unproven"
+    # A code edit after the unproven run leaves no check covering it.
+    folder.fold_many(_events([_edit(5, "/work/repo/app.py")]))
+    assert folder.inbox_fields()["check_reason"] == "no_check"
+
+
+def test_turn_count_reports_every_folded_turn_past_the_kept_window() -> None:
+    folder = _codex([record for n in range(35) for record in [*_start(10 * n + 1, f"t{n}"), _complete(10 * n + 2, f"t{n}")]])
+    assert len(folder.turns) == 30
+    assert folder.inbox_fields()["turn_count"] == 35
+
+
+def test_active_seconds_sum_every_finished_turn() -> None:
+    folder = _codex([*_start(1, "t1"), _complete(9, "t1"), *_start(20, "t2"), _complete(50, "t2")])
+    assert folder.inbox_fields()["active_seconds"] == 38
 
 
 def test_inbox_row_ranks_mcp_tool_calls_with_latest_call(tmp_path: Path) -> None:

@@ -57,6 +57,8 @@ from yourturn.heuristics import (
     ACTION_KINDS,
     check_key,
     check_name,
+    check_passed_at,
+    check_reason,
     check_result,
     check_state,
     clip,
@@ -134,6 +136,8 @@ class TurnFolder:
         self.token_usage: dict[str, int] = {}
         self.last_token_usage: dict[str, int] = {}
         self.token_usage_at = ""
+        # Seconds spent in completed turns, summed as they end; turns past MAX_TURNS still count.
+        self.active_seconds = 0
         self.usage_minutes: deque[list[Any]] = deque(maxlen=2880)
         self.message_minutes: deque[str] = deque(maxlen=301)
         self.model = ""
@@ -159,6 +163,8 @@ class TurnFolder:
         self._ended = False
         # Each check's identity (the whole text of the checks that ran), kept out of the API.
         self._checks: dict[tuple[int, str], Check] = {}
+        # The turn whose latest check ran without a provable exit code (piped or chained), for `check_reason`.
+        self._unproven_check_turn: int | None = None
         # A pending approval overlays the latest turn's state until the harness clears it.
         self.approval = ""
         self._attention_before = ""
@@ -284,7 +290,9 @@ class TurnFolder:
         if found and self._owns(turn, event):
             if result is None and self.command_results:
                 detail = detail or "check result not proven"
+                self._unproven_check_turn = turn.index
             else:
+                self._unproven_check_turn = None
                 # A later run of the same check replaces its earlier result.
                 earlier = self._checks.pop((turn.index, key), None)
                 turn.checks = [check for check in turn.checks if check is not earlier]
@@ -297,7 +305,10 @@ class TurnFolder:
     def _edit(self, at: str, turn: Turn, paths: list[str], ts: datetime | None, failed: bool) -> None:
         turn.files.extend(path for path in paths if path not in turn.files)
         # Documentation and scratch edits after a passing check do not make it stale.
-        turn.edited_after_check = turn.edited_after_check or (bool(turn.checks) and bool(code_paths(paths, self.cwd, self.root)))
+        code = bool(code_paths(paths, self.cwd, self.root))
+        turn.edited_after_check = turn.edited_after_check or (bool(turn.checks) and code)
+        if code:
+            self._unproven_check_turn = None
         noun = "file" if len(paths) == 1 else "files"
         self._step(at, "edit", f"Edited {len(paths)} {noun}", ", ".join(Path(p).name for p in paths), "failed" if failed else "done")
 
@@ -416,6 +427,7 @@ class TurnFolder:
         else:
             started = parse_ts(turn.started_at)
             seconds = round((event.ts - started).total_seconds()) if started and event.ts else 0
+        self.active_seconds += max(0, seconds)
         self._close_turn(at, None, f"{seconds}s" if seconds > 0 else "")
 
     def _end_not_recorded(self, at: str, event: TurnEnded) -> None:
@@ -558,6 +570,10 @@ class TurnFolder:
         else:
             self._step(at, "tool", event.name, status="failed" if event.ok is False else "done")
 
+    def worktree_removed(self) -> bool:
+        """A delegated worker whose worktree was cleaned up is settled history; only worker folders are stat'ed."""
+        return any(f"/.{name}/" in self.cwd for name in ("delegate-code", "relay")) and not Path(self.cwd).exists()
+
     # -- API dicts (the JSON contract app.js reads) -------------------------------------------------
 
     def inbox_fields(self, mtime_ns: int | None = None) -> dict[str, Any]:
@@ -582,6 +598,15 @@ class TurnFolder:
             "options": pending.options if pending else [],
             "attention_key": self.attention_key,
             "check_state": check_state(turn, self.cwd, self.root),
+            "check_reason": check_reason(turn, self.cwd, self.root,
+                                         unproven_check=turn is not None and self._unproven_check_turn == turn.index),
+            "check_passed_at": check_passed_at(turn),
+            "worktree_removed": self.worktree_removed(),
+            # The latest turn's number, not len(self.turns): only the last MAX_TURNS turns are kept.
+            "turn_count": self.turns[-1].index if self.turns else 0,
+            "total_tokens": int(self.token_usage.get("total_tokens") or 0),
+            "output_tokens": int(self.token_usage.get("output_tokens") or 0),
+            "active_seconds": self.active_seconds,
             "pending_tool": self.pending_tool,
             "approval_policy": self.approval_policy,
             "content_available": self.content_available,
@@ -914,7 +939,9 @@ class SessionHub:
                     continue
                 # Adapters whose state lives outside the session file (Cursor approvals) add a token for it.
                 token = tracked.adapter.state_token(tracked.ref)
-                parts.append(f"{tracked.ref.key}:{sig}:{token}:{tracked.quiet(tracked.folder._status(), sig[1])}")
+                # A worker's worktree removed without a transcript write still changes its row.
+                parts.append(f"{tracked.ref.key}:{sig}:{token}:{tracked.quiet(tracked.folder._status(), sig[1])}"
+                             f":{tracked.folder.worktree_removed()}")
         return "|".join(parts)
 
     def folder(self, key: SessionKey | str) -> TurnFolder | None:

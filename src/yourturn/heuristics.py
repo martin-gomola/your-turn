@@ -338,6 +338,25 @@ def check_state(turn: Turn | None, cwd: str = "", root: str = "") -> str:
     return ""
 
 
+def check_reason(turn: Turn | None, cwd: str = "", root: str = "", unproven_check: bool = False) -> str:
+    """Why a turn is `unchecked`: `unproven` when its latest check ran without a provable exit code (piped or
+    chained, which the folder tracks as `unproven_check`), `edited_after_check`, or `no_check`. "" otherwise."""
+    if check_state(turn, cwd, root) != "unchecked":
+        return ""
+    if unproven_check:
+        return "unproven"
+    if turn.checks and turn.edited_after_check:
+        return "edited_after_check"
+    return "" if turn.checks else "no_check"
+
+
+def check_passed_at(turn: Turn | None) -> str:
+    """When the latest proven passing check ran, if it covers the turn's edits (nothing failed or changed after); else ""."""
+    if turn is None or turn.edited_after_check or any(check.exit_code not in (0, None) for check in turn.checks):
+        return ""
+    return max((check.at for check in turn.checks if check.exit_code == 0), default="")
+
+
 def is_quiet(status: str, modified_ns: int, now: float | None = None) -> bool:
     """A working chat whose source has not changed for a while."""
     return status == "working" and (now or time.time()) - modified_ns / 1e9 > QUIET_SECONDS
