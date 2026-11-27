@@ -1,5 +1,15 @@
 # Agent notes
 
+## Direction
+
+Your Turn is the queue for a person who already runs several paid coding agents. The handoff contract (`Outcome`, `Next step`) is the product. This inbox answers four questions in order: Notice, Understand, Judge, Act. `DESIGN.md` is the contract.
+
+- Read-only and local. No agent controls, no new runtime, no MCP.
+- Vendor-neutral. An inbox that only flatters one agent is out of scope.
+- A change belongs only when it shortens Notice, Understand, Judge, or Act. The inbox measure is fewer false Needs you and a faster true one. A dashboard read for its own sake is out.
+- Ship only fields the transcripts record. A dollar price, or a passed check with no recorded exit code, is not one of them.
+- `plugin/skills/your-turn-handoff/` stays a generated snapshot. The contract lives in your-turn-loop.
+
 ## Development artifacts stay out of the repository
 
 Write anything produced while working, rather than shipped, to an ignored folder:
