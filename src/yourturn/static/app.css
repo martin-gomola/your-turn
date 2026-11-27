@@ -36,7 +36,7 @@ a { color: var(--color-accent); }
   background: var(--color-surface); border-bottom: var(--size-hairline) solid var(--color-separator);
 }
 .bar-title { flex: 1 1 auto; min-width: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
-.top { display: grid; gap: var(--space-1); }
+.top { container-type: inline-size; display: grid; gap: var(--space-2); }
 h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: var(--leading-tight); overflow-wrap: break-word; hyphens: auto; }
 /* Narrow screens: a step smaller, so mid-length titles fit one line and long ones wrap shorter (balanced, see below). */
 @media (max-width: 599px) { h1 { font-size: 1.5rem; } }
@@ -57,7 +57,7 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 .meta-icon, .project-icon { width: var(--text-sm); height: var(--text-sm); align-self: center; flex: none; color: var(--color-text-muted); stroke-width: 1.8; }
 .meta-icon { margin-inline-end: var(--space-1); }
 /* The dot trails its item, so a wrapped line never starts with a separator. */
-.meta-item:not(:last-child)::after { content: "·"; margin-inline-start: var(--space-2); }
+.meta-item:not(:last-child)::after { flex: none; content: "·"; margin-inline-start: var(--space-2); }
 /* Context window: a short track whose fill is the used share and whose color follows it: neutral ink while normal,
    amber from 75% and red from 90%, the inbox and Deck thresholds. Not green below 75%: green is this app's Ready
    status, and a normal reading needs no color. */
@@ -66,14 +66,16 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 .meta-item--context[data-tone="red"] { --context-tone: var(--color-danger); color: var(--color-danger); }
 .context-label { font-size: var(--text-label); font-weight: var(--weight-semibold); letter-spacing: 0.02em; }
 .context-bar { align-self: center; flex: none; width: 40px; height: 6px; border-radius: var(--radius-pill); background: linear-gradient(to right, var(--context-tone) var(--fill), color-mix(in srgb, var(--color-text-muted) 22%, transparent) var(--fill)); }
-/* On a phone the row stays one line: the gauge keeps its label and a shorter bar, the exact percent moves to the
-   tooltip and accessible name, the branch (the least telling item) is left out, and the project shortens. */
-@media (max-width: 480px) {
+/* On a phone (or at 200% text) the row stays one line: the gauge keeps its label and a shorter bar, the exact percent
+   moves to the tooltip and accessible name, the branch (the least telling item) is left out, and the project shortens. */
+@container (max-width: 30rem) {
   .context-bar { width: 28px; }
   .meta-item--context .meta-value { display: none; }
-  .subtitle > .meta-item--project { flex: 0 1 auto; min-width: 6ch; }
+  .subtitle > .meta-item--project { flex: 0 1 auto; min-width: 4ch; }
   .subtitle > .meta-item--branch { display: none; }
 }
+/* Below 17rem (200% text on phones), allow wrapping so no reading is clipped. */
+@container (max-width: 17rem) { .subtitle:has(.meta-item) { flex-wrap: wrap; } }
 /* Which app a chat belongs to; the same pill in inbox rows and chat headers. */
 .harness-pill { flex: none; padding: 0 var(--space-1); border-radius: var(--radius-sm); box-shadow: var(--edge); color: var(--color-text-muted); font-size: var(--text-label); line-height: 1.6; }
 [data-harness="codex"] { --harness-tone: #198038; }
@@ -85,13 +87,13 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-bold); line-height: va
 /* Agent pills stay neutral: their brand hues (orange, green, purple) read as Needs you, Ready and Working at a glance.
    Only the small agent mark keeps its hue, to tell agents apart up close. */
 .harness-pill[data-harness] {
-  display: inline-flex; align-items: center; gap: 3px;
+  display: inline-flex; align-items: baseline; gap: 3px;
   color: var(--color-text-muted);
   background: none;
   box-shadow: var(--edge);
 }
 .harness-pill[data-harness] .harness-icon { color: var(--harness-tone); }
-.harness-icon { width: 13px; height: 13px; stroke-width: 1.9; }
+.harness-icon { align-self: center; width: 13px; height: 13px; stroke-width: 1.9; }
 @media (prefers-reduced-motion: no-preference) {
   .harness-pill[data-harness="claude"]:hover .harness-icon { animation: claude-dance 480ms ease-in-out; transform-origin: 50% 90%; }
   @keyframes claude-dance { 25% { transform: rotate(-12deg); } 50% { transform: rotate(9deg); } 75% { transform: rotate(-5deg); } }
@@ -835,12 +837,14 @@ body:is([data-panel="open"], [data-aside]) .row-tags .tag { font-size: var(--tex
 /* Chat pages reuse the shell and existing live detail content. */
 [data-view="thread"] .bar { position: sticky; top: 0; left: auto; margin-right: calc(var(--sidebar-width) + var(--aside-width)); padding: var(--space-2) var(--page-inset); border-bottom: 1px solid var(--color-separator); background: var(--color-bg); }
 [data-view="thread"] .page { padding-top: var(--space-6); grid-template-columns: minmax(0, var(--page-max)); justify-content: center; }
-.panel-head { display: flex; gap: var(--space-3); align-items: start; }
-.panel-heading { flex: 1; min-width: 0; }
-.panel-inbox { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+/* Title shares row 1 with Inbox; the meta row and parent link span full width below so Inbox never squeezes them. */
+.panel-head { container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); align-items: start; }
+.panel-heading { display: contents; }
+.panel-heading > :not(#panel-title) { grid-column: 1 / -1; }
+.panel-inbox { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .panel-focus { color: var(--color-text-muted); text-decoration: none; }
 .panel-focus:hover { color: var(--color-text); background: var(--color-fill); }
-#panel-title { font-size: var(--text-lg); }
+#panel-title { grid-column: 1; grid-row: 1; align-self: center; font-size: var(--text-lg); line-height: var(--leading-tight); }
 #panel-title:focus { outline: none; }
 body[data-panel="open"] { height: 100dvh; overflow: hidden; }
 body[data-panel="open"] .page { display: grid; grid-template-columns: 340px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: var(--space-6); height: 100dvh; padding-top: 64px; padding-bottom: var(--space-2); row-gap: var(--space-2); }
@@ -1128,6 +1132,7 @@ body[data-origin="deck"] .top { display: flex; flex-wrap: wrap; align-items: cen
 body[data-origin="deck"] #title { flex: 1 0 100%; }
 body[data-origin="deck"] .top .evidence { order: 1; margin: 0; }
 body[data-origin="deck"] .top .subtitle { order: 2; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+body[data-origin="deck"] .top .parent-link { order: 3; flex: 1 0 100%; }
 /* Evidence is a readout in the frame grammar: square, a 1px ring in the Deck line that takes the reading's colour once
    it signals, like the telemetry slots. A plain border draws it, since ::before is the dot and ::after the 44px tap
    area, which a clip-path cut would clip. */
